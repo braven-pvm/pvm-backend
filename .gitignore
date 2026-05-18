@@ -16,6 +16,9 @@ out/
 *.user
 *.suo
 
+# Local worktrees
+.worktrees/
+
 # OS/temp
 Thumbs.db
 Desktop.ini
