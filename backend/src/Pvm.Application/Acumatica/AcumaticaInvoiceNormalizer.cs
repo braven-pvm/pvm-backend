@@ -37,7 +37,8 @@ public static class AcumaticaInvoiceNormalizer
                 TaxAmount: new Money(dto.CurrencyCode, line.TaxAmount),
                 TaxCategoryCode: line.TaxCategoryCode,
                 TaxPercentage: line.TaxPercentage,
-                IsCatchWeight: line.IsCatchWeight)).ToList());
+                IsCatchWeight: line.IsCatchWeight,
+                IsShopriteUomVerified: false)).ToList());
     }
 
     private static ShopriteMeasurementUnit? MapUom(string uom)

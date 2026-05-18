@@ -73,7 +73,7 @@ public sealed class AcumaticaInvoiceNormalizerTests
         Assert.Equal("STANDARD", line.TaxCategoryCode);
         Assert.Equal(15m, line.TaxPercentage);
         Assert.False(line.IsCatchWeight);
-        Assert.True(line.IsShopriteUomVerified);
+        Assert.False(line.IsShopriteUomVerified);
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public sealed class AcumaticaInvoiceNormalizerTests
 
         var line = Assert.Single(invoice.Lines);
         Assert.Null(line.ShopriteUom);
-        Assert.True(line.IsShopriteUomVerified);
+        Assert.False(line.IsShopriteUomVerified);
     }
 
     private static AcumaticaInvoiceDto InvoiceWithLineUom(string uom)
