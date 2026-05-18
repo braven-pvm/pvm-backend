@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http.Headers;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Pvm.Application.Submissions;
 using Pvm.Infrastructure.Shoprite;
 
 namespace Pvm.Infrastructure.Tests.Shoprite;
@@ -95,6 +98,24 @@ public sealed class ShopriteInvoiceClientTests
     }
 
     [Fact]
+    public async Task SubmitAsync_CallerCancellationPropagatesOperationCanceledException()
+    {
+        using var handler = new CaptureHandler(_ => throw new OperationCanceledException());
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://shoprite.example/")
+        };
+        var client = new ShopriteInvoiceClient(httpClient, Options.Create(DefaultOptions()));
+        using var cancellationTokenSource = new CancellationTokenSource();
+        await cancellationTokenSource.CancelAsync();
+
+        var exception = await Record.ExceptionAsync(
+            () => client.SubmitAsync("<invoice />", cancellationTokenSource.Token));
+
+        Assert.IsAssignableFrom<OperationCanceledException>(exception);
+    }
+
+    [Fact]
     public async Task SubmitAsync_NonSuccessResponseCapturesStatusCodeAndBody()
     {
         using var handler = new CaptureHandler(
@@ -114,6 +135,77 @@ public sealed class ShopriteInvoiceClientTests
         Assert.Equal(502, response.StatusCode);
         Assert.Equal("upstream failure", response.Body);
         Assert.False(response.IsAmbiguous);
+    }
+
+    [Theory]
+    [InlineData("BaseUrl", "")]
+    [InlineData("BaseUrl", "   ")]
+    [InlineData("Username", "")]
+    [InlineData("Username", "   ")]
+    [InlineData("Password", "")]
+    [InlineData("Password", "   ")]
+    [InlineData("ContractId", "")]
+    [InlineData("ContractId", "   ")]
+    [InlineData("UiUser", "")]
+    [InlineData("UiUser", "   ")]
+    public void AddShopriteClient_InvalidRequiredOptionFailsClearly(string key, string value)
+    {
+        var configurationValues = DefaultConfiguration();
+        configurationValues[$"Shoprite:{key}"] = value;
+
+        var exception = Assert.Throws<OptionsValidationException>(
+            () => CreateConfiguredClient(configurationValues));
+
+        Assert.Contains(key, exception.Message);
+    }
+
+    [Theory]
+    [InlineData("http://shoprite.example/")]
+    [InlineData("/VendorInvoice")]
+    [InlineData("shoprite.example")]
+    public void AddShopriteClient_InvalidBaseUrlFailsClearly(string baseUrl)
+    {
+        var configurationValues = DefaultConfiguration();
+        configurationValues["Shoprite:BaseUrl"] = baseUrl;
+
+        var exception = Assert.Throws<OptionsValidationException>(
+            () => CreateConfiguredClient(configurationValues));
+
+        Assert.Contains("BaseUrl", exception.Message);
+        Assert.Contains("absolute HTTPS URI", exception.Message);
+    }
+
+    [Fact]
+    public void AddShopriteClient_ValidOptionsResolveClient()
+    {
+        var client = CreateConfiguredClient(DefaultConfiguration());
+
+        Assert.IsAssignableFrom<IShopriteInvoiceClient>(client);
+    }
+
+    private static IShopriteInvoiceClient CreateConfiguredClient(
+        Dictionary<string, string?> configurationValues)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(configurationValues)
+            .Build();
+        var services = new ServiceCollection();
+        services.AddShopriteClient(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        return provider.GetRequiredService<IShopriteInvoiceClient>();
+    }
+
+    private static Dictionary<string, string?> DefaultConfiguration()
+    {
+        return new Dictionary<string, string?>
+        {
+            ["Shoprite:BaseUrl"] = "https://shoprite.example/",
+            ["Shoprite:Username"] = "api-user",
+            ["Shoprite:Password"] = "secret",
+            ["Shoprite:ContractId"] = "contract-123",
+            ["Shoprite:UiUser"] = "ui-user"
+        };
     }
 
     private static ShopriteOptions DefaultOptions()

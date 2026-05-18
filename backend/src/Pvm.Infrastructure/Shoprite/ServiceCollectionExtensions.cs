@@ -11,7 +11,25 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.Configure<ShopriteOptions>(configuration.GetSection("Shoprite"));
+        services.AddOptions<ShopriteOptions>()
+            .Bind(configuration.GetSection("Shoprite"))
+            .Validate(
+                options => IsAbsoluteHttpsUri(options.BaseUrl),
+                "Shoprite:BaseUrl must be a non-empty absolute HTTPS URI.")
+            .Validate(
+                options => !string.IsNullOrWhiteSpace(options.Username),
+                "Shoprite:Username is required.")
+            .Validate(
+                options => !string.IsNullOrWhiteSpace(options.Password),
+                "Shoprite:Password is required.")
+            .Validate(
+                options => !string.IsNullOrWhiteSpace(options.ContractId),
+                "Shoprite:ContractId is required.")
+            .Validate(
+                options => !string.IsNullOrWhiteSpace(options.UiUser),
+                "Shoprite:UiUser is required.")
+            .ValidateOnStart();
+
         services.AddHttpClient<IShopriteInvoiceClient, ShopriteInvoiceClient>((provider, client) =>
         {
             var options = provider.GetRequiredService<IOptions<ShopriteOptions>>().Value;
@@ -20,5 +38,11 @@ public static class ServiceCollectionExtensions
         });
 
         return services;
+    }
+
+    private static bool IsAbsoluteHttpsUri(string? value)
+    {
+        return Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            && uri.Scheme == Uri.UriSchemeHttps;
     }
 }
