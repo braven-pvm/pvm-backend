@@ -63,7 +63,7 @@ public sealed class ShopriteInvoiceValidatorTests
     [Fact]
     public void Unverified_uom_is_warning_in_qa()
     {
-        var invoice = ValidInvoice() with { Lines = [ValidLine() with { ShopriteUom = null }] };
+        var invoice = ValidInvoice() with { Lines = [ValidLine() with { IsShopriteUomVerified = false }] };
 
         var result = ShopriteInvoiceValidator.Validate(invoice, ShopriteValidationEnvironment.Qa);
 
@@ -76,11 +76,21 @@ public sealed class ShopriteInvoiceValidatorTests
     [Fact]
     public void Unverified_uom_blocks_submission_in_production()
     {
-        var invoice = ValidInvoice() with { Lines = [ValidLine() with { ShopriteUom = null }] };
+        var invoice = ValidInvoice() with { Lines = [ValidLine() with { IsShopriteUomVerified = false }] };
 
         var result = ShopriteInvoiceValidator.Validate(invoice, ShopriteValidationEnvironment.Production);
 
         AssertBlocking(result, "unverified-shoprite-uom");
+    }
+
+    [Fact]
+    public void Missing_shoprite_uom_blocks_submission()
+    {
+        var invoice = ValidInvoice() with { Lines = [ValidLine() with { ShopriteUom = null }] };
+
+        var result = ShopriteInvoiceValidator.Validate(invoice, ShopriteValidationEnvironment.Qa);
+
+        AssertBlocking(result, "missing-shoprite-uom");
     }
 
     [Fact]

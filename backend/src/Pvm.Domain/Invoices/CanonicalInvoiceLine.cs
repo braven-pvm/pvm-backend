@@ -14,4 +14,5 @@ public sealed record CanonicalInvoiceLine(
     Money TaxAmount,
     string? TaxCategoryCode,
     decimal? TaxPercentage,
-    bool IsCatchWeight);
+    bool IsCatchWeight,
+    bool IsShopriteUomVerified = true);

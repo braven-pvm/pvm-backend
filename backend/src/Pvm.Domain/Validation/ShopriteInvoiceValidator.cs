@@ -39,19 +39,23 @@ public static class ShopriteInvoiceValidator
 
             if (line.ShopriteUom is null)
             {
+                issues.Add(Block("missing-shoprite-uom", $"Line {line.LineNumber} has no Shoprite UOM mapping.", "integration-config"));
+            }
+            else if (!Enum.IsDefined(line.ShopriteUom.Value))
+            {
+                issues.Add(Block("unsupported-shoprite-uom", $"Line {line.LineNumber} has unsupported Shoprite UOM.", "integration-config"));
+            }
+            else if (!line.IsShopriteUomVerified)
+            {
                 var severity = environment == ShopriteValidationEnvironment.Production
                     ? ValidationSeverity.Blocking
                     : ValidationSeverity.Warning;
 
                 issues.Add(new ValidationIssue(
                     "unverified-shoprite-uom",
-                    $"Line {line.LineNumber} has unresolved Shoprite UOM mapping.",
+                    $"Line {line.LineNumber} has unverified Shoprite UOM mapping.",
                     severity,
                     "integration-config"));
-            }
-            else if (!Enum.IsDefined(line.ShopriteUom.Value))
-            {
-                issues.Add(Block("unsupported-shoprite-uom", $"Line {line.LineNumber} has unsupported Shoprite UOM.", "integration-config"));
             }
 
             if (line.IsCatchWeight)
