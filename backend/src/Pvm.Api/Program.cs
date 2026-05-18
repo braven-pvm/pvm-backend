@@ -1,3 +1,5 @@
+using Pvm.Api.Features.Invoices;
+using Pvm.Api.Features.Submissions;
 using Pvm.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,6 +17,9 @@ if (app.Environment.IsDevelopment())
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
     .WithName("Health");
+
+app.MapInvoiceEndpoints();
+app.MapSubmissionEndpoints();
 
 app.Run();
 
