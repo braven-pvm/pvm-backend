@@ -28,3 +28,4 @@ Desktop.ini
 # Dependencies
 node_modules/
 packages/
+.next/
