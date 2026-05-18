@@ -26,6 +26,17 @@ public sealed class InvoicePersistenceTests : IAsyncLifetime
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
     }
 
+    [Fact]
+    public async Task Invoice_submission_attempt_requires_existing_invoice_candidate()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+
+        db.InvoiceSubmissionAttempts.Add(NewAttempt(Guid.NewGuid()));
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
     private PvmDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<PvmDbContext>()
@@ -46,5 +57,16 @@ public sealed class InvoicePersistenceTests : IAsyncLifetime
             Status = "Candidate",
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
+        };
+
+    private static InvoiceSubmissionAttemptEntity NewAttempt(Guid invoiceCandidateId)
+        => new()
+        {
+            Id = Guid.NewGuid(),
+            InvoiceCandidateId = invoiceCandidateId,
+            InitiatedBy = "tester",
+            InitiationMode = "Manual",
+            Status = "Failed",
+            CreatedAt = DateTimeOffset.UtcNow
         };
 }

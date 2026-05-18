@@ -13,5 +13,9 @@ public sealed class InvoiceSubmissionAttemptEntity
     public string? ResponsePayloadLocation { get; set; }
     public string? ResponsePayloadHash { get; set; }
     public string? ErrorMessage { get; set; }
+    public string? FailureClassification { get; set; }
+    public string? RecommendedFixLocation { get; set; }
+    public bool? IsRetryEligible { get; set; }
+    public string? ResponsibleRole { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
