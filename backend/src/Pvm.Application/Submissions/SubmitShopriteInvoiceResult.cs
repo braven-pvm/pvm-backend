@@ -5,6 +5,7 @@ public enum SubmitShopriteInvoiceStatus
     Submitted,
     ValidationBlocked,
     DuplicateBlocked,
+    ManualReviewRequired,
     Ambiguous,
     Failed
 }

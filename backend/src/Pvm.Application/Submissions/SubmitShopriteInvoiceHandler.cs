@@ -22,6 +22,11 @@ public sealed class SubmitShopriteInvoiceHandler(
             return new SubmitShopriteInvoiceResult(SubmitShopriteInvoiceStatus.ValidationBlocked, "Invoice has blocking validation issues.");
         }
 
+        if (await repository.HasUnresolvedAmbiguousSubmissionAsync(command.InvoiceCandidateId, cancellationToken))
+        {
+            return new SubmitShopriteInvoiceResult(SubmitShopriteInvoiceStatus.ManualReviewRequired, "Invoice has an unresolved ambiguous submission attempt.");
+        }
+
         if (await repository.HasSuccessfulSubmissionAsync(command.InvoiceCandidateId, cancellationToken))
         {
             return new SubmitShopriteInvoiceResult(SubmitShopriteInvoiceStatus.DuplicateBlocked, "Invoice already has a successful submission.");

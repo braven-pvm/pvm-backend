@@ -85,6 +85,25 @@ public sealed class SubmitShopriteInvoiceHandlerTests
     }
 
     [Fact]
+    public async Task Prior_unresolved_ambiguous_attempt_blocks_retry_and_does_not_call_client()
+    {
+        var repository = new FakeInvoiceCandidateRepository
+        {
+            Invoice = ValidInvoice(),
+            ValidationResult = new ValidationResult([]),
+            HasUnresolvedAmbiguousSubmission = true
+        };
+        var shopriteClient = new FakeShopriteInvoiceClient();
+        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient);
+
+        var result = await handler.HandleAsync(Command, CancellationToken.None);
+
+        Assert.Equal(SubmitShopriteInvoiceStatus.ManualReviewRequired, result.Status);
+        Assert.Equal(0, shopriteClient.SubmitCallCount);
+        Assert.Empty(repository.Attempts);
+    }
+
+    [Fact]
     public async Task Duplicate_key_already_submitted_returns_duplicate_blocked_and_does_not_call_client()
     {
         var repository = new FakeInvoiceCandidateRepository
@@ -141,6 +160,7 @@ public sealed class SubmitShopriteInvoiceHandlerTests
     {
         public CanonicalInvoice? Invoice { get; init; }
         public ValidationResult ValidationResult { get; init; } = new([]);
+        public bool HasUnresolvedAmbiguousSubmission { get; init; }
         public bool HasSuccessfulSubmission { get; init; }
         public List<RecordedAttempt> Attempts { get; } = [];
 
@@ -149,6 +169,9 @@ public sealed class SubmitShopriteInvoiceHandlerTests
 
         public Task<ValidationResult> GetValidationResultAsync(Guid invoiceCandidateId, CancellationToken cancellationToken)
             => Task.FromResult(ValidationResult);
+
+        public Task<bool> HasUnresolvedAmbiguousSubmissionAsync(Guid invoiceCandidateId, CancellationToken cancellationToken)
+            => Task.FromResult(HasUnresolvedAmbiguousSubmission);
 
         public Task<bool> HasSuccessfulSubmissionAsync(Guid invoiceCandidateId, CancellationToken cancellationToken)
             => Task.FromResult(HasSuccessfulSubmission);
