@@ -1,7 +1,10 @@
+using Pvm.Infrastructure.Persistence;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
+builder.Services.AddPvmPersistence(builder.Configuration);
 
 var app = builder.Build();
 

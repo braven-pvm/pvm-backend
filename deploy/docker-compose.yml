@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: pvm-postgres
+    environment:
+      POSTGRES_USER: pvm
+      POSTGRES_PASSWORD: pvm
+      POSTGRES_DB: pvm
+    ports:
+      - "54329:5432"
+    volumes:
+      - pvm-postgres:/var/lib/postgresql/data
+
+volumes:
+  pvm-postgres:
