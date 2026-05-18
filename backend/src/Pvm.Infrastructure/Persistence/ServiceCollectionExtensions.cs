@@ -10,8 +10,11 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("Pvm")
-            ?? throw new InvalidOperationException("Connection string 'Pvm' is required.");
+        var connectionString = configuration.GetConnectionString("Pvm");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException("Connection string 'Pvm' is required.");
+        }
 
         services.AddDbContext<PvmDbContext>(options => options.UseNpgsql(connectionString));
         return services;
