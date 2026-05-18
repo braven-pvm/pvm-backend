@@ -1,0 +1,27 @@
+# Build output
+bin/
+obj/
+dist/
+build/
+out/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# IDE/editor
+.vscode/
+.idea/
+*.user
+*.suo
+
+# OS/temp
+Thumbs.db
+Desktop.ini
+*.tmp
+*.log
+
+# Dependencies
+node_modules/
+packages/
