@@ -12,6 +12,8 @@ public sealed class InvoiceCandidateEntity
     public string? StoreDcGln { get; set; }
     public required string IdempotencyKey { get; set; }
     public required string Status { get; set; }
+    public string? SourceJson { get; set; }
+    public string? CanonicalJson { get; set; }
     public string? ValidationJson { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

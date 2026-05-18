@@ -7,9 +7,11 @@ public sealed class InvoiceSubmissionAttemptEntity
     public required string InitiatedBy { get; set; }
     public required string InitiationMode { get; set; }
     public required string Status { get; set; }
+    public string? RequestPayload { get; set; }
     public string? RequestPayloadLocation { get; set; }
     public string? RequestPayloadHash { get; set; }
     public int? ResponseStatusCode { get; set; }
+    public string? ResponsePayload { get; set; }
     public string? ResponsePayloadLocation { get; set; }
     public string? ResponsePayloadHash { get; set; }
     public string? ErrorMessage { get; set; }

@@ -123,6 +123,14 @@ a {
   cursor: not-allowed;
 }
 
+.back-link {
+  color: var(--accent);
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
 .summary-grid,
 .metric-strip {
   display: grid;
@@ -249,6 +257,93 @@ td {
   color: var(--text);
 }
 
+.table-action {
+  text-align: right;
+}
+
+.table-action a {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.status-pill {
+  background: #e8f3ec;
+  border: 1px solid #bad8c4;
+  border-radius: 999px;
+  color: var(--accent);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  min-height: 26px;
+  padding: 4px 10px;
+}
+
+.detail-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.6fr);
+  margin-bottom: 18px;
+}
+
+.detail-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 22px;
+}
+
+.detail-panel h2 {
+  color: var(--surface-strong);
+  font-size: 16px;
+  margin: 0 0 18px;
+}
+
+dl {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+}
+
+dl div {
+  display: grid;
+  gap: 4px;
+}
+
+dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+dd {
+  color: var(--surface-strong);
+  font-size: 15px;
+  font-weight: 650;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.detail-section {
+  margin-top: 18px;
+}
+
+.xml-preview {
+  background: #0f172a;
+  color: #e5edf6;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  padding: 20px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 @media (max-width: 760px) {
   .app-header,
   .page-heading {
@@ -270,11 +365,51 @@ td {
   }
 
   .summary-grid,
-  .metric-strip {
+  .metric-strip,
+  .detail-grid {
     grid-template-columns: 1fr;
   }
 
   .button {
     width: 100%;
+  }
+
+  table,
+  thead,
+  tbody,
+  tr,
+  th,
+  td {
+    display: block;
+  }
+
+  thead {
+    display: none;
+  }
+
+  tr {
+    border-bottom: 1px solid var(--border);
+    padding: 12px 0;
+  }
+
+  td {
+    border-bottom: 0;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: 112px minmax(0, 1fr);
+    padding: 8px 20px;
+  }
+
+  td::before {
+    color: var(--muted);
+    content: attr(data-label);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .table-action {
+    text-align: left;
   }
 }

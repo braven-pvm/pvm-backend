@@ -1,0 +1,35 @@
+{
+  "supplierGln": "6001001000001",
+  "storeDcGln": "6001002000008",
+  "invoice": {
+    "id": "ACU-INV-000342",
+    "invoiceNumber": "INV342699282",
+    "status": "Released",
+    "customerAccount": "SHOPRITE",
+    "customerLocation": "SHOPRITE-DC-CENTURION",
+    "customerOrder": "PO4500123456",
+    "currencyCode": "ZAR",
+    "countryCode": "ZA",
+    "invoiceDate": "2026-05-18T08:30:00+02:00",
+    "totalExcludingTax": 1000.00,
+    "totalIncludingTax": 1150.00,
+    "totalTax": 150.00,
+    "lines": [
+      {
+        "lineNumber": 1,
+        "inventoryId": "SKU-CASE-001",
+        "gtin": "16001069205048",
+        "description": "PVM sample case item",
+        "quantity": 10,
+        "uom": "EA",
+        "packSize": 1,
+        "unitAmountExcludingTax": 100.00,
+        "unitAmountIncludingTax": 115.00,
+        "taxAmount": 15.00,
+        "taxCategoryCode": "STANDARD",
+        "taxPercentage": 15.00,
+        "isCatchWeight": false
+      }
+    ]
+  }
+}

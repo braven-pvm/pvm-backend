@@ -20,6 +20,9 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.HasIndex(candidate => candidate.IdempotencyKey).IsUnique();
             entity.Property(candidate => candidate.IdempotencyKey).HasMaxLength(512);
             entity.Property(candidate => candidate.Status).HasMaxLength(64);
+            entity.Property(candidate => candidate.SourceJson).HasColumnType("jsonb");
+            entity.Property(candidate => candidate.CanonicalJson).HasColumnType("jsonb");
+            entity.Property(candidate => candidate.ValidationJson).HasColumnType("jsonb");
         });
 
         modelBuilder.Entity<InvoiceSubmissionAttemptEntity>(entity =>
@@ -33,6 +36,8 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
                 .HasForeignKey(attempt => attempt.InvoiceCandidateId)
                 .OnDelete(DeleteBehavior.Restrict);
             entity.Property(attempt => attempt.Status).HasMaxLength(64);
+            entity.Property(attempt => attempt.RequestPayload).HasColumnType("text");
+            entity.Property(attempt => attempt.ResponsePayload).HasColumnType("text");
             entity.Property(attempt => attempt.FailureClassification).HasMaxLength(128);
             entity.Property(attempt => attempt.RecommendedFixLocation).HasMaxLength(128);
             entity.Property(attempt => attempt.ResponsibleRole).HasMaxLength(128);

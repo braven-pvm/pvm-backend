@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Pvm.Application.Submissions;
+using Pvm.Infrastructure.Persistence.Repositories;
 
 namespace Pvm.Infrastructure.Persistence;
 
@@ -17,6 +19,7 @@ public static class ServiceCollectionExtensions
         }
 
         services.AddDbContext<PvmDbContext>(options => options.UseNpgsql(connectionString));
+        services.AddScoped<IInvoiceCandidateRepository, EfInvoiceCandidateRepository>();
         return services;
     }
 }

@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { refreshCandidatesAction } from "../actions";
 import { getInvoiceCandidates } from "../../src/api/client";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +18,8 @@ export default async function InvoiceCandidatesPage() {
             Shoprite submission.
           </p>
         </div>
-        <form>
-          <button className="button" formAction="/api/refresh" disabled>
+        <form action={refreshCandidatesAction}>
+          <button className="button" type="submit">
             Refresh queue
           </button>
         </form>
@@ -57,15 +59,25 @@ export default async function InvoiceCandidatesPage() {
               <tr>
                 <th>Invoice</th>
                 <th>Customer</th>
+                <th>DC</th>
                 <th>Status</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              {candidates.map((candidate, index) => (
-                <tr key={candidate.id ?? index}>
-                  <td>{candidate.invoiceNumber ?? candidate.id ?? "Unknown"}</td>
-                  <td>{candidate.customerName ?? "Unmapped"}</td>
-                  <td>{candidate.status ?? "Pending validation"}</td>
+              {candidates.map((candidate) => (
+                <tr key={candidate.id}>
+                  <td data-label="Invoice">{candidate.invoiceNumber}</td>
+                  <td data-label="Customer">{candidate.customerAccount}</td>
+                  <td data-label="DC">
+                    {candidate.customerLocation ?? candidate.storeDcGln ?? "Unmapped"}
+                  </td>
+                  <td data-label="Status">
+                    <span className="status-pill">{candidate.status}</span>
+                  </td>
+                  <td className="table-action" data-label="Action">
+                    <Link href={`/invoices/${candidate.id}`}>Open</Link>
+                  </td>
                 </tr>
               ))}
             </tbody>
