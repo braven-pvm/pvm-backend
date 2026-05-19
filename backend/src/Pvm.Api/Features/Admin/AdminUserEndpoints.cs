@@ -28,6 +28,7 @@ public static class AdminUserEndpoints
         CancellationToken cancellationToken)
     {
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+        await dbContext.EnsureAuthSchemaAsync(cancellationToken);
         var users = await dbContext.AppUsers
             .AsNoTracking()
             .OrderBy(user => user.Email)
@@ -52,6 +53,7 @@ public static class AdminUserEndpoints
         CancellationToken cancellationToken)
     {
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+        await dbContext.EnsureAuthSchemaAsync(cancellationToken);
         var email = NormalizeEmail(request.Email);
         if (email is null)
         {
@@ -103,6 +105,7 @@ public static class AdminUserEndpoints
         CancellationToken cancellationToken)
     {
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+        await dbContext.EnsureAuthSchemaAsync(cancellationToken);
         var user = await dbContext.AppUsers.FindAsync([id], cancellationToken);
         if (user is null)
         {
@@ -157,6 +160,7 @@ public static class AdminUserEndpoints
         CancellationToken cancellationToken)
     {
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+        await dbContext.EnsureAuthSchemaAsync(cancellationToken);
         var user = await dbContext.AppUsers.FindAsync([id], cancellationToken);
         if (user is null)
         {

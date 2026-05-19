@@ -26,6 +26,7 @@ public sealed class AppUserClaimsMiddleware(
         }
 
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+        await dbContext.EnsureAuthSchemaAsync(cancellationToken);
 
         var identity = ResolveIdentity(context.User);
         if (identity.Email is null && identity.ObjectId is null)
