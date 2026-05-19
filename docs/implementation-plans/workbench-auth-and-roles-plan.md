@@ -53,7 +53,9 @@ Initial role rules:
 
 User status rules:
 
-- A newly signed-in Microsoft user has no access until an app `Admin` grants a role, unless they match the bootstrap admin allowlist.
+- Only pre-authorized users can access the workbench after Microsoft sign-in.
+- A signed-in Microsoft user that is not pre-authorized is denied access and is not shown the operational console.
+- A pre-authorized user can be created by an app `Admin`, or by the bootstrap admin allowlist.
 - Disabled users cannot access the workbench or API even if Microsoft sign-in succeeds.
 - Role changes take effect on the next request/session refresh.
 
@@ -104,6 +106,7 @@ Bootstrap:
 - Configure one or more bootstrap admin emails/object IDs via Key Vault/Container Apps config.
 - On first sign-in, if the identity matches the bootstrap admin config, create or update the user as `Admin`.
 - After bootstrap, all normal role changes happen in the admin console.
+- Users not created by bootstrap or an Admin are denied after Microsoft sign-in.
 
 ## Architecture
 
@@ -193,7 +196,7 @@ Acceptance:
 
 - Anonymous users cannot access `/invoices`.
 - Authenticated users can access allowed pages.
-- Authenticated users with no app role see an access-pending/blocked page.
+- Authenticated users that are not pre-authorized are denied and cannot access the console.
 - Role restrictions are reflected in UI controls.
 
 ### Slice 3: API JWT And Role Policies
@@ -284,7 +287,7 @@ Deployment:
 - Do not connect real invoice/customer data until auth is live in QA.
 - Do not rely only on hidden buttons; API policies must enforce authorization.
 - Do not make Azure group membership the day-to-day admin surface for PVM roles.
-- Do not grant access to every tenant user by default; default should be access-pending/blocked.
+- Do not grant access to every tenant user by default; default should be denied unless pre-authorized.
 - Keep local development bypass impossible in QA/prod.
 
 ## Open Decisions
@@ -292,5 +295,5 @@ Deployment:
 1. Should we use Microsoft Entra ID as recommended?
 2. Confirm app-managed roles in PostgreSQL rather than Entra groups.
 3. Who are the bootstrap Admin users by email/object ID?
-4. Should any Microsoft tenant user be allowed to request access, or should only pre-authorized emails be able to sign in?
+4. Decision: only pre-authorized users may access the console after Microsoft sign-in.
 5. Should local development use Entra sign-in or a development-only auth bypass?
