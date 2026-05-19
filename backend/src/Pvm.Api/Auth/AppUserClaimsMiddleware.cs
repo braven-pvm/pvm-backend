@@ -9,7 +9,8 @@ namespace Pvm.Api.Auth;
 
 public sealed class AppUserClaimsMiddleware(
     RequestDelegate next,
-    IOptions<AuthOptions> authOptions)
+    IOptions<AuthOptions> authOptions,
+    ILogger<AppUserClaimsMiddleware> logger)
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
@@ -31,6 +32,7 @@ public sealed class AppUserClaimsMiddleware(
         var identity = ResolveIdentity(context.User);
         if (identity.Email is null && identity.ObjectId is null)
         {
+            logger.LogWarning("Authenticated principal did not include an email or Entra object ID.");
             await next(context);
             return;
         }
@@ -38,6 +40,12 @@ public sealed class AppUserClaimsMiddleware(
         var now = DateTimeOffset.UtcNow;
         var user = await FindUserAsync(dbContext, identity, cancellationToken);
         var isBootstrapAdmin = IsBootstrapAdmin(identity);
+        logger.LogInformation(
+            "Resolved authenticated principal. Email: {Email}; ObjectIdMatch: {ObjectIdMatch}; BootstrapAdmin: {BootstrapAdmin}; ExistingUser: {ExistingUser}",
+            identity.Email,
+            identity.ObjectId is not null,
+            isBootstrapAdmin,
+            user is not null);
 
         if (user is null && isBootstrapAdmin)
         {
@@ -72,6 +80,7 @@ public sealed class AppUserClaimsMiddleware(
                 CreatedAt = now
             });
             await dbContext.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Bootstrap admin app user created for {Email}.", user.Email);
         }
         else if (user is not null)
         {
@@ -104,6 +113,7 @@ public sealed class AppUserClaimsMiddleware(
             if (changed)
             {
                 await dbContext.SaveChangesAsync(cancellationToken);
+                logger.LogInformation("App user login metadata updated for {Email}.", user.Email);
             }
         }
 

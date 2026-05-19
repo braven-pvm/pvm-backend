@@ -462,6 +462,10 @@ resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
               value: authApiScope
             }
             {
+              name: 'AUTH_DEBUG'
+              value: 'true'
+            }
+            {
               name: 'NEXTAUTH_URL'
               value: workbenchPublicUrl
             }

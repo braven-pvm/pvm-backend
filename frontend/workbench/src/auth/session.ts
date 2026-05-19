@@ -22,6 +22,10 @@ export async function getApiAuthHeaders(): Promise<Record<string, string>> {
 
   const session = await getServerSession(authOptions);
   if (!session?.accessToken) {
+    console.warn("auth.headers.missing-access-token", {
+      hasSession: Boolean(session),
+      email: session?.user?.email,
+    });
     return {};
   }
 
@@ -41,6 +45,7 @@ export async function requireWorkbenchUser(callbackPath = "/invoices"): Promise<
     headers,
     cache: "no-store",
   });
+  console.info("auth.me.response", { status: response.status });
 
   if (response.status === 401) {
     redirect(signInPath(callbackPath));

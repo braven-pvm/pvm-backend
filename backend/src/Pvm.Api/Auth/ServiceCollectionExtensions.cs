@@ -64,6 +64,32 @@ public static class ServiceCollectionExtensions
                     ],
                     RoleClaimType = AppAuthClaims.Role
                 };
+                options.Events = new JwtBearerEvents
+                {
+                    OnAuthenticationFailed = context =>
+                    {
+                        var logger = context.HttpContext.RequestServices
+                            .GetRequiredService<ILoggerFactory>()
+                            .CreateLogger("Pvm.Api.Auth.JwtBearer");
+                        logger.LogWarning(
+                            context.Exception,
+                            "JWT authentication failed for {Path}.",
+                            context.HttpContext.Request.Path);
+                        return Task.CompletedTask;
+                    },
+                    OnChallenge = context =>
+                    {
+                        var logger = context.HttpContext.RequestServices
+                            .GetRequiredService<ILoggerFactory>()
+                            .CreateLogger("Pvm.Api.Auth.JwtBearer");
+                        logger.LogWarning(
+                            "JWT challenge for {Path}. Error: {Error}; Description: {ErrorDescription}",
+                            context.HttpContext.Request.Path,
+                            context.Error,
+                            context.ErrorDescription);
+                        return Task.CompletedTask;
+                    }
+                };
             });
         }
 
