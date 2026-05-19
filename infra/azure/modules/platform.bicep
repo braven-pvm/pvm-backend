@@ -463,7 +463,7 @@ resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
             }
             {
               name: 'AUTH_DEBUG'
-              value: 'true'
+              value: 'false'
             }
             {
               name: 'NEXTAUTH_URL'

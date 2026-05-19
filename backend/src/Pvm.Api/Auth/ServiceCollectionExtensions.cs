@@ -57,6 +57,11 @@ public static class ServiceCollectionExtensions
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuer = true,
+                    ValidIssuers =
+                    [
+                        $"https://login.microsoftonline.com/{authOptions.TenantId}/v2.0",
+                        $"https://sts.windows.net/{authOptions.TenantId}/"
+                    ],
                     ValidAudiences =
                     [
                         authOptions.Audience,
