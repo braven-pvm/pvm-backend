@@ -15,8 +15,8 @@ type InvoiceDetailPageProps = {
 export default async function InvoiceDetailPage({
   params,
 }: InvoiceDetailPageProps) {
-  const user = await requireWorkbenchUser();
   const { id } = await params;
+  const user = await requireWorkbenchUser(`/invoices/${id}`);
   const candidate = await loadCandidate(id);
   const invoice = candidate.canonicalInvoice;
   const canWrite = hasAnyRole(user, ["Admin", "Operator"]);

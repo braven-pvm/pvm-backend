@@ -30,10 +30,10 @@ export async function getApiAuthHeaders(): Promise<Record<string, string>> {
   };
 }
 
-export async function requireWorkbenchUser(): Promise<WorkbenchUser> {
+export async function requireWorkbenchUser(callbackPath = "/invoices"): Promise<WorkbenchUser> {
   const headers = await getApiAuthHeaders();
   if (Object.keys(headers).length === 0) {
-    redirect("/api/auth/signin");
+    redirect(signInPath(callbackPath));
   }
 
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000";
@@ -43,7 +43,7 @@ export async function requireWorkbenchUser(): Promise<WorkbenchUser> {
   });
 
   if (response.status === 401) {
-    redirect("/api/auth/signin");
+    redirect(signInPath(callbackPath));
   }
 
   if (response.status === 403) {
@@ -63,4 +63,14 @@ export async function requireWorkbenchUser(): Promise<WorkbenchUser> {
 
 export function hasAnyRole(user: WorkbenchUser, roles: string[]) {
   return roles.some((role) => user.roles.includes(role));
+}
+
+function signInPath(callbackPath: string) {
+  return `/sign-in?callbackUrl=${encodeURIComponent(normalizeCallbackPath(callbackPath))}`;
+}
+
+function normalizeCallbackPath(callbackPath: string) {
+  return callbackPath.startsWith("/") && !callbackPath.startsWith("//")
+    ? callbackPath
+    : "/invoices";
 }

@@ -6,7 +6,7 @@ import { hasAnyRole, requireWorkbenchUser } from "../../src/auth/session";
 export const dynamic = "force-dynamic";
 
 export default async function InvoiceCandidatesPage() {
-  const user = await requireWorkbenchUser();
+  const user = await requireWorkbenchUser("/invoices");
   const candidates = await getInvoiceCandidates();
   const candidateCount = candidates.length;
   const canWrite = hasAnyRole(user, ["Admin", "Operator"]);

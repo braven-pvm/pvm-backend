@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 const roles = ["Admin", "Operator", "Viewer"];
 
 export default async function UsersPage() {
-  const user = await requireWorkbenchUser();
+  const user = await requireWorkbenchUser("/admin/users");
   if (!hasAnyRole(user, ["Admin"])) {
     return (
       <main className="page-shell">

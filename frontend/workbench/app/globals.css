@@ -354,6 +354,46 @@ dd {
   margin-top: 18px;
 }
 
+.auth-shell {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: calc(100vh - 64px);
+  padding: 32px;
+}
+
+.auth-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  max-width: 420px;
+  padding: 28px;
+  width: 100%;
+}
+
+.auth-panel h1 {
+  color: var(--surface-strong);
+  font-size: 26px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.auth-panel p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 10px 0 20px;
+}
+
+.auth-error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #991b1b !important;
+  padding: 10px 12px;
+}
+
 .xml-preview {
   background: #0f172a;
   color: #e5edf6;

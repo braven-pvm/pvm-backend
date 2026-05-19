@@ -39,7 +39,7 @@ export default async function RootLayout({
                 ) : null}
               </>
             ) : (
-              <Link href="/api/auth/signin">Sign in</Link>
+              <Link href="/sign-in?callbackUrl=/invoices">Sign in</Link>
             )}
           </div>
         </header>
