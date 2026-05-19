@@ -22,6 +22,12 @@ param monthlyBudgetAmountUsd int = 100
 @description('Email address for budget alerts.')
 param alertEmail string
 
+@description('API container image tag to deploy.')
+param apiImageTag string = 'qa-latest'
+
+@description('Workbench container image tag to deploy.')
+param workbenchImageTag string = 'qa-latest'
+
 var tags = {
   Project: 'PVM Integrations'
   Environment: toUpper(environmentName)
@@ -45,6 +51,8 @@ module platform 'modules/platform.bicep' = {
     environmentName: environmentName
     ownerObjectId: ownerObjectId
     postgresAdminPassword: postgresAdminPassword
+    apiImageTag: apiImageTag
+    workbenchImageTag: workbenchImageTag
     tags: tags
   }
 }
@@ -91,3 +99,5 @@ output postgresFullyQualifiedDomainName string = platform.outputs.postgresFullyQ
 output storageAccountName string = platform.outputs.storageAccountName
 output serviceBusNamespaceName string = platform.outputs.serviceBusNamespaceName
 output userAssignedIdentityId string = platform.outputs.userAssignedIdentityId
+output apiUrl string = platform.outputs.apiUrl
+output workbenchUrl string = platform.outputs.workbenchUrl

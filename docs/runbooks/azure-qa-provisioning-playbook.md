@@ -90,6 +90,23 @@ Deployment notes:
 - The QA PostgreSQL firewall currently allows public access for early operator testing. Tighten this before staging/production data is connected.
 - The workbench is public and unauthenticated. Do not connect real customer/invoice data until authentication and roles are in place.
 
+## CI/CD Baseline
+
+The QA deployment workflow is tracked in:
+
+- `.github/workflows/deploy-qa.yml`
+- `docs/runbooks/github-azure-oidc-qa.md`
+
+The workflow uses GitHub OIDC, not client secrets. It builds and pushes API/workbench images, deploys Bicep with the pushed image tag, and smoke-tests the deployed QA URLs.
+
+The API and workbench Container Apps are now declared in `infra/azure/modules/platform.bicep`. Manual `az containerapp create` commands remain below as historical/bootstrap reference only.
+
+Before real Acumatica or Shoprite data is connected, implement workbench authentication and roles:
+
+- `Admin`: full access, including configuration and replay controls.
+- `Operator`: refresh, inspect, select, and submit invoice candidates.
+- `Viewer`: read-only candidate, payload, and status visibility.
+
 ## Cost Guardrails
 
 Initial expected monthly cost:

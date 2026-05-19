@@ -244,7 +244,6 @@ Tracing:
 
 ## Current Repo Gaps
 
-- no GitHub Actions CI/CD pipeline yet
 - no EF migration files yet
 - no Service Bus worker yet
 - no Blob Storage payload archive yet

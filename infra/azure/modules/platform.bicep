@@ -5,11 +5,16 @@ param ownerObjectId string
 @secure()
 param postgresAdminPassword string
 
+param apiImageTag string = 'qa-latest'
+param workbenchImageTag string = 'qa-latest'
+
 param tags object
 
 var suffix = environmentName
 var acrName = 'acrpvmintegrations${suffix}'
 var acrLocation = 'westeurope'
+var apiContainerAppName = 'ca-pvm-api-${suffix}'
+var workbenchContainerAppName = 'ca-pvm-workbench-${suffix}'
 var logName = 'log-pvm-integrations-${suffix}'
 var appInsightsName = 'appi-pvm-integrations-${suffix}'
 var containerAppsEnvironmentName = 'cae-pvm-integrations-${suffix}'
@@ -20,6 +25,7 @@ var serviceBusNamespaceName = 'sb-pvm-integrations-${suffix}'
 var postgresServerName = 'psql-pvm-integrations-${suffix}'
 var postgresAdminUser = 'pvmadmin'
 var databaseName = 'pvm'
+var pvmConnectionString = 'Host=${postgres.properties.fullyQualifiedDomainName};Port=5432;Database=${databaseName};Username=${postgresAdminUser};Password=${postgresAdminPassword};Ssl Mode=Require;Trust Server Certificate=true'
 
 var acrPullRoleDefinitionId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
 var keyVaultSecretsOfficerRoleDefinitionId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')
@@ -265,7 +271,7 @@ resource connectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' =
   parent: keyVault
   name: 'connectionstrings--pvm'
   properties: {
-    value: 'Host=${postgres.properties.fullyQualifiedDomainName};Port=5432;Database=${databaseName};Username=${postgresAdminUser};Password=${postgresAdminPassword};Ssl Mode=Require;Trust Server Certificate=true'
+    value: pvmConnectionString
   }
   dependsOn: [
     ownerKeyVaultRole
@@ -283,6 +289,130 @@ resource payloadContainerSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' =
   ]
 }
 
+resource apiContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
+  name: apiContainerAppName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identity.id}': {}
+    }
+  }
+  properties: {
+    managedEnvironmentId: containerAppsEnvironment.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: true
+        targetPort: 8080
+        transport: 'Auto'
+        allowInsecure: false
+      }
+      registries: [
+        {
+          server: acr.properties.loginServer
+          identity: identity.id
+        }
+      ]
+      secrets: [
+        {
+          name: 'connectionstrings-pvm'
+          value: pvmConnectionString
+        }
+      ]
+    }
+    template: {
+      scale: {
+        minReplicas: 0
+        maxReplicas: 2
+      }
+      containers: [
+        {
+          name: apiContainerAppName
+          image: '${acr.properties.loginServer}/pvm-api:${apiImageTag}'
+          env: [
+            {
+              name: 'ASPNETCORE_ENVIRONMENT'
+              value: 'Development'
+            }
+            {
+              name: 'ConnectionStrings__Pvm'
+              secretRef: 'connectionstrings-pvm'
+            }
+          ]
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    identityAcrPullRole
+  ]
+}
+
+resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
+  name: workbenchContainerAppName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identity.id}': {}
+    }
+  }
+  properties: {
+    managedEnvironmentId: containerAppsEnvironment.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: true
+        targetPort: 3000
+        transport: 'Auto'
+        allowInsecure: false
+      }
+      registries: [
+        {
+          server: acr.properties.loginServer
+          identity: identity.id
+        }
+      ]
+    }
+    template: {
+      scale: {
+        minReplicas: 0
+        maxReplicas: 2
+      }
+      containers: [
+        {
+          name: workbenchContainerAppName
+          image: '${acr.properties.loginServer}/pvm-workbench:${workbenchImageTag}'
+          env: [
+            {
+              name: 'NODE_ENV'
+              value: 'production'
+            }
+            {
+              name: 'NEXT_PUBLIC_API_BASE_URL'
+              value: 'https://${apiContainerApp.properties.configuration.ingress.fqdn}'
+            }
+          ]
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    identityAcrPullRole
+  ]
+}
+
 output acrName string = acr.name
 output acrLoginServer string = acr.properties.loginServer
 output containerAppsEnvironmentName string = containerAppsEnvironment.name
@@ -294,3 +424,5 @@ output storageAccountName string = storage.name
 output serviceBusNamespaceName string = serviceBus.name
 output userAssignedIdentityId string = identity.id
 output userAssignedIdentityClientId string = identity.properties.clientId
+output apiUrl string = 'https://${apiContainerApp.properties.configuration.ingress.fqdn}'
+output workbenchUrl string = 'https://${workbenchContainerApp.properties.configuration.ingress.fqdn}'

@@ -1,0 +1,136 @@
+name: Deploy QA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-qa.yml"
+      - "backend/**"
+      - "frontend/workbench/**"
+      - "infra/azure/**"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-qa
+  cancel-in-progress: false
+
+env:
+  AZURE_RESOURCE_GROUP: rg-pvm-integrations-qa
+  AZURE_LOCATION: southafricanorth
+  ACR_NAME: acrpvmintegrationsqa
+  ACR_LOGIN_SERVER: acrpvmintegrationsqa.azurecr.io
+  KEY_VAULT_NAME: kv-pvm-int-qa
+  API_IMAGE: pvm-api
+  WORKBENCH_IMAGE: pvm-workbench
+
+jobs:
+  deploy:
+    name: Build and deploy QA
+    runs-on: ubuntu-latest
+    environment: qa
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/workbench/package-lock.json
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify backend
+        run: dotnet test backend/Pvm.sln --configuration Release
+
+      - name: Verify workbench
+        working-directory: frontend/workbench
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+
+      - name: Resolve deployment values
+        id: values
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_tag="qa-${GITHUB_SHA::12}"
+          connection_string="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name connectionstrings--pvm --query value -o tsv)"
+          postgres_password="$(printf '%s' "$connection_string" | sed -n 's/.*Password=\([^;]*\).*/\1/p')"
+
+          if [ -z "$postgres_password" ]; then
+            echo "Could not extract PostgreSQL password from Key Vault connection string." >&2
+            exit 1
+          fi
+
+          echo "::add-mask::$postgres_password"
+
+          {
+            echo "image_tag=$image_tag"
+            echo "postgres_password<<EOF"
+            echo "$postgres_password"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push API image
+        run: |
+          az acr login --name "$ACR_NAME"
+          docker build \
+            -t "$ACR_LOGIN_SERVER/$API_IMAGE:${{ steps.values.outputs.image_tag }}" \
+            -t "$ACR_LOGIN_SERVER/$API_IMAGE:qa-latest" \
+            -f backend/src/Pvm.Api/Dockerfile .
+          docker push "$ACR_LOGIN_SERVER/$API_IMAGE:${{ steps.values.outputs.image_tag }}"
+          docker push "$ACR_LOGIN_SERVER/$API_IMAGE:qa-latest"
+
+      - name: Build and push workbench image
+        run: |
+          docker build \
+            -t "$ACR_LOGIN_SERVER/$WORKBENCH_IMAGE:${{ steps.values.outputs.image_tag }}" \
+            -t "$ACR_LOGIN_SERVER/$WORKBENCH_IMAGE:qa-latest" \
+            -f frontend/workbench/Dockerfile frontend/workbench
+          docker push "$ACR_LOGIN_SERVER/$WORKBENCH_IMAGE:${{ steps.values.outputs.image_tag }}"
+          docker push "$ACR_LOGIN_SERVER/$WORKBENCH_IMAGE:qa-latest"
+
+      - name: Deploy Bicep
+        run: |
+          az deployment sub create \
+            --name "pvm-integrations-qa-${{ github.run_number }}" \
+            --location "$AZURE_LOCATION" \
+            --template-file infra/azure/main.bicep \
+            --parameters infra/azure/main.parameters.qa.json \
+            --parameters postgresAdminPassword='${{ steps.values.outputs.postgres_password }}' \
+            --parameters apiImageTag='${{ steps.values.outputs.image_tag }}' \
+            --parameters workbenchImageTag='${{ steps.values.outputs.image_tag }}' \
+            --only-show-errors
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          api_url="$(az containerapp show -g "$AZURE_RESOURCE_GROUP" -n ca-pvm-api-qa --query "properties.configuration.ingress.fqdn" -o tsv)"
+          workbench_url="$(az containerapp show -g "$AZURE_RESOURCE_GROUP" -n ca-pvm-workbench-qa --query "properties.configuration.ingress.fqdn" -o tsv)"
+
+          curl --fail --show-error --silent "https://$api_url/health"
+          curl --fail --show-error --silent "https://$api_url/api/invoices/candidates" | grep "INV342699282"
+          curl --fail --show-error --silent "https://$workbench_url/invoices" | grep "INV342699282"
+
+          echo "API: https://$api_url"
+          echo "Workbench: https://$workbench_url"
