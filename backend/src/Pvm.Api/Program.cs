@@ -1,4 +1,7 @@
 using System.Text.Json.Serialization;
+using Pvm.Api.Auth;
+using Pvm.Api.Features.Admin;
+using Pvm.Api.Features.Auth;
 using Pvm.Api.Features.Invoices;
 using Pvm.Api.Features.Submissions;
 using Pvm.Application.Submissions;
@@ -13,6 +16,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 builder.Services.AddPvmPersistence(builder.Configuration);
+builder.Services.AddPvmAuth(builder.Configuration, builder.Environment);
 builder.Services.AddScoped<SubmitShopriteInvoiceHandler>();
 builder.Services.AddSingleton<IShopriteInvoiceClient, LocalShopriteInvoiceClient>();
 
@@ -26,8 +30,14 @@ if (app.Environment.IsDevelopment())
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
     .WithName("Health");
 
+app.UseAuthentication();
+app.UseMiddleware<AppUserClaimsMiddleware>();
+app.UseAuthorization();
+
 app.MapInvoiceEndpoints();
 app.MapSubmissionEndpoints();
+app.MapAdminUserEndpoints();
+app.MapAuthEndpoints();
 
 app.Run();
 

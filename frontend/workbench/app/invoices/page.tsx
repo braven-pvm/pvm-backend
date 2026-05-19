@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { refreshCandidatesAction } from "../actions";
 import { getInvoiceCandidates } from "../../src/api/client";
+import { hasAnyRole, requireWorkbenchUser } from "../../src/auth/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function InvoiceCandidatesPage() {
+  const user = await requireWorkbenchUser();
   const candidates = await getInvoiceCandidates();
   const candidateCount = candidates.length;
+  const canWrite = hasAnyRole(user, ["Admin", "Operator"]);
 
   return (
     <main className="page-shell">
@@ -18,11 +21,17 @@ export default async function InvoiceCandidatesPage() {
             Shoprite submission.
           </p>
         </div>
-        <form action={refreshCandidatesAction}>
-          <button className="button" type="submit">
-            Refresh queue
+        {canWrite ? (
+          <form action={refreshCandidatesAction}>
+            <button className="button" type="submit">
+              Refresh queue
+            </button>
+          </form>
+        ) : (
+          <button className="button" type="button" disabled>
+            Read-only
           </button>
-        </form>
+        )}
       </section>
 
       <section className="metric-strip" aria-label="Invoice queue summary">

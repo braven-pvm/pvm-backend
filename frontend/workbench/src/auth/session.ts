@@ -1,0 +1,66 @@
+import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
+import { authOptions } from "./options";
+import { isDevelopmentBypass } from "./config";
+
+export type WorkbenchUser = {
+  id: string;
+  email: string;
+  displayName?: string;
+  roles: string[];
+  accessToken?: string;
+};
+
+export async function getApiAuthHeaders(): Promise<Record<string, string>> {
+  if (isDevelopmentBypass()) {
+    return {
+      "X-PVM-Dev-User-Email": "developer@pvm.co.za",
+      "X-PVM-Dev-User-ObjectId": "35425387-d19a-4e63-97b5-2165cce0032b",
+      "X-PVM-Dev-User-Name": "Marius Bloemhof",
+    };
+  }
+
+  const session = await getServerSession(authOptions);
+  if (!session?.accessToken) {
+    return {};
+  }
+
+  return {
+    Authorization: `Bearer ${session.accessToken}`,
+  };
+}
+
+export async function requireWorkbenchUser(): Promise<WorkbenchUser> {
+  const headers = await getApiAuthHeaders();
+  if (Object.keys(headers).length === 0) {
+    redirect("/api/auth/signin");
+  }
+
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000";
+  const response = await fetch(`${apiBaseUrl}/api/auth/me`, {
+    headers,
+    cache: "no-store",
+  });
+
+  if (response.status === 401) {
+    redirect("/api/auth/signin");
+  }
+
+  if (response.status === 403) {
+    redirect("/access-denied");
+  }
+
+  if (!response.ok) {
+    throw new Error(`Failed to load current user: ${response.status}`);
+  }
+
+  const user = (await response.json()) as WorkbenchUser;
+  return {
+    ...user,
+    accessToken: headers.Authorization,
+  };
+}
+
+export function hasAnyRole(user: WorkbenchUser, roles: string[]) {
+  return roles.some((role) => user.roles.includes(role));
+}

@@ -1,3 +1,4 @@
+using Pvm.Api.Auth;
 using Pvm.Application.Submissions;
 using Pvm.Infrastructure.Persistence;
 
@@ -9,7 +10,8 @@ public static class SubmissionEndpoints
     {
         var group = app.MapGroup("/api/invoices");
 
-        group.MapPost("/{id:guid}/submit", SubmitInvoiceAsync);
+        group.MapPost("/{id:guid}/submit", SubmitInvoiceAsync)
+            .RequireAuthorization("Invoices.Write");
         group.MapGet("/{id:guid}/attempts", async (
             Guid id,
             PvmDbContext dbContext,
@@ -32,7 +34,7 @@ public static class SubmissionEndpoints
                 });
 
             return Results.Ok(attempts);
-        });
+        }).RequireAuthorization("Invoices.Read");
 
         return app;
     }
@@ -41,12 +43,13 @@ public static class SubmissionEndpoints
         Guid id,
         PvmDbContext dbContext,
         SubmitShopriteInvoiceHandler handler,
+        CurrentAppUserAccessor currentUser,
         CancellationToken cancellationToken)
     {
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
 
         var result = await handler.HandleAsync(
-            new SubmitShopriteInvoiceCommand(id, "admin", "manual"),
+            new SubmitShopriteInvoiceCommand(id, currentUser.User?.Email ?? "unknown", "manual"),
             cancellationToken);
 
         return result.Status switch

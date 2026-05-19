@@ -1,3 +1,5 @@
+import { getApiAuthHeaders } from "../auth/session";
+
 const apiBaseUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000";
 
@@ -79,7 +81,9 @@ export type SubmitInvoiceResult = {
 export async function getInvoiceCandidates(): Promise<
   InvoiceCandidateSummary[]
 > {
+  const headers = await getApiAuthHeaders();
   const response = await fetch(`${apiBaseUrl}/api/invoices/candidates`, {
+    headers,
     cache: "no-store",
   });
 
@@ -95,7 +99,9 @@ export async function getInvoiceCandidates(): Promise<
 export async function getInvoiceCandidate(
   id: string,
 ): Promise<InvoiceCandidateDetail> {
+  const headers = await getApiAuthHeaders();
   const response = await fetch(`${apiBaseUrl}/api/invoices/candidates/${id}`, {
+    headers,
     cache: "no-store",
   });
 
@@ -107,8 +113,10 @@ export async function getInvoiceCandidate(
 }
 
 export async function refreshInvoiceCandidates(): Promise<InvoiceCandidateSummary> {
+  const headers = await getApiAuthHeaders();
   const response = await fetch(`${apiBaseUrl}/api/invoices/refresh`, {
     method: "POST",
+    headers,
     cache: "no-store",
   });
 
@@ -120,8 +128,10 @@ export async function refreshInvoiceCandidates(): Promise<InvoiceCandidateSummar
 }
 
 export async function submitInvoice(id: string): Promise<SubmitInvoiceResult> {
+  const headers = await getApiAuthHeaders();
   const response = await fetch(`${apiBaseUrl}/api/invoices/${id}/submit`, {
     method: "POST",
+    headers,
     cache: "no-store",
   });
   const result = (await response.json()) as SubmitInvoiceResult;

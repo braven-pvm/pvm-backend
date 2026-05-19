@@ -11,6 +11,12 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<AuditEventEntity> AuditEvents => Set<AuditEventEntity>();
 
+    public DbSet<AppUserEntity> AppUsers => Set<AppUserEntity>();
+
+    public DbSet<AppUserRoleEntity> AppUserRoles => Set<AppUserRoleEntity>();
+
+    public DbSet<AppUserAuditEventEntity> AppUserAuditEvents => Set<AppUserAuditEventEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<InvoiceCandidateEntity>(entity =>
@@ -48,6 +54,56 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.ToTable("audit_events");
             entity.HasKey(audit => audit.Id);
             entity.HasIndex(audit => new { audit.EntityType, audit.EntityId });
+        });
+
+        modelBuilder.Entity<AppUserEntity>(entity =>
+        {
+            entity.ToTable("app_users");
+            entity.HasKey(user => user.Id);
+            entity.HasIndex(user => user.Email).IsUnique();
+            entity.HasIndex(user => user.EntraObjectId).IsUnique();
+            entity.Property(user => user.Email).HasMaxLength(320);
+            entity.Property(user => user.EntraObjectId).HasMaxLength(128);
+            entity.Property(user => user.DisplayName).HasMaxLength(256);
+            entity.Property(user => user.Status).HasMaxLength(64);
+        });
+
+        modelBuilder.Entity<AppUserRoleEntity>(entity =>
+        {
+            entity.ToTable("app_user_roles");
+            entity.HasKey(role => role.Id);
+            entity.HasIndex(role => new { role.AppUserId, role.Role }).IsUnique();
+            entity.Property(role => role.Role).HasMaxLength(64);
+            entity
+                .HasOne<AppUserEntity>()
+                .WithMany()
+                .HasForeignKey(role => role.AppUserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity
+                .HasOne<AppUserEntity>()
+                .WithMany()
+                .HasForeignKey(role => role.GrantedByAppUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<AppUserAuditEventEntity>(entity =>
+        {
+            entity.ToTable("app_user_audit_events");
+            entity.HasKey(audit => audit.Id);
+            entity.HasIndex(audit => audit.TargetAppUserId);
+            entity.Property(audit => audit.Action).HasMaxLength(128);
+            entity.Property(audit => audit.BeforeJson).HasColumnType("jsonb");
+            entity.Property(audit => audit.AfterJson).HasColumnType("jsonb");
+            entity
+                .HasOne<AppUserEntity>()
+                .WithMany()
+                .HasForeignKey(audit => audit.ActorAppUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity
+                .HasOne<AppUserEntity>()
+                .WithMany()
+                .HasForeignKey(audit => audit.TargetAppUserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

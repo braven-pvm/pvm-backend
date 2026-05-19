@@ -28,6 +28,38 @@ param apiImageTag string = 'qa-latest'
 @description('Workbench container image tag to deploy.')
 param workbenchImageTag string = 'qa-latest'
 
+@description('Authentication mode for deployed container apps.')
+param authMode string = 'Entra'
+
+@description('Microsoft Entra tenant ID.')
+param authTenantId string = ''
+
+@description('Microsoft Entra API application client ID / API audience.')
+param authApiClientId string = ''
+
+@description('Microsoft Entra workbench application client ID.')
+param authWorkbenchClientId string = ''
+
+@secure()
+@description('Microsoft Entra workbench application client secret.')
+param authWorkbenchClientSecret string = ''
+
+@description('Microsoft Entra API access scope requested by the workbench.')
+param authApiScope string = ''
+
+@secure()
+@description('NextAuth secret for workbench session encryption.')
+param authNextAuthSecret string = ''
+
+@description('Bootstrap admin email address.')
+param authBootstrapAdminEmail string = ''
+
+@description('Bootstrap admin Entra object ID.')
+param authBootstrapAdminObjectId string = ''
+
+@description('Public workbench URL used by the auth callback.')
+param workbenchPublicUrl string = 'https://ca-pvm-workbench-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io'
+
 var tags = {
   Project: 'PVM Integrations'
   Environment: toUpper(environmentName)
@@ -53,6 +85,16 @@ module platform 'modules/platform.bicep' = {
     postgresAdminPassword: postgresAdminPassword
     apiImageTag: apiImageTag
     workbenchImageTag: workbenchImageTag
+    authMode: authMode
+    authTenantId: authTenantId
+    authApiClientId: authApiClientId
+    authWorkbenchClientId: authWorkbenchClientId
+    authWorkbenchClientSecret: authWorkbenchClientSecret
+    authApiScope: authApiScope
+    authNextAuthSecret: authNextAuthSecret
+    authBootstrapAdminEmail: authBootstrapAdminEmail
+    authBootstrapAdminObjectId: authBootstrapAdminObjectId
+    workbenchPublicUrl: workbenchPublicUrl
     tags: tags
   }
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { submitInvoiceAction } from "../../actions";
 import { getInvoiceCandidate } from "../../../src/api/client";
+import { hasAnyRole, requireWorkbenchUser } from "../../../src/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -14,9 +15,11 @@ type InvoiceDetailPageProps = {
 export default async function InvoiceDetailPage({
   params,
 }: InvoiceDetailPageProps) {
+  const user = await requireWorkbenchUser();
   const { id } = await params;
   const candidate = await loadCandidate(id);
   const invoice = candidate.canonicalInvoice;
+  const canWrite = hasAnyRole(user, ["Admin", "Operator"]);
 
   return (
     <main className="page-shell">
@@ -31,7 +34,7 @@ export default async function InvoiceDetailPage({
             {invoice?.customerLocation ?? invoice?.storeDcGln ?? "Unmapped DC"}
           </p>
         </div>
-        {candidate.canSubmit ? (
+        {candidate.canSubmit && canWrite ? (
           <form action={submitInvoiceAction}>
             <input name="id" type="hidden" value={candidate.id} />
             <button className="button" type="submit">
@@ -40,7 +43,7 @@ export default async function InvoiceDetailPage({
           </form>
         ) : (
           <button className="button" type="button" disabled>
-            Submission blocked
+            {canWrite ? "Submission blocked" : "Read-only"}
           </button>
         )}
       </section>

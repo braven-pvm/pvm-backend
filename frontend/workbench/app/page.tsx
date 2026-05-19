@@ -1,6 +1,9 @@
 import Link from "next/link";
+import { requireWorkbenchUser } from "../src/auth/session";
 
-export default function HomePage() {
+export default async function HomePage() {
+  await requireWorkbenchUser();
+
   return (
     <main className="page-shell">
       <section className="page-heading">

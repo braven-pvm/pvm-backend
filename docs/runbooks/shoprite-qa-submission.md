@@ -1,6 +1,6 @@
 # Shoprite QA Invoice Submission Runbook
 
-This runbook covers the QA-only Shoprite invoice upload slice. The current local vertical slice uses a sanitized fixture and a local Shoprite stub client. Do not treat it as production-ready until Acumatica staging extraction, Shoprite QA credentials, authentication, and payload storage are wired to real services.
+This runbook covers the QA-only Shoprite invoice upload slice. The current local vertical slice uses a sanitized fixture and a local Shoprite stub client. Do not treat it as production-ready until Acumatica staging extraction, Shoprite QA credentials, and payload storage are wired to real services. The QA workbench/API must remain protected by Microsoft Entra authentication and app-managed roles before real invoice/customer data is connected.
 
 ## Scope
 
@@ -262,7 +262,7 @@ For MVP hardening, verify every attempt records:
 
 - Real Acumatica staging connector is not wired to refresh yet.
 - Real Shoprite QA client is implemented in infrastructure but the API currently uses a local stub client for this slice.
-- Workbench authentication and roles are not implemented yet.
+- Workbench authentication and roles are implemented for QA through Microsoft Entra sign-in and app-managed roles.
 - Mapping admin pages for GLN, GTIN, UOM, pack, tax, and connection settings are not implemented yet.
 - Blob payload archive is not implemented yet.
 - Manual ambiguous-resolution actions are not implemented yet.

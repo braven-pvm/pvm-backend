@@ -79,8 +79,8 @@ Provisioning was run from branch `infra/azure-qa-baseline` on 2026-05-19.
 Smoke results:
 
 - API `/health` returned `{"status":"ok"}`.
-- API `/api/invoices/candidates` returned fixture invoice `INV342699282`.
-- Workbench `/invoices` returned HTTP 200 and rendered `INV342699282`.
+- Before authentication was enabled, API `/api/invoices/candidates` returned fixture invoice `INV342699282`.
+- Before authentication was enabled, workbench `/invoices` returned HTTP 200 and rendered `INV342699282`.
 
 Deployment notes:
 
@@ -88,7 +88,7 @@ Deployment notes:
 - Container Apps revisions were created with Azure CLI after the Bicep platform deployment. The next CI/CD slice should codify app revision updates or replace the CLI step with a deploy workflow.
 - Both app revisions use the user-assigned managed identity for ACR pull.
 - The QA PostgreSQL firewall currently allows public access for early operator testing. Tighten this before staging/production data is connected.
-- The workbench is public and unauthenticated. Do not connect real customer/invoice data until authentication and roles are in place.
+- The workbench must remain protected by Microsoft Entra authentication and app-managed roles before real customer/invoice data is connected.
 
 ## CI/CD Baseline
 
@@ -101,11 +101,13 @@ The workflow uses GitHub OIDC, not client secrets. It builds and pushes API/work
 
 The API and workbench Container Apps are now declared in `infra/azure/modules/platform.bicep`. Manual `az containerapp create` commands remain below as historical/bootstrap reference only.
 
-Before real Acumatica or Shoprite data is connected, implement workbench authentication and roles:
+Before real Acumatica or Shoprite data is connected, keep workbench authentication and roles enabled:
 
 - `Admin`: full access, including configuration and replay controls.
 - `Operator`: refresh, inspect, select, and submit invoice candidates.
 - `Viewer`: read-only candidate, payload, and status visibility.
+
+QA authentication uses Microsoft Entra sign-in with PVM app-managed authorization in PostgreSQL. Only pre-authorized users can reach the operational console after sign-in. Bootstrap admin is configured from Key Vault values for `developer@pvm.co.za` and Entra object ID `35425387-d19a-4e63-97b5-2165cce0032b`.
 
 ## Cost Guardrails
 

@@ -75,19 +75,58 @@ jobs:
           image_tag="qa-${GITHUB_SHA::12}"
           connection_string="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name connectionstrings--pvm --query value -o tsv)"
           postgres_password="$(printf '%s' "$connection_string" | sed -n 's/.*Password=\([^;]*\).*/\1/p')"
+          auth_tenant_id="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name auth--tenantid --query value -o tsv)"
+          auth_api_client_id="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name auth--api-clientid --query value -o tsv)"
+          auth_workbench_client_id="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name auth--workbench-clientid --query value -o tsv)"
+          auth_workbench_client_secret="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name auth--workbench-clientsecret --query value -o tsv)"
+          auth_api_scope="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name auth--apiscope --query value -o tsv)"
+          auth_nextauth_secret="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name auth--nextauthsecret --query value -o tsv)"
+          auth_bootstrap_admin_email="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name auth--bootstrapadminemails --query value -o tsv)"
+          auth_bootstrap_admin_object_id="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name auth--bootstrapadminobjectids --query value -o tsv)"
 
           if [ -z "$postgres_password" ]; then
             echo "Could not extract PostgreSQL password from Key Vault connection string." >&2
             exit 1
           fi
 
+          required_values=(
+            "auth_tenant_id"
+            "auth_api_client_id"
+            "auth_workbench_client_id"
+            "auth_workbench_client_secret"
+            "auth_api_scope"
+            "auth_nextauth_secret"
+            "auth_bootstrap_admin_email"
+            "auth_bootstrap_admin_object_id"
+          )
+          for value_name in "${required_values[@]}"; do
+            if [ -z "${!value_name}" ]; then
+              echo "Missing required auth deployment value: $value_name" >&2
+              exit 1
+            fi
+          done
+
           echo "::add-mask::$postgres_password"
+          echo "::add-mask::$auth_workbench_client_secret"
+          echo "::add-mask::$auth_nextauth_secret"
 
           {
             echo "image_tag=$image_tag"
             echo "postgres_password<<EOF"
             echo "$postgres_password"
             echo "EOF"
+            echo "auth_tenant_id=$auth_tenant_id"
+            echo "auth_api_client_id=$auth_api_client_id"
+            echo "auth_workbench_client_id=$auth_workbench_client_id"
+            echo "auth_workbench_client_secret<<EOF"
+            echo "$auth_workbench_client_secret"
+            echo "EOF"
+            echo "auth_api_scope=$auth_api_scope"
+            echo "auth_nextauth_secret<<EOF"
+            echo "$auth_nextauth_secret"
+            echo "EOF"
+            echo "auth_bootstrap_admin_email=$auth_bootstrap_admin_email"
+            echo "auth_bootstrap_admin_object_id=$auth_bootstrap_admin_object_id"
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push API image
@@ -119,6 +158,16 @@ jobs:
             --parameters postgresAdminPassword='${{ steps.values.outputs.postgres_password }}' \
             --parameters apiImageTag='${{ steps.values.outputs.image_tag }}' \
             --parameters workbenchImageTag='${{ steps.values.outputs.image_tag }}' \
+            --parameters authMode=Entra \
+            --parameters authTenantId='${{ steps.values.outputs.auth_tenant_id }}' \
+            --parameters authApiClientId='${{ steps.values.outputs.auth_api_client_id }}' \
+            --parameters authWorkbenchClientId='${{ steps.values.outputs.auth_workbench_client_id }}' \
+            --parameters authWorkbenchClientSecret='${{ steps.values.outputs.auth_workbench_client_secret }}' \
+            --parameters authApiScope='${{ steps.values.outputs.auth_api_scope }}' \
+            --parameters authNextAuthSecret='${{ steps.values.outputs.auth_nextauth_secret }}' \
+            --parameters authBootstrapAdminEmail='${{ steps.values.outputs.auth_bootstrap_admin_email }}' \
+            --parameters authBootstrapAdminObjectId='${{ steps.values.outputs.auth_bootstrap_admin_object_id }}' \
+            --parameters workbenchPublicUrl="https://ca-pvm-workbench-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io" \
             --only-show-errors
 
       - name: Smoke test
@@ -129,8 +178,17 @@ jobs:
           workbench_url="$(az containerapp show -g "$AZURE_RESOURCE_GROUP" -n ca-pvm-workbench-qa --query "properties.configuration.ingress.fqdn" -o tsv)"
 
           curl --fail --show-error --silent "https://$api_url/health"
-          curl --fail --show-error --silent "https://$api_url/api/invoices/candidates" | grep "INV342699282"
-          curl --fail --show-error --silent "https://$workbench_url/invoices" | grep "INV342699282"
+          candidates_status="$(curl --show-error --silent --output /dev/null --write-out "%{http_code}" "https://$api_url/api/invoices/candidates")"
+          if [ "$candidates_status" != "401" ]; then
+            echo "Expected anonymous invoice candidates request to return 401, got $candidates_status." >&2
+            exit 1
+          fi
+
+          workbench_status="$(curl --location --show-error --silent --output /dev/null --write-out "%{http_code}" "https://$workbench_url/invoices")"
+          if [ "$workbench_status" != "200" ]; then
+            echo "Expected workbench auth flow to resolve to a 200 sign-in page, got $workbench_status." >&2
+            exit 1
+          fi
 
           echo "API: https://$api_url"
           echo "Workbench: https://$workbench_url"

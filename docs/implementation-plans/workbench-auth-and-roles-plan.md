@@ -161,10 +161,11 @@ Store auth config in Key Vault / Container Apps secrets:
 
 ```text
 auth--tenantid
-auth--clientid
-auth--clientsecret
-auth--issuer
-auth--audience
+auth--api-clientid
+auth--workbench-clientid
+auth--workbench-clientsecret
+auth--apiscope
+auth--nextauthsecret
 auth--bootstrapadminemails
 auth--bootstrapadminobjectids
 ```
@@ -177,7 +178,7 @@ Do not commit auth secrets.
 
 Deliverables:
 
-- Confirm Entra tenant and user/group assignment model.
+- Confirm Entra tenant and app-managed role model.
 - Create app registrations.
 - Add required callback/logout URLs for QA.
 - Store required secrets in Key Vault.

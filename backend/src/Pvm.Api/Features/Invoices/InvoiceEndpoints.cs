@@ -18,10 +18,14 @@ public static class InvoiceEndpoints
     {
         var group = app.MapGroup("/api/invoices");
 
-        group.MapGet("/candidates", ListCandidatesAsync);
-        group.MapGet("/candidates/{id:guid}", GetCandidateAsync);
-        group.MapPost("/refresh", RefreshCandidatesAsync);
-        group.MapPost("/{id:guid}/revalidate", RevalidateCandidateAsync);
+        group.MapGet("/candidates", ListCandidatesAsync)
+            .RequireAuthorization("Invoices.Read");
+        group.MapGet("/candidates/{id:guid}", GetCandidateAsync)
+            .RequireAuthorization("Invoices.Read");
+        group.MapPost("/refresh", RefreshCandidatesAsync)
+            .RequireAuthorization("Invoices.Write");
+        group.MapPost("/{id:guid}/revalidate", RevalidateCandidateAsync)
+            .RequireAuthorization("Invoices.Write");
 
         return app;
     }

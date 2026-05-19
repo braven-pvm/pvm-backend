@@ -7,6 +7,22 @@ param postgresAdminPassword string
 
 param apiImageTag string = 'qa-latest'
 param workbenchImageTag string = 'qa-latest'
+param authMode string = 'Entra'
+param authTenantId string = ''
+param authApiClientId string = ''
+param authWorkbenchClientId string = ''
+
+@secure()
+param authWorkbenchClientSecret string = ''
+
+param authApiScope string = ''
+
+@secure()
+param authNextAuthSecret string = ''
+
+param authBootstrapAdminEmail string = ''
+param authBootstrapAdminObjectId string = ''
+param workbenchPublicUrl string
 
 param tags object
 
@@ -334,11 +350,31 @@ resource apiContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
           env: [
             {
               name: 'ASPNETCORE_ENVIRONMENT'
-              value: 'Development'
+              value: 'Production'
             }
             {
               name: 'ConnectionStrings__Pvm'
               secretRef: 'connectionstrings-pvm'
+            }
+            {
+              name: 'Auth__Mode'
+              value: authMode
+            }
+            {
+              name: 'Auth__TenantId'
+              value: authTenantId
+            }
+            {
+              name: 'Auth__Audience'
+              value: authApiClientId
+            }
+            {
+              name: 'Auth__BootstrapAdminEmails__0'
+              value: authBootstrapAdminEmail
+            }
+            {
+              name: 'Auth__BootstrapAdminObjectIds__0'
+              value: authBootstrapAdminObjectId
             }
           ]
           resources: {
@@ -380,6 +416,16 @@ resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
           identity: identity.id
         }
       ]
+      secrets: [
+        {
+          name: 'auth-entra-client-secret'
+          value: authWorkbenchClientSecret
+        }
+        {
+          name: 'auth-nextauth-secret'
+          value: authNextAuthSecret
+        }
+      ]
     }
     template: {
       scale: {
@@ -394,6 +440,34 @@ resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
             {
               name: 'NODE_ENV'
               value: 'production'
+            }
+            {
+              name: 'AUTH_MODE'
+              value: authMode
+            }
+            {
+              name: 'AUTH_ENTRA_TENANT_ID'
+              value: authTenantId
+            }
+            {
+              name: 'AUTH_ENTRA_CLIENT_ID'
+              value: authWorkbenchClientId
+            }
+            {
+              name: 'AUTH_ENTRA_CLIENT_SECRET'
+              secretRef: 'auth-entra-client-secret'
+            }
+            {
+              name: 'AUTH_API_SCOPE'
+              value: authApiScope
+            }
+            {
+              name: 'NEXTAUTH_URL'
+              value: workbenchPublicUrl
+            }
+            {
+              name: 'NEXTAUTH_SECRET'
+              secretRef: 'auth-nextauth-secret'
             }
             {
               name: 'NEXT_PUBLIC_API_BASE_URL'

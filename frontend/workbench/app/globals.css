@@ -50,6 +50,20 @@ a {
   padding: 0 32px;
 }
 
+.user-chip {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 13px;
+  font-weight: 650;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.user-chip a {
+  color: var(--accent);
+}
+
 .brand {
   color: var(--surface-strong);
   font-size: 16px;
@@ -114,6 +128,16 @@ a {
 
 .button:hover {
   background: var(--accent-hover);
+}
+
+.button.secondary {
+  background: #ffffff;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.button.secondary:hover {
+  background: #f2f4f7;
 }
 
 .button:disabled {
@@ -344,6 +368,74 @@ dd {
   word-break: break-word;
 }
 
+.admin-form,
+.inline-form {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+}
+
+.admin-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-form label,
+.admin-form fieldset,
+.inline-form {
+  color: var(--surface-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-form input[type="email"],
+.admin-form input[type="text"] {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  display: block;
+  font: inherit;
+  font-weight: 500;
+  margin-top: 8px;
+  min-height: 40px;
+  padding: 0 10px;
+  width: 100%;
+}
+
+.admin-form fieldset {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  gap: 14px;
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 12px;
+}
+
+.admin-form .button {
+  justify-self: start;
+}
+
+.check-row {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+}
+
+.inline-form {
+  padding: 0;
+}
+
+.inline-form + .inline-form {
+  margin-top: 12px;
+}
+
+td span {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
 @media (max-width: 760px) {
   .app-header,
   .page-heading {
@@ -356,6 +448,12 @@ dd {
     padding: 16px 20px;
   }
 
+  .user-chip {
+    align-items: flex-start;
+    flex-direction: column;
+    margin-left: 0;
+  }
+
   .page-shell {
     padding: 28px 20px 48px;
   }
@@ -366,7 +464,8 @@ dd {
 
   .summary-grid,
   .metric-strip,
-  .detail-grid {
+  .detail-grid,
+  .admin-form {
     grid-template-columns: 1fr;
   }
 

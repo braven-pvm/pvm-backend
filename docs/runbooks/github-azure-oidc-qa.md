@@ -70,14 +70,23 @@ The workflow:
 1. Runs backend tests.
 2. Runs workbench lint/build.
 3. Logs into Azure via OIDC.
-4. Reads the existing PostgreSQL connection string from Key Vault and masks the password.
+4. Reads the existing PostgreSQL connection string and workbench auth values from Key Vault.
 5. Builds and pushes API/workbench images to ACR.
-6. Runs the Bicep deployment with the pushed image tag.
-7. Smoke-tests API health, invoice candidates, and workbench invoice rendering.
+6. Runs the Bicep deployment with the pushed image tag and Entra auth configuration.
+7. Smoke-tests API health, verifies anonymous invoice API access returns `401`, and verifies the workbench auth flow is reachable.
 
 ## Operational Guardrails
 
 - Do not add Azure client secrets to GitHub; keep OIDC only.
-- Do not connect real Shoprite or Acumatica data while the workbench is public and unauthenticated.
+- Do not connect real Shoprite or Acumatica data unless the QA workbench remains protected by Microsoft Entra authentication and app-managed roles.
 - The workflow currently uses the existing QA PostgreSQL admin password from Key Vault to avoid rotating the password on every deployment.
 - If the Key Vault connection string is intentionally rotated, the workflow automatically uses the new value on the next run.
+- Required auth secrets must exist in `kv-pvm-int-qa` before deployment:
+  - `auth--tenantid`
+  - `auth--api-clientid`
+  - `auth--workbench-clientid`
+  - `auth--workbench-clientsecret`
+  - `auth--apiscope`
+  - `auth--nextauthsecret`
+  - `auth--bootstrapadminemails`
+  - `auth--bootstrapadminobjectids`
