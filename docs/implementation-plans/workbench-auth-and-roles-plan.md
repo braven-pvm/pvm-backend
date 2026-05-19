@@ -108,6 +108,14 @@ Bootstrap:
 - After bootstrap, all normal role changes happen in the admin console.
 - Users not created by bootstrap or an Admin are denied after Microsoft sign-in.
 
+Initial bootstrap admin:
+
+| Field | Value |
+| --- | --- |
+| Email / UPN | `developer@pvm.co.za` |
+| Display name | `Marius Bloemhof` |
+| Entra object ID | `35425387-d19a-4e63-97b5-2165cce0032b` |
+
 ## Architecture
 
 ### Workbench
@@ -294,6 +302,6 @@ Deployment:
 
 1. Should we use Microsoft Entra ID as recommended?
 2. Confirm app-managed roles in PostgreSQL rather than Entra groups.
-3. Who are the bootstrap Admin users by email/object ID?
+3. Decision: bootstrap Admin is `developer@pvm.co.za` / `35425387-d19a-4e63-97b5-2165cce0032b`.
 4. Decision: only pre-authorized users may access the console after Microsoft sign-in.
 5. Should local development use Entra sign-in or a development-only auth bypass?
