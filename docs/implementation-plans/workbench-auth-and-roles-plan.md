@@ -25,8 +25,16 @@ Reasons:
 - PVM already has Azure and Microsoft identity context.
 - It avoids introducing a separate SaaS identity provider before the domain is stable.
 - It fits internal staff/admin access better than customer-facing auth.
-- It supports app roles or groups for `Admin`, `Operator`, and `Viewer`.
-- The same tenant can protect the workbench and issue tokens accepted by the API.
+- It lets staff use their existing Microsoft work account and MFA.
+- It should be used for identity only; PVM app-managed roles should decide what each user can do.
+- This avoids making day-to-day role membership dependent on Azure/Entra administration.
+
+Decision:
+
+- Microsoft Entra ID proves who the user is.
+- PVM stores application users, roles, status, and permissions in its own database.
+- The admin console manages memberships directly.
+- Azure/Entra groups are not the operational role source for MVP.
 
 ## Roles
 
@@ -43,6 +51,60 @@ Initial role rules:
 - `Operator` can refresh, revalidate, and submit.
 - `Admin` can do everything and will own future configuration/mapping/dead-letter controls.
 
+User status rules:
+
+- A newly signed-in Microsoft user has no access until an app `Admin` grants a role, unless they match the bootstrap admin allowlist.
+- Disabled users cannot access the workbench or API even if Microsoft sign-in succeeds.
+- Role changes take effect on the next request/session refresh.
+
+## App-Managed Authorization Model
+
+Persist users and role assignments in PostgreSQL.
+
+Suggested tables:
+
+```text
+app_users
+  id
+  entra_object_id
+  email
+  display_name
+  status
+  created_at
+  updated_at
+  last_login_at
+
+app_user_roles
+  id
+  app_user_id
+  role
+  granted_by_app_user_id
+  granted_at
+
+app_user_audit_events
+  id
+  actor_app_user_id
+  target_app_user_id
+  action
+  before_json
+  after_json
+  created_at
+```
+
+Role management lives in the workbench admin console:
+
+- list users
+- invite/pre-authorize users by email
+- assign/remove roles
+- disable/enable users
+- inspect user audit events
+
+Bootstrap:
+
+- Configure one or more bootstrap admin emails/object IDs via Key Vault/Container Apps config.
+- On first sign-in, if the identity matches the bootstrap admin config, create or update the user as `Admin`.
+- After bootstrap, all normal role changes happen in the admin console.
+
 ## Architecture
 
 ### Workbench
@@ -51,10 +113,12 @@ Add Entra-backed authentication to the Next.js workbench:
 
 - Protect all workbench routes except the sign-in route.
 - Add signed-in user context in the header.
+- Resolve the signed-in user against the PVM user table before rendering protected pages.
 - Add role-aware UI controls:
   - hide or disable refresh for `Viewer`
   - hide or disable submit for `Viewer`
   - keep future admin areas behind `Admin`
+- Add admin-only user management screens.
 - Forward an API bearer token from workbench server-side fetches to the API.
 - Keep local development ergonomic with either:
   - Entra dev app registration, or
@@ -66,6 +130,7 @@ Add JWT bearer authentication and role authorization:
 
 - Keep `/health` anonymous.
 - Require authenticated users for `/api/invoices/*`.
+- Resolve the bearer token's Entra object ID/email to an active PVM app user.
 - Policies:
   - `Invoices.Read`: `Admin`, `Operator`, `Viewer`
   - `Invoices.Write`: `Admin`, `Operator`
@@ -78,15 +143,9 @@ Add JWT bearer authentication and role authorization:
 Create separate Entra app registrations if needed:
 
 - Workbench client app.
-- API resource app with scopes or app roles.
+- API resource app with scopes/audience accepted by the API.
 
-Recommended app roles:
-
-```text
-Pvm.Admin
-Pvm.Operator
-Pvm.Viewer
-```
+Do not manage PVM roles in Azure groups for MVP. Entra remains the login provider; PostgreSQL remains the role source.
 
 Store auth config in Key Vault / Container Apps secrets:
 
@@ -96,7 +155,8 @@ auth--clientid
 auth--clientsecret
 auth--issuer
 auth--audience
-auth--allowedroles
+auth--bootstrapadminemails
+auth--bootstrapadminobjectids
 ```
 
 Do not commit auth secrets.
@@ -109,7 +169,6 @@ Deliverables:
 
 - Confirm Entra tenant and user/group assignment model.
 - Create app registrations.
-- Define roles.
 - Add required callback/logout URLs for QA.
 - Store required secrets in Key Vault.
 - Document setup in a runbook.
@@ -117,7 +176,7 @@ Deliverables:
 Acceptance:
 
 - A named admin user can sign into the QA workbench.
-- User has a visible role claim or group mapping path.
+- Bootstrap admin is created or updated in the PVM app user table.
 
 ### Slice 2: Workbench Route Protection
 
@@ -128,11 +187,13 @@ Deliverables:
 - Protect workbench pages.
 - Show signed-in user and role in the header.
 - Add role-aware UI controls.
+- Add admin-only user management pages.
 
 Acceptance:
 
 - Anonymous users cannot access `/invoices`.
 - Authenticated users can access allowed pages.
+- Authenticated users with no app role see an access-pending/blocked page.
 - Role restrictions are reflected in UI controls.
 
 ### Slice 3: API JWT And Role Policies
@@ -141,6 +202,7 @@ Deliverables:
 
 - Add JWT bearer auth.
 - Add role policies.
+- Add app-user lookup and active-user requirement.
 - Protect invoice endpoints.
 - Preserve `/health` as anonymous.
 - Update submission audit user from token claims.
@@ -148,11 +210,28 @@ Deliverables:
 Acceptance:
 
 - Anonymous API invoice calls return `401`.
+- Authenticated users without an active app role return `403`.
 - `Viewer` write calls return `403`.
 - `Operator` submit call is accepted if the candidate is otherwise valid.
 - Attempt history records the authenticated user.
 
-### Slice 4: Workbench-To-API Token Flow
+### Slice 4: Admin User Management
+
+Deliverables:
+
+- Admin user list.
+- User detail page.
+- Grant/remove `Admin`, `Operator`, `Viewer`.
+- Disable/enable users.
+- Audit user-management changes.
+
+Acceptance:
+
+- An Admin can add an Operator without entering Azure.
+- An Admin can disable a user and their next request is denied.
+- Role changes are audited.
+
+### Slice 5: Workbench-To-API Token Flow
 
 Deliverables:
 
@@ -165,7 +244,7 @@ Acceptance:
 - Workbench can load invoice candidates through the protected API.
 - Refresh and submit work through the protected API for allowed roles.
 
-### Slice 5: QA Deployment And Smoke
+### Slice 6: QA Deployment And Smoke
 
 Deliverables:
 
@@ -185,7 +264,8 @@ Acceptance:
 Backend:
 
 - Unit/endpoint tests for auth policies.
-- Token/claims tests for role mapping.
+- Token/claims tests for app-user lookup.
+- App-user repository tests for bootstrap, roles, disable, and audit.
 - Submission audit test proves authenticated username is persisted.
 
 Frontend:
@@ -203,14 +283,14 @@ Deployment:
 
 - Do not connect real invoice/customer data until auth is live in QA.
 - Do not rely only on hidden buttons; API policies must enforce authorization.
-- Avoid broad tenant-wide access unless explicitly approved.
-- Prefer named user/group assignment over anyone-in-tenant access.
+- Do not make Azure group membership the day-to-day admin surface for PVM roles.
+- Do not grant access to every tenant user by default; default should be access-pending/blocked.
 - Keep local development bypass impossible in QA/prod.
 
 ## Open Decisions
 
 1. Should we use Microsoft Entra ID as recommended?
-2. Should roles be assigned directly to users or through Entra groups?
-3. Who are the initial Admin, Operator, and Viewer users?
-4. Should QA require explicit app assignment, or allow any user in the tenant with no role as blocked/read-only?
+2. Confirm app-managed roles in PostgreSQL rather than Entra groups.
+3. Who are the bootstrap Admin users by email/object ID?
+4. Should any Microsoft tenant user be allowed to request access, or should only pre-authorized emails be able to sign in?
 5. Should local development use Entra sign-in or a development-only auth bypass?
