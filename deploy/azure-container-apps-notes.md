@@ -251,3 +251,9 @@ Tracing:
 - no Service Bus worker yet
 - no Blob Storage payload archive yet
 - no workbench authentication yet
+
+## Provisioning Playbook
+
+The executable provisioning plan is tracked in:
+
+- `docs/runbooks/azure-qa-provisioning-playbook.md`
