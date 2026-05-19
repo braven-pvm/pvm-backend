@@ -131,9 +131,8 @@ Add Entra-backed authentication to the Next.js workbench:
   - keep future admin areas behind `Admin`
 - Add admin-only user management screens.
 - Forward an API bearer token from workbench server-side fetches to the API.
-- Keep local development ergonomic with either:
-  - Entra dev app registration, or
-  - explicit `AUTH_MODE=DevelopmentBypass` only outside QA/prod.
+- Keep local development ergonomic with explicit `AUTH_MODE=DevelopmentBypass`.
+- Hard-block `DevelopmentBypass` unless the app is running in a development environment.
 
 ### API
 
@@ -297,6 +296,7 @@ Deployment:
 - Do not make Azure group membership the day-to-day admin surface for PVM roles.
 - Do not grant access to every tenant user by default; default should be denied unless pre-authorized.
 - Keep local development bypass impossible in QA/prod.
+- Fail startup if `AUTH_MODE=DevelopmentBypass` is set outside development.
 
 ## Open Decisions
 
@@ -304,4 +304,4 @@ Deployment:
 2. Confirm app-managed roles in PostgreSQL rather than Entra groups.
 3. Decision: bootstrap Admin is `developer@pvm.co.za` / `35425387-d19a-4e63-97b5-2165cce0032b`.
 4. Decision: only pre-authorized users may access the console after Microsoft sign-in.
-5. Should local development use Entra sign-in or a development-only auth bypass?
+5. Decision: use development-only auth bypass for local development, with startup/runtime guards that prevent it in QA/prod.
