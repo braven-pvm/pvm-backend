@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "qa"
+    },
+    "location": {
+      "value": "southafricanorth"
+    },
+    "resourceGroupName": {
+      "value": "rg-pvm-integrations-qa"
+    },
+    "ownerObjectId": {
+      "value": "35425387-d19a-4e63-97b5-2165cce0032b"
+    },
+    "monthlyBudgetAmountUsd": {
+      "value": 100
+    },
+    "alertEmail": {
+      "value": "developer@pvm.co.za"
+    }
+  }
+}

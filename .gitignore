@@ -4,6 +4,7 @@ obj/
 dist/
 build/
 out/
+infra/azure/main.json
 
 # Local environment
 .env

@@ -244,10 +244,8 @@ Tracing:
 
 ## Current Repo Gaps
 
-- no container Dockerfiles yet
-- no CI/CD pipeline yet
+- no GitHub Actions CI/CD pipeline yet
 - no EF migration files yet
-- no managed identity or Key Vault wiring yet
 - no Service Bus worker yet
 - no Blob Storage payload archive yet
 - no workbench authentication yet

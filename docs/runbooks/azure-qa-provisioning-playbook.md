@@ -42,7 +42,7 @@ Known inherited role:
 | Resource | Proposed name | Purpose | Initial SKU/stance |
 | --- | --- | --- | --- |
 | Resource group | `rg-pvm-integrations-qa` | Project isolation | South Africa North |
-| Azure Container Registry | `acrpvmintegrationsqa` | Store API/workbench images | Basic |
+| Azure Container Registry | `acrpvmintegrationsqa` | Store API/workbench images | Standard, West Europe |
 | Log Analytics workspace | `log-pvm-integrations-qa` | Container/app logs | Pay-as-you-go, capped |
 | Application Insights | `appi-pvm-integrations-qa` | API/workbench telemetry | Workspace-based |
 | Container Apps Environment | `cae-pvm-integrations-qa` | Host container apps | Consumption |
@@ -58,6 +58,37 @@ Known inherited role:
 | Budget | `budget-pvm-integrations-qa` | Cost guardrail | alert at $100 and $150 |
 
 Name availability must be checked before final deployment because ACR, Key Vault, Storage, and PostgreSQL names are globally constrained.
+
+## Provisioned QA Baseline
+
+Provisioning was run from branch `infra/azure-qa-baseline` on 2026-05-19.
+
+| Item | Value |
+| --- | --- |
+| Resource group | `rg-pvm-integrations-qa` |
+| API URL | `https://ca-pvm-api-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io` |
+| Workbench URL | `https://ca-pvm-workbench-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io` |
+| Image tag | `qa-20260519-01` and `qa-latest` |
+| ACR login server | `acrpvmintegrationsqa.azurecr.io` |
+| PostgreSQL FQDN | `psql-pvm-integrations-qa.postgres.database.azure.com` |
+| Key Vault | `kv-pvm-int-qa` |
+| Storage account | `stpvmintegrationsqa` |
+| Service Bus namespace | `sb-pvm-integrations-qa` |
+| Managed identity | `id-pvm-integrations-qa` |
+
+Smoke results:
+
+- API `/health` returned `{"status":"ok"}`.
+- API `/api/invoices/candidates` returned fixture invoice `INV342699282`.
+- Workbench `/invoices` returned HTTP 200 and rendered `INV342699282`.
+
+Deployment notes:
+
+- Azure Container Registry `Basic` and `Standard` failed in `southafricanorth` during Bicep deployment with `SkuNotSupported`; the registry is deployed in `westeurope` while runtime/data resources remain in `southafricanorth`.
+- Container Apps revisions were created with Azure CLI after the Bicep platform deployment. The next CI/CD slice should codify app revision updates or replace the CLI step with a deploy workflow.
+- Both app revisions use the user-assigned managed identity for ACR pull.
+- The QA PostgreSQL firewall currently allows public access for early operator testing. Tighten this before staging/production data is connected.
+- The workbench is public and unauthenticated. Do not connect real customer/invoice data until authentication and roles are in place.
 
 ## Cost Guardrails
 
@@ -160,10 +191,12 @@ az deployment sub what-if `
 Apply:
 
 ```powershell
+$postgresPassword = "<generated-secure-password>"
+
 az deployment sub create `
   --location southafricanorth `
   --template-file infra/azure/main.bicep `
-  --parameters infra/azure/main.parameters.qa.json
+  --parameters infra/azure/main.parameters.qa.json postgresAdminPassword=$postgresPassword
 ```
 
 Suggested parameter values:
@@ -179,17 +212,19 @@ Suggested parameter values:
   "resourceGroupName": {
     "value": "rg-pvm-integrations-qa"
   },
-  "projectName": {
-    "value": "pvm-integrations"
-  },
-  "ownerTag": {
-    "value": "PVM"
+  "ownerObjectId": {
+    "value": "35425387-d19a-4e63-97b5-2165cce0032b"
   },
   "monthlyBudgetAmountUsd": {
     "value": 100
+  },
+  "alertEmail": {
+    "value": "developer@pvm.co.za"
   }
 }
 ```
+
+Pass `postgresAdminPassword` at deployment time; do not store it in `main.parameters.qa.json`.
 
 Required tags:
 
@@ -307,6 +342,13 @@ docker push acrpvmintegrationsqa.azurecr.io/pvm-api:qa-latest
 docker push acrpvmintegrationsqa.azurecr.io/pvm-workbench:qa-latest
 ```
 
+The initial QA deployment used:
+
+```text
+acrpvmintegrationsqa.azurecr.io/pvm-api:qa-20260519-01
+acrpvmintegrationsqa.azurecr.io/pvm-workbench:qa-20260519-01
+```
+
 ## Deployment Phases
 
 ### Phase 0: Confirm Azure Readiness
@@ -350,10 +392,12 @@ Proceed only if:
 Apply deployment:
 
 ```powershell
+$postgresPassword = "<generated-secure-password>"
+
 az deployment sub create `
   --location southafricanorth `
   --template-file infra/azure/main.bicep `
-  --parameters infra/azure/main.parameters.qa.json
+  --parameters infra/azure/main.parameters.qa.json postgresAdminPassword=$postgresPassword
 ```
 
 Verify:
@@ -388,6 +432,55 @@ az acr repository show-tags -n acrpvmintegrationsqa --repository pvm-workbench -
 ### Phase 5: Deploy Container Apps
 
 Deploy API and workbench revisions.
+
+Initial API deployment shape:
+
+```powershell
+$resourceGroup = "rg-pvm-integrations-qa"
+$environment = "cae-pvm-integrations-qa"
+$identityId = az identity show -g $resourceGroup -n id-pvm-integrations-qa --query id -o tsv
+$connectionString = az keyvault secret show --vault-name kv-pvm-int-qa --name connectionstrings--pvm --query value -o tsv
+$loginServer = "acrpvmintegrationsqa.azurecr.io"
+
+az containerapp create `
+  --name ca-pvm-api-qa `
+  --resource-group $resourceGroup `
+  --environment $environment `
+  --image "$loginServer/pvm-api:qa-latest" `
+  --ingress external `
+  --target-port 8080 `
+  --user-assigned $identityId `
+  --registry-server $loginServer `
+  --registry-identity $identityId `
+  --cpu 0.25 `
+  --memory 0.5Gi `
+  --min-replicas 0 `
+  --max-replicas 2 `
+  --secrets "connectionstrings-pvm=$connectionString" `
+  --env-vars ASPNETCORE_ENVIRONMENT=Development ConnectionStrings__Pvm=secretref:connectionstrings-pvm
+```
+
+Initial workbench deployment shape:
+
+```powershell
+$apiBase = "https://ca-pvm-api-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io"
+
+az containerapp create `
+  --name ca-pvm-workbench-qa `
+  --resource-group $resourceGroup `
+  --environment $environment `
+  --image "$loginServer/pvm-workbench:qa-latest" `
+  --ingress external `
+  --target-port 3000 `
+  --user-assigned $identityId `
+  --registry-server $loginServer `
+  --registry-identity $identityId `
+  --cpu 0.25 `
+  --memory 0.5Gi `
+  --min-replicas 0 `
+  --max-replicas 2 `
+  --env-vars NODE_ENV=production NEXT_PUBLIC_API_BASE_URL=$apiBase
+```
 
 Verify:
 
