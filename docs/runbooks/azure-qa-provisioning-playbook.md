@@ -25,6 +25,46 @@ Known inherited role:
 
 - `pieter-admin@pvm.co.za` has `User Access Administrator` at `/`.
 
+## Partner Access Confirmation
+
+Rechecked on 2026-06-10 after Microsoft partner feedback in `Re Request ID [107863936] FW PVM Azure resources.pdf`.
+
+Partner feedback confirms:
+
+- Azure Plan order was completed under the CSP model.
+- GDAP was sorted so the partner could assign access.
+- Owner role was granted to `developer@pvm.co.za`.
+- Owner role was granted to `Beyers@pvm.co.za`.
+- Cost Management Contributor role was assigned to `developer@pvm.co.za`.
+- Cost Management Contributor role was assigned to `Beyers@pvm.co.za`.
+
+Current CLI verification confirms:
+
+| Item | Status |
+| --- | --- |
+| Current CLI user | `developer@pvm.co.za` |
+| Subscription | `PVM-01` / `51497af4-8223-42c4-a2ef-f6f625094d2f` |
+| `developer@pvm.co.za` Azure role | `Owner` at subscription scope |
+| `pvm-backend-qa-deploy` service principal | `Contributor` at subscription scope |
+| `pvm-backend-qa-deploy` service principal | `Owner` on `rg-pvm-integrations-qa` |
+| `pieter-admin@pvm.co.za` | `User Access Administrator` inherited from `/` |
+| Required resource providers | Registered |
+| Subscription policy assignments | None returned |
+| Budget access | Confirmed by listing `budget-pvm-integrations-qa` |
+| Usage/cost access | Confirmed by listing June 2026 usage lines |
+| Bicep deployment permission | Confirmed by successful subscription-scope `what-if` |
+
+Important handling note:
+
+- The partner PDF includes a temporary password for the Beyers Microsoft admin account. Treat the PDF as sensitive evidence. Confirm the password has been changed and do not commit or redistribute the credential.
+
+Alignment conclusion:
+
+- Infrastructure provisioning is unblocked for the current QA estate.
+- Cost visibility and budget management are available from the CLI.
+- Normal Azure resource provisioning is covered by subscription `Owner`.
+- Entra tenant administration may still require separate tenant-level permissions for app registrations or tenant-wide identity changes.
+
 ## Provisioning Principles
 
 - Keep all QA resources in one isolated resource group: `rg-pvm-integrations-qa`.

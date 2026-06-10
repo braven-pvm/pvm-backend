@@ -1,6 +1,6 @@
 # Shoprite Invoice Upload MVP
 
-Last updated: 2026-05-18
+Last updated: 2026-05-20
 
 ## Purpose
 
@@ -19,6 +19,7 @@ This MVP proves the hardest and riskiest integration path:
 - `docs/acumatica-2025-r2-integration-research.md`
 - `docs/shoprite-rest-v9.3-discovery.md`
 - `docs/architecture-stack-options.md`
+- `docs/spec-slices/shoprite-po-pivot-invoice-submission.md`
 - `docs/specifications/Shoprite REST Web Services Guide V9.3.pdf`
 
 ## MVP Scope
@@ -41,6 +42,7 @@ Primary workflow:
 ```text
 Finalized Acumatica invoices
   -> Invoice Submission Workbench candidates
+  -> match invoice PO number to local Shoprite PO inbox
   -> validation and mapping checks
   -> operator reviews generated Shoprite XML
   -> operator submits one invoice
@@ -115,16 +117,17 @@ Eligibility for submission:
 
 - Invoice is finalized/released in Acumatica.
 - Invoice customer/account belongs to configured Shoprite trading partner rules.
-- Invoice ship-to/customer location maps to a known Shoprite DC.
+- Invoice PO number resolves to a known Shoprite PO in the local PO inbox.
+- Matched Shoprite PO resolves to a known delivery location GLN.
 - Invoice has a Shoprite PO number.
 - Invoice has required line, tax, GTIN, UOM, pack, currency, and country data.
 - Invoice is not already submitted under the duplicate-prevention key.
 
 Invalid candidates remain visible with clear validation status and fix guidance.
 
-## Shoprite Trading Partner and DC Mapping
+## Shoprite Trading Partner and Delivery Location Mapping
 
-The model must represent Shoprite as a trading partner with multiple delivery DCs.
+The model must represent Shoprite as a trading partner with multiple delivery locations. A delivery location can be a DC or a direct-to-store destination.
 
 Canonical structure:
 
@@ -133,17 +136,21 @@ Trading Partner: Shoprite
   Supplier Account / Vendor Identity
     Acumatica Customer Account(s)
     Supplier GLN / Vendor IDs
-    Delivery Locations / DCs
-      Shoprite DC GLN
-      Shoprite branch/DC code
+    Delivery Locations
+      Shoprite location GLN
+      Shoprite branch/location code
+      Shoprite branch/location name
+      location type: DC, store, or unknown
       Acumatica ship-to / customer location mapping
       invoice rules/config
 ```
 
 MVP mapping rule:
 
-- Shoprite DC identity comes from Acumatica ship-to/customer location mapped to Shoprite DC GLN in the admin console.
-- Missing or unknown DC mapping blocks submission and creates a mapping task.
+- Shoprite delivery identity comes from the matched Shoprite PO wherever possible.
+- The current QA `VendorOrder` sample carries the active destination on `buyer.gln` plus buyer-assigned location code/name.
+- `shipTo.gln` is preferred when populated, but the integration must support `buyer.gln` as the delivery location source.
+- Missing or unknown delivery location mapping blocks submission and creates a mapping task.
 - Admin can resolve the mapping from the invoice detail/workbench and revalidate.
 
 ## Data Correction Model
@@ -200,7 +207,7 @@ Open validation:
 Duplicate-prevention key:
 
 ```text
-supplier GLN + store/DC GLN + Shoprite PO number + Acumatica invoice number
+supplier GLN + delivery location GLN + Shoprite PO number + Acumatica invoice number
 ```
 
 Rules:
@@ -219,9 +226,10 @@ Required validations:
 
 - Invoice finalized/released.
 - Shoprite trading partner match.
-- Known Shoprite DC mapping.
+- Matched Shoprite PO exists in the local PO inbox.
+- Known Shoprite delivery location GLN.
 - Supplier GLN present.
-- Store/DC GLN present.
+- Delivery location GLN present.
 - Shoprite PO number present.
 - Invoice number present.
 - No duplicate idempotency key.
@@ -328,7 +336,9 @@ MVP admin surface is a focused Invoice Submission Workbench, not a general-purpo
 Minimum screens:
 
 - Invoice candidates list with validation status.
+- Shoprite PO inbox list and detail view.
 - Invoice detail with Acumatica source fields.
+- Matched Shoprite PO and delivery location context.
 - Canonical invoice model view.
 - Generated Shoprite XML preview.
 - Validation/errors panel.
@@ -340,6 +350,7 @@ Minimum screens:
 Manual actions:
 
 - Refresh invoice candidates from Acumatica.
+- Refresh Shoprite POs from `VendorOrder`.
 - Revalidate invoice.
 - Submit validated invoice.
 - Retry safe failures.
@@ -472,4 +483,3 @@ Acceptance criteria:
 - Validation failures explain whether to fix Acumatica data or integration mapping/config.
 
 MVP is not production ready until separate production hardening is completed.
-

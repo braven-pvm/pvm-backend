@@ -54,6 +54,9 @@ For the current QA slice, use `POST /api/invoices/refresh` or the workbench refr
 
 ## Runbooks
 
+- [Agent Onboarding](AGENTS.md)
+- [Documentation Index](docs/README.md)
+- [Current Shoprite Project Handoff](docs/handovers/2026-06-10-shoprite-project-handoff.md)
 - [Shoprite QA Invoice Submission Runbook](docs/runbooks/shoprite-qa-submission.md)
 - [Azure Container Apps Deployment Notes](deploy/azure-container-apps-notes.md)
 - [Azure QA Infrastructure Provisioning Playbook](docs/runbooks/azure-qa-provisioning-playbook.md)
