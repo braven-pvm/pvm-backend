@@ -152,6 +152,20 @@ Local smoke on 2026-07-07:
 - `/purchase-orders` rendered the imported PO data.
 - Fixture invoice refresh stayed blocked with `missing-local-shoprite-po`, which is expected because the fixture PO does not exist in the current QA VendorOrder batch.
 
+QA deployment on 2026-07-07:
+
+- Branch `feature/shoprite-po-inbox` deployed successfully through GitHub Actions run `28871319424`.
+- API image: `acrpvmintegrationsqa.azurecr.io/pvm-api:qa-c590486f3a44`.
+- Workbench image: `acrpvmintegrationsqa.azurecr.io/pvm-workbench:qa-c590486f3a44`.
+- API and workbench are configured with `minReplicas=1` during UAT.
+- Shoprite QA `VendorOrder` secrets are in Key Vault under `shoprite--baseurl`, `shoprite--username`, and `shoprite--password`.
+- Public smoke passed for API health, anonymous API protection, and workbench page load.
+
+Remaining hard blockers for invoice-submission UAT:
+
+- Acumatica staging base URL, tenant/company, endpoint name/version, auth method, and invoice entity choice (`SalesInvoice` vs AR `Invoice`) are still required.
+- Shoprite `VendorInvoice` requires confirmation of `ContractID`, `UIUser`, XML acceptance, success/error payload examples, and duplicate behavior before the real submission client should replace the local stub.
+
 Do not include:
 
 - Creating Acumatica sales orders from POs.

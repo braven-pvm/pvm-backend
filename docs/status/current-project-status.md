@@ -74,6 +74,30 @@ Most recent verification on 2026-07-07:
 - Local workbench smoke: `/purchase-orders` rendered the imported PO data.
 - Local invoice refresh smoke: fixture invoice `INV342699282` is blocked with `missing-local-shoprite-po` because fixture PO `PO4500123456` is not in the current Shoprite QA PO inbox.
 - QA deployment path now passes Shoprite settings from Key Vault into the API and sets QA Container Apps `minReplicas=1` for UAT readiness.
+- QA deployment run `28871319424` passed on 2026-07-07 from branch `feature/shoprite-po-inbox`.
+- Deployed QA images:
+  - API: `acrpvmintegrationsqa.azurecr.io/pvm-api:qa-c590486f3a44`
+  - Workbench: `acrpvmintegrationsqa.azurecr.io/pvm-workbench:qa-c590486f3a44`
+- Live QA smoke:
+  - API `/health`: `200`
+  - Anonymous PO inbox API: `401`, expected
+  - Workbench `/purchase-orders`: `200`
 - `npm ci` reported 6 npm audit findings in the frontend dependency tree: 1 low, 5 moderate.
+
+## Current UAT Position
+
+Ready for operator smoke of the PO inbox in QA:
+
+1. Open the QA workbench.
+2. Sign in with an authorized Microsoft account.
+3. Open `/purchase-orders`.
+4. Click `Refresh POs`.
+5. Confirm the Shoprite QA `VendorOrder` batch loads.
+
+Not ready for invoice-submission UAT:
+
+- Acumatica staging invoice refresh still needs tenant/API credentials and field confirmation.
+- Real `VendorInvoice` submission remains intentionally disabled in the runtime path until `ContractID`, `UIUser`, payload acceptance, and duplicate/idempotency behavior are confirmed.
+- CLI-authenticated smoke for protected API endpoints is blocked by Entra consent for Azure CLI against the API scope; browser sign-in remains the correct operator path.
 
 The local host still does not have the .NET SDK installed; backend verification uses the SDK container with Docker socket access.
