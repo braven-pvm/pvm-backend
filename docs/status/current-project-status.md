@@ -73,6 +73,7 @@ Most recent verification on 2026-07-07:
 - Local API smoke with Shoprite QA `VendorOrder`: imported 40 POs, persisted 40.
 - Local workbench smoke: `/purchase-orders` rendered the imported PO data.
 - Local invoice refresh smoke: fixture invoice `INV342699282` is blocked with `missing-local-shoprite-po` because fixture PO `PO4500123456` is not in the current Shoprite QA PO inbox.
+- QA deployment path now passes Shoprite settings from Key Vault into the API and sets QA Container Apps `minReplicas=1` for UAT readiness.
 - `npm ci` reported 6 npm audit findings in the frontend dependency tree: 1 low, 5 moderate.
 
 The local host still does not have the .NET SDK installed; backend verification uses the SDK container with Docker socket access.

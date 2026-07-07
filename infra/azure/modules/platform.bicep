@@ -34,6 +34,7 @@ param shopritePassword string = ''
 
 param shopriteContractId string = ''
 param shopriteUiUser string = ''
+param containerAppMinReplicas int = 1
 
 param tags object
 
@@ -359,7 +360,7 @@ resource apiContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
     }
     template: {
       scale: {
-        minReplicas: 0
+        minReplicas: containerAppMinReplicas
         maxReplicas: 2
       }
       containers: [
@@ -468,7 +469,7 @@ resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
     }
     template: {
       scale: {
-        minReplicas: 0
+        minReplicas: containerAppMinReplicas
         maxReplicas: 2
       }
       containers: [

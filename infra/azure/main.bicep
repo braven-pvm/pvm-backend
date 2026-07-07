@@ -77,6 +77,11 @@ param shopriteContractId string = ''
 @description('Shoprite invoice UIUser header value for VendorInvoice. Not required for VendorOrder.')
 param shopriteUiUser string = ''
 
+@minValue(0)
+@maxValue(2)
+@description('Minimum replicas for QA Container Apps. Use 1 during UAT to avoid cold-start smoke failures.')
+param containerAppMinReplicas int = 1
+
 var tags = {
   Project: 'PVM Integrations'
   Environment: toUpper(environmentName)
@@ -117,6 +122,7 @@ module platform 'modules/platform.bicep' = {
     shopritePassword: shopritePassword
     shopriteContractId: shopriteContractId
     shopriteUiUser: shopriteUiUser
+    containerAppMinReplicas: containerAppMinReplicas
     tags: tags
   }
 }

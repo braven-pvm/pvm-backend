@@ -192,6 +192,7 @@ jobs:
             --parameters shopritePassword='${{ steps.values.outputs.shoprite_password }}' \
             --parameters shopriteContractId='${{ steps.values.outputs.shoprite_contract_id }}' \
             --parameters shopriteUiUser='${{ steps.values.outputs.shoprite_ui_user }}' \
+            --parameters containerAppMinReplicas=1 \
             --only-show-errors
 
       - name: Smoke test
@@ -201,14 +202,43 @@ jobs:
           api_url="$(az containerapp show -g "$AZURE_RESOURCE_GROUP" -n ca-pvm-api-qa --query "properties.configuration.ingress.fqdn" -o tsv)"
           workbench_url="$(az containerapp show -g "$AZURE_RESOURCE_GROUP" -n ca-pvm-workbench-qa --query "properties.configuration.ingress.fqdn" -o tsv)"
 
-          curl --fail --show-error --silent "https://$api_url/health"
+          retry_status() {
+            local url="$1"
+            local expected="$2"
+            local follow="${3:-false}"
+            local status=""
+            for attempt in {1..18}; do
+              if [ "$follow" = "true" ]; then
+                status="$(curl --location --show-error --silent --output /dev/null --write-out "%{http_code}" "$url" || true)"
+              else
+                status="$(curl --show-error --silent --output /dev/null --write-out "%{http_code}" "$url" || true)"
+              fi
+
+              if [ "$status" = "$expected" ]; then
+                echo "$status"
+                return 0
+              fi
+
+              sleep 10
+            done
+
+            echo "$status"
+            return 1
+          }
+
+          health_status="$(retry_status "https://$api_url/health" "200")"
+          if [ "$health_status" != "200" ]; then
+            echo "Expected API health to return 200, got $health_status." >&2
+            exit 1
+          fi
+
           candidates_status="$(curl --show-error --silent --output /dev/null --write-out "%{http_code}" "https://$api_url/api/invoices/candidates")"
           if [ "$candidates_status" != "401" ]; then
             echo "Expected anonymous invoice candidates request to return 401, got $candidates_status." >&2
             exit 1
           fi
 
-          workbench_status="$(curl --location --show-error --silent --output /dev/null --write-out "%{http_code}" "https://$workbench_url/invoices")"
+          workbench_status="$(retry_status "https://$workbench_url/invoices" "200" "true")"
           if [ "$workbench_status" != "200" ]; then
             echo "Expected workbench auth flow to resolve to a 200 sign-in page, got $workbench_status." >&2
             exit 1
