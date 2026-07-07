@@ -6,14 +6,16 @@ Branch observed: `main`
 
 ## Executive State
 
-Status: **Ready for next implementation slice**.
+Status: **PO inbox implementation in progress on `feature/shoprite-po-inbox`**.
 
-Infrastructure is not blocking the Shoprite project. Azure is locked in, the QA estate exists, and subscription/resource access is sufficient for provisioning and deployment. The product/technical focus should return to Shoprite PO-pivoted invoice submission.
+Infrastructure is not blocking the Shoprite project. Azure is locked in, the QA estate exists, and subscription/resource access is sufficient for provisioning and deployment. Shoprite QA `VendorOrder` access has been verified with the supplier QA credentials.
 
 ## What Is Implemented
 
 Backend:
 
+- Shoprite `VendorOrder` client, parser, PO inbox persistence, refresh/list/detail endpoints.
+- Invoice candidate matching to one local PO by captured PO number.
 - .NET solution under `backend/Pvm.sln`.
 - Domain canonical invoice model.
 - Shoprite invoice validation rules.
@@ -27,6 +29,7 @@ Backend:
 
 Frontend:
 
+- PO inbox list/detail pages under `/purchase-orders`.
 - Next.js workbench under `frontend/workbench`.
 - Microsoft Entra/NextAuth sign-in.
 - Invoice list/detail pages.
@@ -95,7 +98,7 @@ Interpretation:
 
 Before real Shoprite QA confidence:
 
-- `VendorOrder` PO inbox is not implemented.
+- Deploy and smoke-test the new PO inbox against the QA Container Apps/PostgreSQL estate.
 - Real Acumatica staging invoice refresh is not implemented.
 - API still registers `LocalShopriteInvoiceClient` for submission.
 - Blob payload archive is not implemented.
@@ -106,7 +109,7 @@ Before real Shoprite QA confidence:
 
 ## Next Recommended Slice
 
-Implement **Shoprite PO inbox ingestion** before wiring real invoice submission.
+Verify and deploy **Shoprite PO inbox ingestion** before wiring real invoice submission.
 
 Why:
 
@@ -121,7 +124,7 @@ Suggested branch:
 feature/shoprite-po-inbox
 ```
 
-Expected scope:
+Implemented local scope on `feature/shoprite-po-inbox`:
 
 1. Add `IShopritePurchaseOrderClient`.
 2. Implement `VendorOrder` HTTP client using QA credentials.
@@ -134,7 +137,20 @@ Expected scope:
 6. Add minimal PO inbox workbench list/detail.
 7. Add invoice candidate matching to local PO by PO number.
 8. Update validation to block candidates with no matching PO or multiple matching POs.
-9. Add tests for PO parsing, persistence, duplicate refresh behavior, and invoice-to-PO matching.
+9. Add tests for PO parsing, VendorOrder request shape, and persistence constraints.
+
+Remaining after this slice:
+
+- Deploy the PO inbox branch to QA.
+- Set Shoprite QA secrets in Key Vault/Container Apps config using `Shoprite__BaseUrl`, `Shoprite__Username`, and `Shoprite__Password`.
+- Wire Acumatica staging invoice refresh.
+- Confirm the exact `VendorInvoice` authentication shape before enabling the real invoice submission client.
+
+Local smoke on 2026-07-07:
+
+- `POST /api/shoprite/purchase-orders/refresh` imported 40 Shoprite QA POs into local PostgreSQL.
+- `/purchase-orders` rendered the imported PO data.
+- Fixture invoice refresh stayed blocked with `missing-local-shoprite-po`, which is expected because the fixture PO does not exist in the current QA VendorOrder batch.
 
 Do not include:
 

@@ -37,6 +37,40 @@ public sealed class InvoicePersistenceTests : IAsyncLifetime
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
     }
 
+    [Fact]
+    public async Task Shoprite_purchase_order_number_is_unique()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+
+        db.ShopritePurchaseOrders.Add(NewPurchaseOrder("PO121"));
+        db.ShopritePurchaseOrders.Add(NewPurchaseOrder("PO121"));
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Shoprite_purchase_order_lines_are_deleted_with_purchase_order()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+
+        var order = NewPurchaseOrder("PO122");
+        order.Lines.Add(new ShopritePurchaseOrderLineEntity
+        {
+            Id = Guid.NewGuid(),
+            LineNumber = 1,
+            Gtin = "06001197181125"
+        });
+        db.ShopritePurchaseOrders.Add(order);
+        await db.SaveChangesAsync();
+
+        db.ShopritePurchaseOrders.Remove(order);
+        await db.SaveChangesAsync();
+
+        Assert.Empty(await db.ShopritePurchaseOrderLines.ToListAsync());
+    }
+
     private PvmDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<PvmDbContext>()
@@ -68,5 +102,15 @@ public sealed class InvoicePersistenceTests : IAsyncLifetime
             InitiationMode = "Manual",
             Status = "Failed",
             CreatedAt = DateTimeOffset.UtcNow
+        };
+
+    private static ShopritePurchaseOrderEntity NewPurchaseOrder(string purchaseOrderNumber)
+        => new()
+        {
+            Id = Guid.NewGuid(),
+            PurchaseOrderNumber = purchaseOrderNumber,
+            DeliveryLocationSource = "buyer",
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = DateTimeOffset.UtcNow
         };
 }

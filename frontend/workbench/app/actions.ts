@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createUser, updateUserRoles, updateUserStatus } from "../src/api/admin";
-import { refreshInvoiceCandidates, submitInvoice } from "../src/api/client";
+import {
+  refreshInvoiceCandidates,
+  refreshPurchaseOrders,
+  submitInvoice,
+} from "../src/api/client";
 
 export async function refreshCandidatesAction() {
   const candidate = await refreshInvoiceCandidates();
@@ -22,6 +26,12 @@ export async function submitInvoiceAction(formData: FormData) {
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${id}`);
   redirect(`/invoices/${id}`);
+}
+
+export async function refreshPurchaseOrdersAction() {
+  await refreshPurchaseOrders();
+  revalidatePath("/purchase-orders");
+  redirect("/purchase-orders");
 }
 
 export async function createUserAction(formData: FormData) {

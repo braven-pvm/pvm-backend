@@ -9,6 +9,8 @@ public sealed record InvoiceCandidateSummaryResponse(
     string CustomerAccount,
     string? CustomerLocation,
     string? ShopritePurchaseOrderNumber,
+    Guid? MatchedShopritePurchaseOrderId,
+    string PurchaseOrderMatchStatus,
     string? StoreDcGln,
     string Status,
     bool CanSubmit,
@@ -20,9 +22,21 @@ public sealed record InvoiceCandidateDetailResponse(
     bool CanSubmit,
     object? AcumaticaInvoice,
     CanonicalInvoice? CanonicalInvoice,
+    InvoiceCandidatePurchaseOrderResponse? MatchedPurchaseOrder,
     ValidationResult Validation,
     string? GeneratedXml,
     IReadOnlyList<InvoiceSubmissionAttemptResponse> Attempts);
+
+public sealed record InvoiceCandidatePurchaseOrderResponse(
+    Guid Id,
+    string PurchaseOrderNumber,
+    string? OrderTypeCode,
+    string? OrderTypeLabel,
+    string? DeliveryGln,
+    string? DeliveryLocationCode,
+    string? DeliveryLocationName,
+    string DeliveryLocationSource,
+    int LineCount);
 
 public sealed record InvoiceSubmissionAttemptResponse(
     Guid Id,

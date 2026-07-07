@@ -9,6 +9,8 @@ export type InvoiceCandidateSummary = {
   customerAccount: string;
   customerLocation?: string;
   shopritePurchaseOrderNumber?: string;
+  matchedShopritePurchaseOrderId?: string;
+  purchaseOrderMatchStatus: string;
   storeDcGln?: string;
   status: string;
   canSubmit: boolean;
@@ -65,6 +67,17 @@ export type InvoiceCandidateDetail = {
       isCatchWeight: boolean;
     }>;
   };
+  matchedPurchaseOrder?: {
+    id: string;
+    purchaseOrderNumber: string;
+    orderTypeCode?: string;
+    orderTypeLabel?: string;
+    deliveryGln?: string;
+    deliveryLocationCode?: string;
+    deliveryLocationName?: string;
+    deliveryLocationSource: string;
+    lineCount: number;
+  };
   validation: {
     issues: ValidationIssue[];
     canSubmit: boolean;
@@ -76,6 +89,66 @@ export type InvoiceCandidateDetail = {
 export type SubmitInvoiceResult = {
   status: string;
   message: string;
+};
+
+export type PurchaseOrderSummary = {
+  id: string;
+  purchaseOrderNumber: string;
+  orderTypeCode?: string;
+  orderTypeLabel?: string;
+  deliveryGln?: string;
+  deliveryLocationCode?: string;
+  deliveryLocationName?: string;
+  deliveryLocationSource: string;
+  supplierGln?: string;
+  lineCount: number;
+  lastSeenAt: string;
+};
+
+export type PurchaseOrderDetail = PurchaseOrderSummary & {
+  orderHeaderId?: string;
+  buyerGln?: string;
+  currencyCode?: string;
+  totalExcludingTax?: number;
+  totalIncludingTax?: number;
+  totalTax?: number;
+  sourceEnvironment: string;
+  sourceEndpoint: string;
+  payloadHash?: string;
+  shopriteCreatedAt?: string;
+  shopriteLastUpdatedAt?: string;
+  firstSeenAt: string;
+  lines: Array<{
+    id: string;
+    lineNumber: number;
+    gtin?: string;
+    buyerItemId?: string;
+    buyerItemDescription?: string;
+    supplierItemId?: string;
+    description?: string;
+    requestedQuantity?: number;
+    measurementUnitCode?: string;
+    netAmount?: number;
+    netPrice?: number;
+    monetaryAmountExcludingTaxes?: number;
+    monetaryAmountIncludingTaxes?: number;
+  }>;
+  linkedInvoiceCandidates: Array<{
+    id: string;
+    invoiceNumber: string;
+    customerAccount: string;
+    status: string;
+    updatedAt: string;
+  }>;
+  rawOrderJson?: string;
+};
+
+export type PurchaseOrderRefreshResult = {
+  received: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  refreshedAt: string;
 };
 
 export async function getInvoiceCandidates(): Promise<
@@ -141,4 +214,49 @@ export async function submitInvoice(id: string): Promise<SubmitInvoiceResult> {
   }
 
   return result;
+}
+
+export async function getPurchaseOrders(): Promise<PurchaseOrderSummary[]> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(`${apiBaseUrl}/api/shoprite/purchase-orders`, {
+    headers,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load Shoprite purchase orders: ${response.status}`);
+  }
+
+  const data: unknown = await response.json();
+
+  return Array.isArray(data) ? (data as PurchaseOrderSummary[]) : [];
+}
+
+export async function getPurchaseOrder(id: string): Promise<PurchaseOrderDetail> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(`${apiBaseUrl}/api/shoprite/purchase-orders/${id}`, {
+    headers,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load Shoprite purchase order: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function refreshPurchaseOrders(): Promise<PurchaseOrderRefreshResult> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(`${apiBaseUrl}/api/shoprite/purchase-orders/refresh`, {
+    method: "POST",
+    headers,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to refresh Shoprite purchase orders: ${response.status}`);
+  }
+
+  return response.json();
 }

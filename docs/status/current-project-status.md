@@ -1,18 +1,18 @@
 # Current Project Status
 
-Last updated: 2026-06-10
+Last updated: 2026-07-07
 
 ## Overall Status
 
-Ready for the next Shoprite implementation slice.
+Shoprite PO inbox implementation is in progress on `feature/shoprite-po-inbox`.
 
-Azure infrastructure and access are unblocked. The project should proceed with the Shoprite PO-pivoted invoice submission path.
+Azure infrastructure and access are unblocked. Shoprite QA `VendorOrder` credentials have been verified and the backend now has a local PO inbox implementation ready for QA deployment testing.
 
 ## Active Priority
 
-Implement Shoprite `VendorOrder` PO inbox ingestion.
+Verify and deploy Shoprite `VendorOrder` PO inbox ingestion, then wire Acumatica staging invoice refresh.
 
-Do this before switching invoice submission to the real Shoprite QA `VendorInvoice` client.
+Do not switch invoice submission to the real Shoprite QA `VendorInvoice` client until the PO inbox is deployed, invoice candidates match exactly one local PO, and the required Shoprite invoice endpoint credentials/headers are confirmed.
 
 ## Why This Is Next
 
@@ -26,6 +26,17 @@ The current design says the Shoprite PO is the pivot between Acumatica and Shopr
 
 Done:
 
+- Shoprite `VendorOrder` HTTP client.
+- Shoprite VendorOrder JSON parser for PO headers, delivery location, and lines.
+- PO inbox persistence for headers, lines, raw order JSON, hashes, first/last seen timestamps.
+- `POST /api/shoprite/purchase-orders/refresh`.
+- `GET /api/shoprite/purchase-orders`.
+- `GET /api/shoprite/purchase-orders/{id}`.
+- Workbench PO inbox list/detail screens.
+- Invoice candidate PO matching against the local PO inbox.
+- PO-derived supplier/delivery GLN enrichment before validation.
+- Validation blocking for invoice candidates whose PO is missing from the local inbox.
+- Backend build gate fixed by pinning patched `Microsoft.OpenApi`.
 - Fixture-backed invoice candidate refresh.
 - Canonical invoice model and validation.
 - Shoprite invoice XML generation.
@@ -39,7 +50,6 @@ Done:
 
 Not done:
 
-- Shoprite `VendorOrder` PO inbox client/persistence/UI.
 - Real Acumatica staging invoice refresh.
 - Real Shoprite QA `VendorInvoice` submission through the API runtime path.
 - Blob payload archive.
@@ -55,11 +65,14 @@ Read:
 
 ## Verification Snapshot
 
-Most recent verification:
+Most recent verification on 2026-07-07:
 
-- Frontend lint passed.
-- Frontend build passed.
-- Backend direct `dotnet test` could not run because the local machine has no .NET SDK.
-- Backend SDK-container test built and ran domain/application tests, but infrastructure Testcontainers tests could not reach Docker from inside the container.
+- `docker run ... mcr.microsoft.com/dotnet/sdk:10.0 dotnet test backend/Pvm.sln`: passed, 52 tests.
+- `npm --prefix frontend/workbench run lint`: passed.
+- `npm --prefix frontend/workbench run build`: passed.
+- Local API smoke with Shoprite QA `VendorOrder`: imported 40 POs, persisted 40.
+- Local workbench smoke: `/purchase-orders` rendered the imported PO data.
+- Local invoice refresh smoke: fixture invoice `INV342699282` is blocked with `missing-local-shoprite-po` because fixture PO `PO4500123456` is not in the current Shoprite QA PO inbox.
+- `npm ci` reported 6 npm audit findings in the frontend dependency tree: 1 low, 5 moderate.
 
-Full backend verification requires .NET 10 SDK plus Docker/Testcontainers access.
+The local host still does not have the .NET SDK installed; backend verification uses the SDK container with Docker socket access.

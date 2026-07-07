@@ -60,6 +60,23 @@ param authBootstrapAdminObjectId string = ''
 @description('Public workbench URL used by the auth callback.')
 param workbenchPublicUrl string = 'https://ca-pvm-workbench-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io'
 
+@description('Shoprite API base URL for the deployed API.')
+param shopriteBaseUrl string = ''
+
+@secure()
+@description('Shoprite API username for the deployed API.')
+param shopriteUsername string = ''
+
+@secure()
+@description('Shoprite API password for the deployed API.')
+param shopritePassword string = ''
+
+@description('Shoprite invoice ContractID header value for VendorInvoice. Not required for VendorOrder.')
+param shopriteContractId string = ''
+
+@description('Shoprite invoice UIUser header value for VendorInvoice. Not required for VendorOrder.')
+param shopriteUiUser string = ''
+
 var tags = {
   Project: 'PVM Integrations'
   Environment: toUpper(environmentName)
@@ -95,6 +112,11 @@ module platform 'modules/platform.bicep' = {
     authBootstrapAdminEmail: authBootstrapAdminEmail
     authBootstrapAdminObjectId: authBootstrapAdminObjectId
     workbenchPublicUrl: workbenchPublicUrl
+    shopriteBaseUrl: shopriteBaseUrl
+    shopriteUsername: shopriteUsername
+    shopritePassword: shopritePassword
+    shopriteContractId: shopriteContractId
+    shopriteUiUser: shopriteUiUser
     tags: tags
   }
 }

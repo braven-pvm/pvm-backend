@@ -66,6 +66,13 @@ public static class InvoiceEndpoints
             .OrderByDescending(attempt => attempt.CreatedAt)
             .ToListAsync(cancellationToken);
 
+        var matchedPurchaseOrder = candidate.MatchedShopritePurchaseOrderId is null
+            ? null
+            : await dbContext.ShopritePurchaseOrders
+                .AsNoTracking()
+                .Include(order => order.Lines)
+                .SingleOrDefaultAsync(order => order.Id == candidate.MatchedShopritePurchaseOrderId, cancellationToken);
+
         var source = Deserialize<object>(candidate.SourceJson);
         var canonical = Deserialize<CanonicalInvoice>(candidate.CanonicalJson);
         var validation = Deserialize<ValidationResult>(candidate.ValidationJson) ?? new ValidationResult([]);
@@ -77,6 +84,7 @@ public static class InvoiceEndpoints
             CanSubmit(validation, attempts),
             source,
             canonical,
+            matchedPurchaseOrder is null ? null : ToPurchaseOrderResponse(matchedPurchaseOrder),
             validation,
             generatedXml,
             attempts.Select(ToAttemptResponse).ToArray()));
@@ -111,12 +119,14 @@ public static class InvoiceEndpoints
             fixture.Invoice,
             fixture.SupplierGln,
             fixture.StoreDcGln);
-        var validation = ShopriteInvoiceValidator.Validate(canonical, ShopriteValidationEnvironment.Qa);
-        var idempotencyKey = $"shoprite-vendorinvoice:{canonical.SupplierGln}:{canonical.StoreDcGln}:{canonical.InvoiceNumber}";
+        var enriched = await MatchPurchaseOrderAndValidateAsync(canonical, dbContext, cancellationToken);
+        canonical = enriched.Invoice;
+        var validation = enriched.Validation;
+        var idempotencyKey = BuildIdempotencyKey(canonical);
         var now = DateTimeOffset.UtcNow;
 
         var candidate = await dbContext.InvoiceCandidates
-            .SingleOrDefaultAsync(candidate => candidate.IdempotencyKey == idempotencyKey, cancellationToken);
+            .SingleOrDefaultAsync(candidate => candidate.AcumaticaInvoiceId == canonical.AcumaticaInvoiceId, cancellationToken);
 
         if (candidate is null)
         {
@@ -140,8 +150,10 @@ public static class InvoiceEndpoints
         candidate.CustomerAccount = canonical.CustomerAccount;
         candidate.CustomerLocation = canonical.CustomerLocation;
         candidate.ShopritePurchaseOrderNumber = canonical.ShopritePurchaseOrderNumber;
+        candidate.MatchedShopritePurchaseOrderId = enriched.MatchedPurchaseOrderId;
         candidate.SupplierGln = canonical.SupplierGln;
         candidate.StoreDcGln = canonical.StoreDcGln;
+        candidate.IdempotencyKey = idempotencyKey;
         candidate.Status = CandidateStatus(validation, candidate.Status);
         candidate.SourceJson = JsonSerializer.Serialize(fixture.Invoice, SerializerOptions);
         candidate.CanonicalJson = JsonSerializer.Serialize(canonical, SerializerOptions);
@@ -174,8 +186,15 @@ public static class InvoiceEndpoints
             return Results.Problem("Invoice candidate has no canonical invoice payload.");
         }
 
-        var validation = ShopriteInvoiceValidator.Validate(canonical, ShopriteValidationEnvironment.Qa);
+        var enriched = await MatchPurchaseOrderAndValidateAsync(canonical, dbContext, cancellationToken);
+        canonical = enriched.Invoice;
+        var validation = enriched.Validation;
         candidate.ValidationJson = JsonSerializer.Serialize(validation, SerializerOptions);
+        candidate.CanonicalJson = JsonSerializer.Serialize(canonical, SerializerOptions);
+        candidate.MatchedShopritePurchaseOrderId = enriched.MatchedPurchaseOrderId;
+        candidate.SupplierGln = canonical.SupplierGln;
+        candidate.StoreDcGln = canonical.StoreDcGln;
+        candidate.IdempotencyKey = BuildIdempotencyKey(canonical);
         candidate.Status = CandidateStatus(validation, candidate.Status);
         candidate.UpdatedAt = DateTimeOffset.UtcNow;
 
@@ -194,11 +213,26 @@ public static class InvoiceEndpoints
             candidate.CustomerAccount,
             candidate.CustomerLocation,
             candidate.ShopritePurchaseOrderNumber,
+            candidate.MatchedShopritePurchaseOrderId,
+            PurchaseOrderMatchStatus(candidate),
             candidate.StoreDcGln,
             candidate.Status,
             validation.CanSubmit && candidate.Status is not "Submitted" and not "Ambiguous",
             candidate.UpdatedAt);
     }
+
+    private static InvoiceCandidatePurchaseOrderResponse ToPurchaseOrderResponse(
+        ShopritePurchaseOrderEntity order)
+        => new(
+            order.Id,
+            order.PurchaseOrderNumber,
+            order.OrderTypeCode,
+            order.OrderTypeLabel,
+            order.DeliveryGln,
+            order.DeliveryLocationCode,
+            order.DeliveryLocationName,
+            order.DeliveryLocationSource,
+            order.Lines.Count);
 
     private static InvoiceSubmissionAttemptResponse ToAttemptResponse(InvoiceSubmissionAttemptEntity attempt)
         => new(
@@ -228,8 +262,83 @@ public static class InvoiceEndpoints
         return validation.CanSubmit ? "Ready" : "NeedsReview";
     }
 
+    private static async Task<MatchedInvoiceValidation> MatchPurchaseOrderAndValidateAsync(
+        CanonicalInvoice invoice,
+        PvmDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        var issues = new List<ValidationIssue>();
+        Guid? matchedPurchaseOrderId = null;
+
+        if (!string.IsNullOrWhiteSpace(invoice.ShopritePurchaseOrderNumber))
+        {
+            var matches = await dbContext.ShopritePurchaseOrders
+                .AsNoTracking()
+                .Where(order => order.PurchaseOrderNumber == invoice.ShopritePurchaseOrderNumber)
+                .ToListAsync(cancellationToken);
+
+            if (matches.Count == 0)
+            {
+                issues.Add(new ValidationIssue(
+                    "missing-local-shoprite-po",
+                    $"Shoprite PO {invoice.ShopritePurchaseOrderNumber} has not been loaded into the local PO inbox.",
+                    ValidationSeverity.Blocking,
+                    "Shoprite PO inbox"));
+            }
+            else if (matches.Count > 1)
+            {
+                issues.Add(new ValidationIssue(
+                    "ambiguous-local-shoprite-po",
+                    $"Shoprite PO {invoice.ShopritePurchaseOrderNumber} matched multiple local PO records.",
+                    ValidationSeverity.Blocking,
+                    "integration-config"));
+            }
+            else
+            {
+                var purchaseOrder = matches[0];
+                matchedPurchaseOrderId = purchaseOrder.Id;
+                invoice = invoice with
+                {
+                    SupplierGln = string.IsNullOrWhiteSpace(purchaseOrder.SupplierGln)
+                        ? invoice.SupplierGln
+                        : purchaseOrder.SupplierGln,
+                    StoreDcGln = string.IsNullOrWhiteSpace(purchaseOrder.DeliveryGln)
+                        ? invoice.StoreDcGln
+                        : purchaseOrder.DeliveryGln
+                };
+            }
+        }
+
+        var baseValidation = ShopriteInvoiceValidator.Validate(invoice, ShopriteValidationEnvironment.Qa);
+        var validation = issues.Count == 0
+            ? baseValidation
+            : new ValidationResult(baseValidation.Issues.Concat(issues).ToArray());
+
+        return new MatchedInvoiceValidation(invoice, matchedPurchaseOrderId, validation);
+    }
+
+    private static string PurchaseOrderMatchStatus(InvoiceCandidateEntity candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate.ShopritePurchaseOrderNumber))
+        {
+            return "MissingPoNumber";
+        }
+
+        return candidate.MatchedShopritePurchaseOrderId is null
+            ? "Unmatched"
+            : "Matched";
+    }
+
+    private static string BuildIdempotencyKey(CanonicalInvoice invoice)
+        => $"shoprite-vendorinvoice:{invoice.SupplierGln}:{invoice.StoreDcGln}:{invoice.ShopritePurchaseOrderNumber}:{invoice.InvoiceNumber}";
+
     private static T? Deserialize<T>(string? json)
         => string.IsNullOrWhiteSpace(json)
             ? default
             : JsonSerializer.Deserialize<T>(json, SerializerOptions);
+
+    private sealed record MatchedInvoiceValidation(
+        CanonicalInvoice Invoice,
+        Guid? MatchedPurchaseOrderId,
+        ValidationResult Validation);
 }
