@@ -2,13 +2,13 @@ namespace Pvm.Infrastructure.Shoprite;
 
 public sealed class ShopriteOptions
 {
-    public required string BaseUrl { get; init; }
+    public string? BaseUrl { get; init; }
 
-    public required string Username { get; init; }
+    public string? Username { get; init; }
 
-    public required string Password { get; init; }
+    public string? Password { get; init; }
 
-    public required string ContractId { get; init; }
+    public string? ContractId { get; init; }
 
-    public required string UiUser { get; init; }
+    public string? UiUser { get; init; }
 }

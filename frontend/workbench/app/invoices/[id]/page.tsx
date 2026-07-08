@@ -96,6 +96,65 @@ export default async function InvoiceDetailPage({
         </div>
       </section>
 
+      <section className="detail-grid">
+        <div className="detail-panel">
+          <h2>Matched Shoprite PO</h2>
+          {candidate.matchedPurchaseOrder ? (
+            <dl>
+              <div>
+                <dt>PO number</dt>
+                <dd>
+                  <Link href={`/purchase-orders/${candidate.matchedPurchaseOrder.id}`}>
+                    {candidate.matchedPurchaseOrder.purchaseOrderNumber}
+                  </Link>
+                </dd>
+              </div>
+              <div>
+                <dt>Order type</dt>
+                <dd>
+                  {candidate.matchedPurchaseOrder.orderTypeCode ?? "-"}{" "}
+                  {candidate.matchedPurchaseOrder.orderTypeLabel ?? ""}
+                </dd>
+              </div>
+              <div>
+                <dt>Delivery location</dt>
+                <dd>
+                  {candidate.matchedPurchaseOrder.deliveryLocationCode ?? "-"} ·{" "}
+                  {candidate.matchedPurchaseOrder.deliveryLocationName ?? "-"}
+                </dd>
+              </div>
+              <div>
+                <dt>Delivery GLN</dt>
+                <dd>{candidate.matchedPurchaseOrder.deliveryGln ?? "-"}</dd>
+              </div>
+              <div>
+                <dt>Location source</dt>
+                <dd>{candidate.matchedPurchaseOrder.deliveryLocationSource}</dd>
+              </div>
+            </dl>
+          ) : (
+            <div className="empty-state compact">
+              <strong>No local PO match</strong>
+              <p>Refresh the Shoprite PO inbox, then revalidate this invoice.</p>
+            </div>
+          )}
+        </div>
+
+        <div className="detail-panel">
+          <h2>PO line context</h2>
+          <dl>
+            <div>
+              <dt>PO lines</dt>
+              <dd>{candidate.matchedPurchaseOrder?.lineCount ?? 0}</dd>
+            </div>
+            <div>
+              <dt>Candidate lines</dt>
+              <dd>{invoice?.lines.length ?? 0}</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
       <section className="table-panel detail-section">
         <div className="table-toolbar">
           <h2>Validation</h2>

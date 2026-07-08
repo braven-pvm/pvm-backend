@@ -3,9 +3,11 @@ using Pvm.Api.Auth;
 using Pvm.Api.Features.Admin;
 using Pvm.Api.Features.Auth;
 using Pvm.Api.Features.Invoices;
+using Pvm.Api.Features.ShopritePurchaseOrders;
 using Pvm.Api.Features.Submissions;
 using Pvm.Application.Submissions;
 using Pvm.Infrastructure.Persistence;
+using Pvm.Infrastructure.Shoprite;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,6 +19,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 });
 builder.Services.AddPvmPersistence(builder.Configuration);
 builder.Services.AddPvmAuth(builder.Configuration, builder.Environment);
+builder.Services.AddShopritePurchaseOrderClient(builder.Configuration);
 builder.Services.AddScoped<SubmitShopriteInvoiceHandler>();
 builder.Services.AddSingleton<IShopriteInvoiceClient, LocalShopriteInvoiceClient>();
 
@@ -36,6 +39,7 @@ app.UseAuthorization();
 
 app.MapInvoiceEndpoints();
 app.MapSubmissionEndpoints();
+app.MapPurchaseOrderEndpoints();
 app.MapAdminUserEndpoints();
 app.MapAuthEndpoints();
 

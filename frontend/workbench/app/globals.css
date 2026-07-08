@@ -257,6 +257,16 @@ a {
   max-width: 560px;
 }
 
+.empty-state.compact {
+  padding: 12px 0 0;
+  text-align: left;
+}
+
+.empty-state.compact p {
+  margin-left: 0;
+  margin-right: 0;
+}
+
 table {
   border-collapse: collapse;
   width: 100%;

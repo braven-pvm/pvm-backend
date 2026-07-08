@@ -24,6 +24,18 @@ param authBootstrapAdminEmail string = ''
 param authBootstrapAdminObjectId string = ''
 param workbenchPublicUrl string
 
+param shopriteBaseUrl string = ''
+
+@secure()
+param shopriteUsername string = ''
+
+@secure()
+param shopritePassword string = ''
+
+param shopriteContractId string = ''
+param shopriteUiUser string = ''
+param containerAppMinReplicas int = 1
+
 param tags object
 
 var suffix = environmentName
@@ -336,11 +348,19 @@ resource apiContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
           name: 'connectionstrings-pvm'
           value: pvmConnectionString
         }
+        {
+          name: 'shoprite-username'
+          value: shopriteUsername
+        }
+        {
+          name: 'shoprite-password'
+          value: shopritePassword
+        }
       ]
     }
     template: {
       scale: {
-        minReplicas: 0
+        minReplicas: containerAppMinReplicas
         maxReplicas: 2
       }
       containers: [
@@ -375,6 +395,26 @@ resource apiContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
             {
               name: 'Auth__BootstrapAdminObjectIds__0'
               value: authBootstrapAdminObjectId
+            }
+            {
+              name: 'Shoprite__BaseUrl'
+              value: shopriteBaseUrl
+            }
+            {
+              name: 'Shoprite__Username'
+              secretRef: 'shoprite-username'
+            }
+            {
+              name: 'Shoprite__Password'
+              secretRef: 'shoprite-password'
+            }
+            {
+              name: 'Shoprite__ContractId'
+              value: shopriteContractId
+            }
+            {
+              name: 'Shoprite__UiUser'
+              value: shopriteUiUser
             }
           ]
           resources: {
@@ -429,7 +469,7 @@ resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
     }
     template: {
       scale: {
-        minReplicas: 0
+        minReplicas: containerAppMinReplicas
         maxReplicas: 2
       }
       containers: [

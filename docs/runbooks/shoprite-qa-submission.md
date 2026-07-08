@@ -1,6 +1,6 @@
 # Shoprite QA Invoice Submission Runbook
 
-This runbook covers the QA-only Shoprite invoice upload slice. The current local vertical slice uses a sanitized fixture and a local Shoprite stub client. Do not treat it as production-ready until Acumatica staging extraction, Shoprite QA credentials, and payload storage are wired to real services. The QA workbench/API must remain protected by Microsoft Entra authentication and app-managed roles before real invoice/customer data is connected.
+This runbook covers the QA-only Shoprite invoice upload slice. The current local invoice submission path still uses a sanitized invoice fixture and a local Shoprite stub client, but the Shoprite `VendorOrder` PO inbox is now implemented for QA credential-backed refresh. Do not treat invoice submission as production-ready until Acumatica staging extraction, Shoprite QA invoice submission credentials, and payload storage are wired to real services. The QA workbench/API must remain protected by Microsoft Entra authentication and app-managed roles before real invoice/customer data is connected.
 
 ## Scope
 
@@ -41,6 +41,20 @@ Shoprite QA:
 - `UIUser`
 - confirmation that QA accepts XML payloads with `Content-Type: application/xml`
 - expected success, validation-error, and duplicate/error response examples
+
+For the PO inbox, the verified QA endpoint shape is:
+
+```text
+GET /api/VendorOrder?userName={userName}&password={password}
+```
+
+The local workbench uses:
+
+```text
+POST /api/shoprite/purchase-orders/refresh
+GET /api/shoprite/purchase-orders
+GET /api/shoprite/purchase-orders/{id}
+```
 
 Operator access:
 
@@ -124,6 +138,46 @@ Open:
 http://localhost:3000/invoices
 ```
 
+## Refresh Shoprite POs
+
+Load Shoprite QA credentials into the API process as configuration:
+
+```powershell
+Shoprite__BaseUrl=https://b2b.shopriteholdingsqa.co.za/B2BWebAPISupplierServices/api
+Shoprite__Username=<qa-username>
+Shoprite__Password=<qa-password>
+```
+
+Do not print or commit the real values.
+
+API:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:5000/api/shoprite/purchase-orders/refresh
+Invoke-RestMethod -Uri http://localhost:5000/api/shoprite/purchase-orders
+```
+
+Workbench:
+
+- open `/purchase-orders`
+- click `Refresh POs`
+- confirm the QA order batch appears
+- open a PO detail and confirm delivery location, line GTINs, and raw payload are visible
+
+Expected current QA result:
+
+- `VendorOrder` returns JSON with `orderField`
+- current verified batch size was 40 orders
+- delivery location is usually sourced from `buyerField`
+
+Deployed QA operator smoke:
+
+```text
+https://ca-pvm-workbench-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io/purchase-orders
+```
+
+Use the browser sign-in flow. CLI access tokens for the protected API may fail unless Azure CLI has consent for the API scope in Entra.
+
 ## Refresh Candidates
 
 Current QA slice:
@@ -131,6 +185,7 @@ Current QA slice:
 - `POST /api/invoices/refresh` imports the sanitized fixture at `backend/src/Pvm.Api/Features/Invoices/Fixtures/shoprite-invoice-basic.json`.
 - The fixture creates invoice `INV342699282`.
 - The fixture intentionally carries an unverified UOM warning, which is allowed in QA/staging.
+- Candidate validation now also requires the invoice PO number to match exactly one local Shoprite PO.
 
 API:
 
@@ -147,9 +202,9 @@ Workbench:
 
 Expected result:
 
-- status is `Ready`
-- `canSubmit` is `true`
-- validation shows warning `unverified-shoprite-uom`
+- status is `NeedsReview` until the candidate PO number exists in the local PO inbox
+- validation shows blocking issue `missing-local-shoprite-po` when the PO is not loaded
+- after PO match, validation may still show warning `unverified-shoprite-uom`
 - generated XML is visible on the candidate detail page
 
 ## Validate Candidate Detail
@@ -165,6 +220,7 @@ Workbench detail page should show:
 
 - Acumatica invoice ID
 - Shoprite PO number
+- matched Shoprite PO context, if present
 - supplier GLN
 - store/DC GLN
 - totals

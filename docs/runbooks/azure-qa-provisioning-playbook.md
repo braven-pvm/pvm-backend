@@ -159,6 +159,7 @@ Initial expected monthly cost:
 Cost controls:
 
 - Use Container Apps consumption with `minReplicas = 0` for workbench/API until active QA starts.
+- During active UAT, use `minReplicas = 1` for API/workbench to avoid cold-start 504s during operator sessions and deployment smoke tests.
 - Set Log Analytics daily cap or low-retention policy.
 - Use PostgreSQL burstable, smallest acceptable storage, no HA.
 - Defer Service Bus if the next slice does not need workers/queues.

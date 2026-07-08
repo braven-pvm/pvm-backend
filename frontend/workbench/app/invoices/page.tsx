@@ -10,6 +10,12 @@ export default async function InvoiceCandidatesPage() {
   const candidates = await getInvoiceCandidates();
   const candidateCount = candidates.length;
   const canWrite = hasAnyRole(user, ["Admin", "Operator"]);
+  const matchedCount = candidates.filter(
+    (candidate) => candidate.purchaseOrderMatchStatus === "Matched",
+  ).length;
+  const needsReviewCount = candidates.filter(
+    (candidate) => candidate.status === "NeedsReview",
+  ).length;
 
   return (
     <main className="page-shell">
@@ -40,12 +46,12 @@ export default async function InvoiceCandidatesPage() {
           <strong>{candidateCount}</strong>
         </div>
         <div>
-          <span>Ready for submission</span>
-          <strong>0</strong>
+          <span>Matched to PO</span>
+          <strong>{matchedCount}</strong>
         </div>
         <div>
           <span>Needs review</span>
-          <strong>0</strong>
+          <strong>{needsReviewCount}</strong>
         </div>
       </section>
 
@@ -68,6 +74,7 @@ export default async function InvoiceCandidatesPage() {
               <tr>
                 <th>Invoice</th>
                 <th>Customer</th>
+                <th>PO match</th>
                 <th>DC</th>
                 <th>Status</th>
                 <th></th>
@@ -78,6 +85,10 @@ export default async function InvoiceCandidatesPage() {
                 <tr key={candidate.id}>
                   <td data-label="Invoice">{candidate.invoiceNumber}</td>
                   <td data-label="Customer">{candidate.customerAccount}</td>
+                  <td data-label="PO match">
+                    {candidate.shopritePurchaseOrderNumber ?? "-"}
+                    <span>{candidate.purchaseOrderMatchStatus}</span>
+                  </td>
                   <td data-label="DC">
                     {candidate.customerLocation ?? candidate.storeDcGln ?? "Unmapped"}
                   </td>

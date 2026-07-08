@@ -8,6 +8,7 @@ public sealed class InvoiceCandidateEntity
     public required string CustomerAccount { get; set; }
     public string? CustomerLocation { get; set; }
     public string? ShopritePurchaseOrderNumber { get; set; }
+    public Guid? MatchedShopritePurchaseOrderId { get; set; }
     public string? SupplierGln { get; set; }
     public string? StoreDcGln { get; set; }
     public required string IdempotencyKey { get; set; }

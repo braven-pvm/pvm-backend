@@ -9,6 +9,10 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<InvoiceSubmissionAttemptEntity> InvoiceSubmissionAttempts => Set<InvoiceSubmissionAttemptEntity>();
 
+    public DbSet<ShopritePurchaseOrderEntity> ShopritePurchaseOrders => Set<ShopritePurchaseOrderEntity>();
+
+    public DbSet<ShopritePurchaseOrderLineEntity> ShopritePurchaseOrderLines => Set<ShopritePurchaseOrderLineEntity>();
+
     public DbSet<AuditEventEntity> AuditEvents => Set<AuditEventEntity>();
 
     public DbSet<AppUserEntity> AppUsers => Set<AppUserEntity>();
@@ -29,6 +33,11 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(candidate => candidate.SourceJson).HasColumnType("jsonb");
             entity.Property(candidate => candidate.CanonicalJson).HasColumnType("jsonb");
             entity.Property(candidate => candidate.ValidationJson).HasColumnType("jsonb");
+            entity
+                .HasOne<ShopritePurchaseOrderEntity>()
+                .WithMany()
+                .HasForeignKey(candidate => candidate.MatchedShopritePurchaseOrderId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<InvoiceSubmissionAttemptEntity>(entity =>
@@ -47,6 +56,48 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(attempt => attempt.FailureClassification).HasMaxLength(128);
             entity.Property(attempt => attempt.RecommendedFixLocation).HasMaxLength(128);
             entity.Property(attempt => attempt.ResponsibleRole).HasMaxLength(128);
+        });
+
+        modelBuilder.Entity<ShopritePurchaseOrderEntity>(entity =>
+        {
+            entity.ToTable("shoprite_purchase_orders");
+            entity.HasKey(order => order.Id);
+            entity.HasIndex(order => order.PurchaseOrderNumber).IsUnique();
+            entity.HasIndex(order => order.DeliveryGln);
+            entity.Property(order => order.PurchaseOrderNumber).HasMaxLength(128);
+            entity.Property(order => order.OrderHeaderId).HasMaxLength(128);
+            entity.Property(order => order.OrderTypeCode).HasMaxLength(32);
+            entity.Property(order => order.OrderTypeLabel).HasMaxLength(128);
+            entity.Property(order => order.SupplierGln).HasMaxLength(32);
+            entity.Property(order => order.BuyerGln).HasMaxLength(32);
+            entity.Property(order => order.DeliveryGln).HasMaxLength(32);
+            entity.Property(order => order.DeliveryLocationCode).HasMaxLength(128);
+            entity.Property(order => order.DeliveryLocationName).HasMaxLength(512);
+            entity.Property(order => order.DeliveryLocationSource).HasMaxLength(64);
+            entity.Property(order => order.CurrencyCode).HasMaxLength(8);
+            entity.Property(order => order.SourceEnvironment).HasMaxLength(32);
+            entity.Property(order => order.SourceEndpoint).HasMaxLength(128);
+            entity.Property(order => order.PayloadHash).HasMaxLength(128);
+            entity.Property(order => order.RawOrderJson).HasColumnType("jsonb");
+            entity
+                .HasMany(order => order.Lines)
+                .WithOne()
+                .HasForeignKey(line => line.ShopritePurchaseOrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ShopritePurchaseOrderLineEntity>(entity =>
+        {
+            entity.ToTable("shoprite_purchase_order_lines");
+            entity.HasKey(line => line.Id);
+            entity.HasIndex(line => new { line.ShopritePurchaseOrderId, line.LineNumber }).IsUnique();
+            entity.HasIndex(line => line.Gtin);
+            entity.Property(line => line.Gtin).HasMaxLength(32);
+            entity.Property(line => line.BuyerItemId).HasMaxLength(128);
+            entity.Property(line => line.BuyerItemDescription).HasMaxLength(512);
+            entity.Property(line => line.SupplierItemId).HasMaxLength(128);
+            entity.Property(line => line.Description).HasMaxLength(512);
+            entity.Property(line => line.MeasurementUnitCode).HasMaxLength(32);
         });
 
         modelBuilder.Entity<AuditEventEntity>(entity =>

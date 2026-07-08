@@ -15,6 +15,14 @@ public sealed class ShopriteInvoiceClient(
         string xml,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(_options.Username) ||
+            string.IsNullOrWhiteSpace(_options.Password) ||
+            string.IsNullOrWhiteSpace(_options.ContractId) ||
+            string.IsNullOrWhiteSpace(_options.UiUser))
+        {
+            throw new InvalidOperationException("Shoprite invoice client credentials and headers are not configured.");
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Post, "VendorInvoice");
         request.Content = new StringContent(xml, Encoding.UTF8, "application/xml");
         request.Headers.Authorization = new AuthenticationHeaderValue(

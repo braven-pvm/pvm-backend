@@ -1,0 +1,71 @@
+namespace Pvm.Api.Features.ShopritePurchaseOrders;
+
+public sealed record PurchaseOrderRefreshResponse(
+    int Received,
+    int Created,
+    int Updated,
+    int Skipped,
+    DateTimeOffset RefreshedAt);
+
+public sealed record PurchaseOrderSummaryResponse(
+    Guid Id,
+    string PurchaseOrderNumber,
+    string? OrderTypeCode,
+    string? OrderTypeLabel,
+    string? DeliveryGln,
+    string? DeliveryLocationCode,
+    string? DeliveryLocationName,
+    string DeliveryLocationSource,
+    string? SupplierGln,
+    int LineCount,
+    DateTimeOffset LastSeenAt);
+
+public sealed record PurchaseOrderDetailResponse(
+    Guid Id,
+    string PurchaseOrderNumber,
+    string? OrderHeaderId,
+    string? OrderTypeCode,
+    string? OrderTypeLabel,
+    string? SupplierGln,
+    string? BuyerGln,
+    string? DeliveryGln,
+    string? DeliveryLocationCode,
+    string? DeliveryLocationName,
+    string DeliveryLocationSource,
+    string? CurrencyCode,
+    decimal? TotalExcludingTax,
+    decimal? TotalIncludingTax,
+    decimal? TotalTax,
+    string SourceEnvironment,
+    string SourceEndpoint,
+    string? PayloadHash,
+    DateTimeOffset? ShopriteCreatedAt,
+    DateTimeOffset? ShopriteLastUpdatedAt,
+    DateTimeOffset FirstSeenAt,
+    DateTimeOffset LastSeenAt,
+    IReadOnlyList<PurchaseOrderLineResponse> Lines,
+    IReadOnlyList<LinkedInvoiceCandidateResponse> LinkedInvoiceCandidates,
+    string? RawOrderJson);
+
+public sealed record PurchaseOrderLineResponse(
+    Guid Id,
+    int LineNumber,
+    string? Gtin,
+    string? BuyerItemId,
+    string? BuyerItemDescription,
+    string? SupplierItemId,
+    string? Description,
+    decimal? RequestedQuantity,
+    string? MeasurementUnitCode,
+    decimal? NetAmount,
+    decimal? NetPrice,
+    decimal? MonetaryAmountExcludingTaxes,
+    decimal? MonetaryAmountIncludingTaxes);
+
+public sealed record LinkedInvoiceCandidateResponse(
+    Guid Id,
+    string InvoiceNumber,
+    string CustomerAccount,
+    string Status,
+    DateTimeOffset UpdatedAt);
+
