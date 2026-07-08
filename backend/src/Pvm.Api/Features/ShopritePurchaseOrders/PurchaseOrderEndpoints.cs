@@ -1,14 +1,20 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using Pvm.Api.Features.Invoices.Models;
 using Microsoft.EntityFrameworkCore;
 using Pvm.Application.Shoprite;
+using Pvm.Domain.Validation;
 using Pvm.Infrastructure.Persistence;
 using Pvm.Infrastructure.Persistence.Entities;
+using Pvm.Infrastructure.Shoprite;
 
 namespace Pvm.Api.Features.ShopritePurchaseOrders;
 
 public static class PurchaseOrderEndpoints
 {
+    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+
     public static IEndpointRouteBuilder MapPurchaseOrderEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/shoprite/purchase-orders");
@@ -18,6 +24,8 @@ public static class PurchaseOrderEndpoints
         group.MapGet("/{id:guid}", GetPurchaseOrderAsync)
             .RequireAuthorization("Invoices.Read");
         group.MapPost("/refresh", RefreshPurchaseOrdersAsync)
+            .RequireAuthorization("Invoices.Write");
+        group.MapPost("/{id:guid}/seed-test-invoice", SeedTestInvoiceAsync)
             .RequireAuthorization("Invoices.Write");
 
         return app;
@@ -144,6 +152,24 @@ public static class PurchaseOrderEndpoints
             RefreshedAt: now));
     }
 
+    private static async Task<IResult> SeedTestInvoiceAsync(
+        Guid id,
+        ShopriteSeedInvoiceCandidateService seedInvoiceCandidateService,
+        CancellationToken cancellationToken)
+    {
+        var candidate = await seedInvoiceCandidateService.SeedAsync(
+            id,
+            DateTimeOffset.UtcNow,
+            cancellationToken);
+
+        if (candidate is null)
+        {
+            return Results.NotFound(new { id, message = "Shoprite purchase order not found." });
+        }
+
+        return Results.Ok(ToInvoiceCandidateSummaryResponse(candidate));
+    }
+
     private static void Apply(
         ShopritePurchaseOrder source,
         ShopritePurchaseOrderEntity entity,
@@ -254,6 +280,33 @@ public static class PurchaseOrderEndpoints
             line.NetPrice,
             line.MonetaryAmountExcludingTaxes,
             line.MonetaryAmountIncludingTaxes);
+
+    private static InvoiceCandidateSummaryResponse ToInvoiceCandidateSummaryResponse(InvoiceCandidateEntity candidate)
+    {
+        var validation = Deserialize<ValidationResult>(candidate.ValidationJson) ?? new ValidationResult([]);
+
+        return new InvoiceCandidateSummaryResponse(
+            candidate.Id,
+            candidate.InvoiceNumber,
+            candidate.CustomerAccount,
+            candidate.CustomerLocation,
+            candidate.ShopritePurchaseOrderNumber,
+            candidate.MatchedShopritePurchaseOrderId,
+            string.IsNullOrWhiteSpace(candidate.ShopritePurchaseOrderNumber)
+                ? "MissingPoNumber"
+                : candidate.MatchedShopritePurchaseOrderId is null ? "Unmatched" : "Matched",
+            candidate.StoreDcGln,
+            candidate.Status,
+            validation.CanSubmit
+                && candidate.MatchedShopritePurchaseOrderId is not null
+                && candidate.Status is not "Submitted" and not "Ambiguous",
+            candidate.UpdatedAt);
+    }
+
+    private static T? Deserialize<T>(string? json)
+        => string.IsNullOrWhiteSpace(json)
+            ? default
+            : JsonSerializer.Deserialize<T>(json, SerializerOptions);
 
     private static string Sha256(string value)
     {

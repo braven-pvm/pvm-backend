@@ -86,8 +86,6 @@ jobs:
           shoprite_base_url="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name shoprite--baseurl --query value -o tsv)"
           shoprite_username="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name shoprite--username --query value -o tsv)"
           shoprite_password="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name shoprite--password --query value -o tsv)"
-          shoprite_contract_id="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name shoprite--contractid --query value -o tsv 2>/dev/null || true)"
-          shoprite_ui_user="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name shoprite--uiuser --query value -o tsv 2>/dev/null || true)"
 
           if [ -z "$postgres_password" ]; then
             echo "Could not extract PostgreSQL password from Key Vault connection string." >&2
@@ -144,8 +142,6 @@ jobs:
             echo "shoprite_password<<EOF"
             echo "$shoprite_password"
             echo "EOF"
-            echo "shoprite_contract_id=$shoprite_contract_id"
-            echo "shoprite_ui_user=$shoprite_ui_user"
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push API image
@@ -190,8 +186,7 @@ jobs:
             --parameters shopriteBaseUrl='${{ steps.values.outputs.shoprite_base_url }}' \
             --parameters shopriteUsername='${{ steps.values.outputs.shoprite_username }}' \
             --parameters shopritePassword='${{ steps.values.outputs.shoprite_password }}' \
-            --parameters shopriteContractId='${{ steps.values.outputs.shoprite_contract_id }}' \
-            --parameters shopriteUiUser='${{ steps.values.outputs.shoprite_ui_user }}' \
+            --parameters shopriteInvoiceSubmissionMode=RealQa \
             --parameters containerAppMinReplicas=1 \
             --only-show-errors
 

@@ -21,7 +21,7 @@ builder.Services.AddPvmPersistence(builder.Configuration);
 builder.Services.AddPvmAuth(builder.Configuration, builder.Environment);
 builder.Services.AddShopritePurchaseOrderClient(builder.Configuration);
 builder.Services.AddScoped<SubmitShopriteInvoiceHandler>();
-builder.Services.AddSingleton<IShopriteInvoiceClient, LocalShopriteInvoiceClient>();
+builder.Services.AddConfiguredShopriteInvoiceClient(builder.Configuration);
 
 var app = builder.Build();
 

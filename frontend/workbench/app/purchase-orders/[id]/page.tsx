@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { seedInvoiceFromPurchaseOrderAction } from "../../actions";
 import { getPurchaseOrder } from "../../../src/api/client";
-import { requireWorkbenchUser } from "../../../src/auth/session";
+import { hasAnyRole, requireWorkbenchUser } from "../../../src/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +16,9 @@ export default async function PurchaseOrderDetailPage({
   params,
 }: PurchaseOrderDetailPageProps) {
   const { id } = await params;
-  await requireWorkbenchUser(`/purchase-orders/${id}`);
+  const user = await requireWorkbenchUser(`/purchase-orders/${id}`);
   const order = await loadPurchaseOrder(id);
+  const canWrite = hasAnyRole(user, ["Admin", "Operator"]);
 
   return (
     <main className="page-shell">
@@ -31,7 +33,17 @@ export default async function PurchaseOrderDetailPage({
             {order.deliveryGln ?? "No delivery GLN"}
           </p>
         </div>
-        <span className="status-pill">{order.sourceEnvironment}</span>
+        <div className="action-row">
+          <span className="status-pill">{order.sourceEnvironment}</span>
+          {canWrite ? (
+            <form action={seedInvoiceFromPurchaseOrderAction}>
+              <input name="id" type="hidden" value={order.id} />
+              <button className="button" type="submit">
+                Seed test invoice
+              </button>
+            </form>
+          ) : null}
+        </div>
       </section>
 
       <section className="detail-grid">

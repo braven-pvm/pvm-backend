@@ -16,20 +16,13 @@ public sealed class ShopriteInvoiceClient(
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_options.Username) ||
-            string.IsNullOrWhiteSpace(_options.Password) ||
-            string.IsNullOrWhiteSpace(_options.ContractId) ||
-            string.IsNullOrWhiteSpace(_options.UiUser))
+            string.IsNullOrWhiteSpace(_options.Password))
         {
-            throw new InvalidOperationException("Shoprite invoice client credentials and headers are not configured.");
+            throw new InvalidOperationException("Shoprite invoice client credentials are not configured.");
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "VendorInvoice");
+        using var request = new HttpRequestMessage(HttpMethod.Post, BuildVendorInvoiceUri());
         request.Content = new StringContent(xml, Encoding.UTF8, "application/xml");
-        request.Headers.Authorization = new AuthenticationHeaderValue(
-            "Basic",
-            Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_options.Username}:{_options.Password}")));
-        request.Headers.Add("ContractID", _options.ContractId);
-        request.Headers.Add("UIUser", _options.UiUser);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/xml"));
 
         try
@@ -58,5 +51,12 @@ public sealed class ShopriteInvoiceClient(
                 exception.Message,
                 IsAmbiguous: true);
         }
+    }
+
+    private Uri BuildVendorInvoiceUri()
+    {
+        var userName = Uri.EscapeDataString(_options.Username!);
+        var password = Uri.EscapeDataString(_options.Password!);
+        return new Uri($"VendorInvoice?userName={userName}&password={password}", UriKind.Relative);
     }
 }

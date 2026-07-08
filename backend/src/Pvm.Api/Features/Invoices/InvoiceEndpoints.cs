@@ -81,7 +81,11 @@ public static class InvoiceEndpoints
         return Results.Ok(new InvoiceCandidateDetailResponse(
             candidate.Id,
             candidate.Status,
-            CanSubmit(validation, attempts),
+            InvoiceCandidateReadiness.CanSubmit(
+                validation,
+                candidate.MatchedShopritePurchaseOrderId,
+                candidate.Status,
+                attempts.Select(attempt => attempt.Status).ToArray()),
             source,
             canonical,
             matchedPurchaseOrder is null ? null : ToPurchaseOrderResponse(matchedPurchaseOrder),
@@ -217,7 +221,11 @@ public static class InvoiceEndpoints
             PurchaseOrderMatchStatus(candidate),
             candidate.StoreDcGln,
             candidate.Status,
-            validation.CanSubmit && candidate.Status is not "Submitted" and not "Ambiguous",
+            InvoiceCandidateReadiness.CanSubmit(
+                validation,
+                candidate.MatchedShopritePurchaseOrderId,
+                candidate.Status,
+                attemptStatuses: []),
             candidate.UpdatedAt);
     }
 
@@ -245,12 +253,6 @@ public static class InvoiceEndpoints
             attempt.FailureClassification,
             attempt.IsRetryEligible,
             attempt.CreatedAt);
-
-    private static bool CanSubmit(
-        ValidationResult validation,
-        IReadOnlyCollection<InvoiceSubmissionAttemptEntity> attempts)
-        => validation.CanSubmit
-            && !attempts.Any(attempt => attempt.Status is "Submitted" or "Ambiguous");
 
     private static string CandidateStatus(ValidationResult validation, string? currentStatus)
     {

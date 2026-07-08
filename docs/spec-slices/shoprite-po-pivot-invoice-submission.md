@@ -234,6 +234,12 @@ The system generates GS1 `invoiceMessage` XML from the canonical invoice.
 
 Credentials must not appear in logs, audit events, browser-visible error messages, or stored request URLs.
 
+QA seeding note:
+
+- Before Acumatica staging extraction is wired, a QA-only seed action can generate a deterministic invoice candidate from a loaded Shoprite PO.
+- Seeded candidates use the same canonical invoice model, validation, XML generation, submission command, attempt persistence, and duplicate blocking as later Acumatica-sourced candidates.
+- Seeded candidates prove Shoprite `VendorInvoice` acceptance mechanics only; they do not prove Acumatica source extraction.
+
 ## Step 8: Persist Attempt and State
 
 Every attempt records:

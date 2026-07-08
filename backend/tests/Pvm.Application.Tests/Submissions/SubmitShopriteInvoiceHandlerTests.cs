@@ -38,7 +38,8 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         var repository = new FakeInvoiceCandidateRepository
         {
             Invoice = ValidInvoice(),
-            ValidationResult = new ValidationResult([])
+            ValidationResult = new ValidationResult([]),
+            HasMatchedPurchaseOrder = true
         };
         var shopriteClient = new FakeShopriteInvoiceClient
         {
@@ -61,12 +62,32 @@ public sealed class SubmitShopriteInvoiceHandlerTests
     }
 
     [Fact]
-    public async Task Timeout_or_unknown_outcome_returns_ambiguous_and_records_attempt()
+    public async Task Valid_invoice_without_matched_local_purchase_order_is_not_sent_to_shoprite()
     {
         var repository = new FakeInvoiceCandidateRepository
         {
             Invoice = ValidInvoice(),
             ValidationResult = new ValidationResult([])
+        };
+        var shopriteClient = new FakeShopriteInvoiceClient();
+        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient);
+
+        var result = await handler.HandleAsync(Command, CancellationToken.None);
+
+        Assert.Equal(SubmitShopriteInvoiceStatus.ValidationBlocked, result.Status);
+        Assert.Equal("Invoice must match one loaded Shoprite PO before submission.", result.Message);
+        Assert.Equal(0, shopriteClient.SubmitCallCount);
+        Assert.Empty(repository.Attempts);
+    }
+
+    [Fact]
+    public async Task Timeout_or_unknown_outcome_returns_ambiguous_and_records_attempt()
+    {
+        var repository = new FakeInvoiceCandidateRepository
+        {
+            Invoice = ValidInvoice(),
+            ValidationResult = new ValidationResult([]),
+            HasMatchedPurchaseOrder = true
         };
         var shopriteClient = new FakeShopriteInvoiceClient
         {
@@ -91,6 +112,7 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         {
             Invoice = ValidInvoice(),
             ValidationResult = new ValidationResult([]),
+            HasMatchedPurchaseOrder = true,
             HasUnresolvedAmbiguousSubmission = true
         };
         var shopriteClient = new FakeShopriteInvoiceClient();
@@ -110,6 +132,7 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         {
             Invoice = ValidInvoice(),
             ValidationResult = new ValidationResult([]),
+            HasMatchedPurchaseOrder = true,
             HasSuccessfulSubmission = true
         };
         var shopriteClient = new FakeShopriteInvoiceClient();
@@ -160,6 +183,7 @@ public sealed class SubmitShopriteInvoiceHandlerTests
     {
         public CanonicalInvoice? Invoice { get; init; }
         public ValidationResult ValidationResult { get; init; } = new([]);
+        public bool HasMatchedPurchaseOrder { get; init; }
         public bool HasUnresolvedAmbiguousSubmission { get; init; }
         public bool HasSuccessfulSubmission { get; init; }
         public List<RecordedAttempt> Attempts { get; } = [];
@@ -169,6 +193,9 @@ public sealed class SubmitShopriteInvoiceHandlerTests
 
         public Task<ValidationResult> GetValidationResultAsync(Guid invoiceCandidateId, CancellationToken cancellationToken)
             => Task.FromResult(ValidationResult);
+
+        public Task<bool> HasMatchedPurchaseOrderAsync(Guid invoiceCandidateId, CancellationToken cancellationToken)
+            => Task.FromResult(HasMatchedPurchaseOrder);
 
         public Task<bool> HasUnresolvedAmbiguousSubmissionAsync(Guid invoiceCandidateId, CancellationToken cancellationToken)
             => Task.FromResult(HasUnresolvedAmbiguousSubmission);

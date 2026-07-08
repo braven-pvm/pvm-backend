@@ -260,3 +260,23 @@ export async function refreshPurchaseOrders(): Promise<PurchaseOrderRefreshResul
 
   return response.json();
 }
+
+export async function seedInvoiceCandidateFromPurchaseOrder(
+  id: string,
+): Promise<InvoiceCandidateSummary> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(
+    `${apiBaseUrl}/api/shoprite/purchase-orders/${id}/seed-test-invoice`,
+    {
+      method: "POST",
+      headers,
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to seed invoice candidate: ${response.status}`);
+  }
+
+  return response.json();
+}
