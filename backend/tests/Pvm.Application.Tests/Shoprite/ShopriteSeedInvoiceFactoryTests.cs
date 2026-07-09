@@ -57,4 +57,43 @@ public sealed class ShopriteSeedInvoiceFactoryTests
         var validation = ShopriteInvoiceValidator.Validate(invoice, ShopriteValidationEnvironment.Qa);
         Assert.True(validation.CanSubmit);
     }
+
+    [Fact]
+    public void FromPurchaseOrder_DefaultsMissingMeasurementUnitToUnverifiedEachForQaSeed()
+    {
+        var purchaseOrder = new SeedShopritePurchaseOrder(
+            PurchaseOrderNumber: "1210297232",
+            SupplierGln: "6001197000006",
+            DeliveryGln: "6001001829106",
+            DeliveryLocationCode: "82917",
+            DeliveryLocationName: "CHECKERS FX PLETTENBERG BAY MALL",
+            CurrencyCode: "ZAR",
+            Lines:
+            [
+                new SeedShopritePurchaseOrderLine(
+                    LineNumber: 1,
+                    Gtin: "06001197181156",
+                    BuyerItemId: "000456",
+                    Description: "QA product",
+                    RequestedQuantity: 1m,
+                    MeasurementUnitCode: null,
+                    NetPrice: 226.26m,
+                    MonetaryAmountExcludingTaxes: 226.26m,
+                    MonetaryAmountIncludingTaxes: 260.20m)
+            ]);
+
+        var invoice = ShopriteSeedInvoiceFactory.FromPurchaseOrder(
+            purchaseOrder,
+            invoiceDate: new DateTimeOffset(2026, 7, 9, 10, 0, 0, TimeSpan.Zero));
+
+        var line = Assert.Single(invoice.Lines);
+        Assert.Equal("EA", line.AcumaticaUom);
+        Assert.Equal(ShopriteMeasurementUnit.EA, line.ShopriteUom);
+        Assert.False(line.IsShopriteUomVerified);
+
+        var validation = ShopriteInvoiceValidator.Validate(invoice, ShopriteValidationEnvironment.Qa);
+        Assert.True(validation.CanSubmit);
+        Assert.DoesNotContain(validation.Issues, issue => issue.Code == "missing-shoprite-uom");
+        Assert.Contains(validation.Issues, issue => issue.Code == "unverified-shoprite-uom");
+    }
 }

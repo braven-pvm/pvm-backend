@@ -49,6 +49,7 @@ public static class ShopriteSeedInvoiceFactory
         var taxPercentage = excludingTax == 0m
             ? 0m
             : RoundCurrency(tax / excludingTax * 100m);
+        var effectiveUom = FirstNonBlank(line.MeasurementUnitCode, "EA")!;
 
         return new CanonicalInvoiceLine(
             LineNumber: line.LineNumber,
@@ -56,8 +57,8 @@ public static class ShopriteSeedInvoiceFactory
             Gtin: line.Gtin,
             Description: FirstNonBlank(line.Description, line.BuyerItemDescription, line.BuyerItemId, line.Gtin, $"PO line {line.LineNumber}")!,
             Quantity: quantity,
-            AcumaticaUom: FirstNonBlank(line.MeasurementUnitCode, "EA")!,
-            ShopriteUom: ParseMeasurementUnit(line.MeasurementUnitCode),
+            AcumaticaUom: effectiveUom,
+            ShopriteUom: ParseMeasurementUnit(effectiveUom),
             PackSize: null,
             UnitAmountExcludingTax: new Money(currencyCode, RoundCurrency(excludingTax / quantity)),
             UnitAmountIncludingTax: new Money(currencyCode, RoundCurrency(includingTax / quantity)),
