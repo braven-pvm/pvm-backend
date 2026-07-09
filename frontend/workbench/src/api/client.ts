@@ -3,6 +3,8 @@ import { getApiAuthHeaders } from "../auth/session";
 const apiBaseUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000";
 
+type Nullable<T> = T | null;
+
 export type InvoiceCandidateSummary = {
   id: string;
   invoiceNumber: string;
@@ -94,44 +96,44 @@ export type SubmitInvoiceResult = {
 export type PurchaseOrderSummary = {
   id: string;
   purchaseOrderNumber: string;
-  orderTypeCode?: string;
-  orderTypeLabel?: string;
-  deliveryGln?: string;
-  deliveryLocationCode?: string;
-  deliveryLocationName?: string;
+  orderTypeCode?: Nullable<string>;
+  orderTypeLabel?: Nullable<string>;
+  deliveryGln?: Nullable<string>;
+  deliveryLocationCode?: Nullable<string>;
+  deliveryLocationName?: Nullable<string>;
   deliveryLocationSource: string;
-  supplierGln?: string;
+  supplierGln?: Nullable<string>;
   lineCount: number;
   lastSeenAt: string;
 };
 
 export type PurchaseOrderDetail = PurchaseOrderSummary & {
-  orderHeaderId?: string;
-  buyerGln?: string;
-  currencyCode?: string;
-  totalExcludingTax?: number;
-  totalIncludingTax?: number;
-  totalTax?: number;
+  orderHeaderId?: Nullable<string>;
+  buyerGln?: Nullable<string>;
+  currencyCode?: Nullable<string>;
+  totalExcludingTax?: Nullable<number>;
+  totalIncludingTax?: Nullable<number>;
+  totalTax?: Nullable<number>;
   sourceEnvironment: string;
   sourceEndpoint: string;
-  payloadHash?: string;
-  shopriteCreatedAt?: string;
-  shopriteLastUpdatedAt?: string;
+  payloadHash?: Nullable<string>;
+  shopriteCreatedAt?: Nullable<string>;
+  shopriteLastUpdatedAt?: Nullable<string>;
   firstSeenAt: string;
   lines: Array<{
     id: string;
     lineNumber: number;
-    gtin?: string;
-    buyerItemId?: string;
-    buyerItemDescription?: string;
-    supplierItemId?: string;
-    description?: string;
-    requestedQuantity?: number;
-    measurementUnitCode?: string;
-    netAmount?: number;
-    netPrice?: number;
-    monetaryAmountExcludingTaxes?: number;
-    monetaryAmountIncludingTaxes?: number;
+    gtin?: Nullable<string>;
+    buyerItemId?: Nullable<string>;
+    buyerItemDescription?: Nullable<string>;
+    supplierItemId?: Nullable<string>;
+    description?: Nullable<string>;
+    requestedQuantity?: Nullable<number>;
+    measurementUnitCode?: Nullable<string>;
+    netAmount?: Nullable<number>;
+    netPrice?: Nullable<number>;
+    monetaryAmountExcludingTaxes?: Nullable<number>;
+    monetaryAmountIncludingTaxes?: Nullable<number>;
   }>;
   linkedInvoiceCandidates: Array<{
     id: string;
@@ -140,7 +142,7 @@ export type PurchaseOrderDetail = PurchaseOrderSummary & {
     status: string;
     updatedAt: string;
   }>;
-  rawOrderJson?: string;
+  rawOrderJson?: Nullable<string>;
 };
 
 export type PurchaseOrderRefreshResult = {

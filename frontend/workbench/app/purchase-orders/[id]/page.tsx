@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { seedInvoiceFromPurchaseOrderAction } from "../../actions";
 import { getPurchaseOrder } from "../../../src/api/client";
 import { hasAnyRole, requireWorkbenchUser } from "../../../src/auth/session";
+import { formatMoney } from "../../../src/formatters.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -238,15 +239,7 @@ async function loadPurchaseOrder(id: string) {
   }
 }
 
-function formatMoney(currencyCode: string | undefined, amount: number | undefined) {
-  if (amount === undefined) {
-    return "-";
-  }
-
-  return `${currencyCode ?? "ZAR"} ${amount.toFixed(2)}`;
-}
-
-function formatJson(value: string | undefined) {
+function formatJson(value: string | null | undefined) {
   if (!value) {
     return "No raw payload available.";
   }
