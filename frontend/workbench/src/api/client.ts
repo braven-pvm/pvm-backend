@@ -50,6 +50,7 @@ export type InvoiceCandidateDetail = {
     customerLocation?: string;
     shopritePurchaseOrderNumber?: string;
     supplierGln?: string;
+    sellerVatRegistrationNumber?: string;
     storeDcGln?: string;
     countryCode: string;
     currencyCode: string;
@@ -209,13 +210,34 @@ export async function submitInvoice(id: string): Promise<SubmitInvoiceResult> {
     headers,
     cache: "no-store",
   });
-  const result = (await response.json()) as SubmitInvoiceResult;
+  const result = await readJson(response);
 
-  if (!response.ok) {
-    throw new Error(result.message ?? `Failed to submit invoice: ${response.status}`);
+  if (isSubmitInvoiceResult(result)) {
+    return result;
   }
 
-  return result;
+  if (!response.ok) {
+    throw new Error(`Failed to submit invoice: ${response.status}`);
+  }
+
+  throw new Error("Failed to submit invoice: invalid API response.");
+}
+
+async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return undefined;
+  }
+}
+
+function isSubmitInvoiceResult(value: unknown): value is SubmitInvoiceResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const result = value as Partial<SubmitInvoiceResult>;
+  return typeof result.status === "string" && typeof result.message === "string";
 }
 
 export async function getPurchaseOrders(): Promise<PurchaseOrderSummary[]> {

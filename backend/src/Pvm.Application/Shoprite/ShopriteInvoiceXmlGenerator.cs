@@ -18,6 +18,7 @@ public static class ShopriteInvoiceXmlGenerator
         var createdAt = invoice.InvoiceDate.ToString("O", CultureInfo.InvariantCulture);
         var effectiveDate = invoice.InvoiceDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var supplierGln = invoice.SupplierGln ?? string.Empty;
+        var sellerVatRegistrationNumber = ShopriteSupplierProfile.EffectiveSellerVatRegistrationNumber(invoice.SellerVatRegistrationNumber);
         var storeDcGln = invoice.StoreDcGln ?? string.Empty;
 
         var document = new XDocument(
@@ -27,7 +28,7 @@ public static class ShopriteInvoiceXmlGenerator
                 new XAttribute(XNamespace.Xmlns + "xsd", XsdNamespace),
                 new XAttribute(XNamespace.Xmlns + "xsi", XsiNamespace),
                 StandardBusinessDocumentHeader(invoice, createdAt, supplierGln, storeDcGln),
-                Invoice(invoice, createdAt, effectiveDate, supplierGln, storeDcGln)));
+                Invoice(invoice, createdAt, effectiveDate, supplierGln, sellerVatRegistrationNumber, storeDcGln)));
 
         return document.Declaration + document.ToString(SaveOptions.DisableFormatting);
     }
@@ -54,19 +55,22 @@ public static class ShopriteInvoiceXmlGenerator
                     storeDcGln)),
             new XElement(
                 HeaderNamespace + "DocumentIdentification",
-                new XElement(HeaderNamespace + "Standard", "Standard"),
+                new XElement(HeaderNamespace + "Standard", "EDI 3.2.0"),
                 new XElement(HeaderNamespace + "TypeVersion", "3.2.0"),
                 new XElement(HeaderNamespace + "InstanceIdentifier", invoice.InvoiceNumber),
                 new XElement(HeaderNamespace + "Type", "Invoice"),
-                new XElement(HeaderNamespace + "MultipleType", "false"),
+                new XElement(HeaderNamespace + "MultipleType", "true"),
                 new XElement(HeaderNamespace + "CreationDateAndTime", createdAt)),
-            new XElement(HeaderNamespace + "Manifest"));
+            new XElement(
+                HeaderNamespace + "Manifest",
+                new XElement(HeaderNamespace + "NumberOfItems", invoice.Lines.Count.ToString(CultureInfo.InvariantCulture))));
 
     private static XElement Invoice(
         CanonicalInvoice invoice,
         string createdAt,
         string effectiveDate,
         string supplierGln,
+        string sellerVatRegistrationNumber,
         string storeDcGln)
         => new(
             "invoice",
@@ -78,6 +82,12 @@ public static class ShopriteInvoiceXmlGenerator
             new XElement(
                 "documentEffectiveDate",
                 new XElement("date", effectiveDate)),
+            new XElement(
+                "avpList",
+                new XElement(
+                    "eComStringAttributeValuePairList",
+                    new XAttribute("attributeName", "InstanceIdentifier"),
+                    invoice.InvoiceNumber)),
             new XElement(
                 "InvoiceIdentification",
                 new XElement("entityIdentification", invoice.InvoiceNumber),
@@ -92,7 +102,12 @@ public static class ShopriteInvoiceXmlGenerator
                 new XElement("gln", storeDcGln)),
             new XElement(
                 "seller",
-                new XElement("gln", supplierGln)),
+                new XElement("gln", supplierGln),
+                new XElement(
+                    "organisationDetails",
+                    new XElement(
+                        "legalRegistration",
+                        new XElement("legalRegistrationNumber", sellerVatRegistrationNumber)))),
             new XElement(
                 "shipTo",
                 new XElement("gln", storeDcGln)),
@@ -104,6 +119,12 @@ public static class ShopriteInvoiceXmlGenerator
             new XElement(
                 "purchaseOrder",
                 new XElement("entityIdentification", invoice.ShopritePurchaseOrderNumber ?? string.Empty)),
+            new XElement(
+                "invoice",
+                new XElement("entityIdentification", invoice.InvoiceNumber),
+                new XElement(
+                    "contentOwner",
+                    new XElement("gln", supplierGln))),
             invoice.Lines.Select(line => InvoiceLineItem(line, effectiveDate)));
 
     private static XElement InvoiceLineItem(CanonicalInvoiceLine line, string effectiveDate)

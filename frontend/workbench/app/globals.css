@@ -308,6 +308,11 @@ td {
   font-weight: 700;
 }
 
+.attempt-result {
+  max-width: 380px;
+  overflow-wrap: anywhere;
+}
+
 .status-pill {
   background: #e8f3ec;
   border: 1px solid #bad8c4;

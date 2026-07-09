@@ -26,6 +26,7 @@ public static class ShopriteSeedInvoiceFactory
             CustomerLocation: purchaseOrder.DeliveryLocationCode,
             ShopritePurchaseOrderNumber: purchaseOrder.PurchaseOrderNumber,
             SupplierGln: purchaseOrder.SupplierGln,
+            SellerVatRegistrationNumber: ShopriteSupplierProfile.PvmSellerVatRegistrationNumber,
             StoreDcGln: purchaseOrder.DeliveryGln,
             CountryCode: "ZA",
             CurrencyCode: currencyCode,

@@ -26,6 +26,16 @@ public sealed class ShopriteInvoiceValidatorTests
     }
 
     [Fact]
+    public void Missing_seller_vat_registration_number_blocks_submission()
+    {
+        var invoice = ValidInvoice() with { SellerVatRegistrationNumber = null };
+
+        var result = ShopriteInvoiceValidator.Validate(invoice, ShopriteValidationEnvironment.Qa);
+
+        AssertBlocking(result, "missing-seller-vat-registration-number");
+    }
+
+    [Fact]
     public void Non_zar_currency_blocks_submission()
     {
         var invoice = ValidInvoice() with
@@ -130,6 +140,7 @@ public sealed class ShopriteInvoiceValidatorTests
             CustomerLocation: "DC-01",
             ShopritePurchaseOrderNumber: "3869384391",
             SupplierGln: "9999999999999",
+            SellerVatRegistrationNumber: "4010137059",
             StoreDcGln: "6001001018104",
             CountryCode: "ZA",
             CurrencyCode: "ZAR",

@@ -26,6 +26,27 @@ public sealed class ShopriteInvoiceXmlGeneratorTests
     }
 
     [Fact]
+    public void Generate_includes_shoprite_required_body_identity_and_seller_registration()
+    {
+        var invoice = ValidInvoice();
+
+        var xml = ShopriteInvoiceXmlGenerator.Generate(invoice);
+
+        var document = XDocument.Parse(xml);
+        var root = Assert.IsType<XElement>(document.Root);
+        var invoiceBody = Assert.Single(root.Elements(), element => element.Name.LocalName == "invoice");
+
+        Assert.Equal("EDI 3.2.0", SingleValue(root, "DocumentIdentification", "Standard"));
+        Assert.Equal("true", SingleValue(root, "DocumentIdentification", "MultipleType"));
+        Assert.Equal("1", SingleValue(root, "Manifest", "NumberOfItems"));
+        Assert.Equal(
+            "INV342699282",
+            AttributeValue(invoiceBody, "eComStringAttributeValuePairList", "attributeName", "InstanceIdentifier"));
+        Assert.Equal("4010137059", SingleValue(invoiceBody, "seller", "organisationDetails", "legalRegistration", "legalRegistrationNumber"));
+        Assert.Equal("INV342699282", SingleValue(invoiceBody, "invoice", "entityIdentification"));
+    }
+
+    [Fact]
     public void Generate_escapes_text_values()
     {
         var invoice = ValidInvoice() with
@@ -60,6 +81,7 @@ public sealed class ShopriteInvoiceXmlGeneratorTests
             CustomerLocation: "DC-01",
             ShopritePurchaseOrderNumber: "3869384391",
             SupplierGln: "9999999999999",
+            SellerVatRegistrationNumber: "4010137059",
             StoreDcGln: "6001001018104",
             CountryCode: "ZA",
             CurrencyCode: "ZAR",
@@ -112,5 +134,17 @@ public sealed class ShopriteInvoiceXmlGeneratorTests
         }
 
         return true;
+    }
+
+    private static string AttributeValue(XElement root, string localName, string attributeName, string attributeValue)
+    {
+        var matches = root
+            .Descendants()
+            .Where(element => element.Name.LocalName == localName)
+            .Where(element => (string?)element.Attribute(attributeName) == attributeValue)
+            .Select(element => element.Value)
+            .ToArray();
+
+        return Assert.Single(matches);
     }
 }

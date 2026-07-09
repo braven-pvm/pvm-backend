@@ -40,6 +40,7 @@ public sealed class ShopriteSeedInvoiceFactoryTests
         Assert.Equal("36102", invoice.CustomerLocation);
         Assert.Equal("1210145512", invoice.ShopritePurchaseOrderNumber);
         Assert.Equal("6001197000006", invoice.SupplierGln);
+        Assert.Equal("4010137059", invoice.SellerVatRegistrationNumber);
         Assert.Equal("6001002010109", invoice.StoreDcGln);
         Assert.Equal(new Money("ZAR", 600m), invoice.TotalExcludingTax);
         Assert.Equal(new Money("ZAR", 690m), invoice.TotalIncludingTax);

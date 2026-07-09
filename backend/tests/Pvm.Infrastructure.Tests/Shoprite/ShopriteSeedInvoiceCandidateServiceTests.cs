@@ -45,6 +45,7 @@ public sealed class ShopriteSeedInvoiceCandidateServiceTests : IAsyncLifetime
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Assert.NotNull(invoice);
         Assert.Equal("6001197000006", invoice.SupplierGln);
+        Assert.Equal("4010137059", invoice.SellerVatRegistrationNumber);
         Assert.Equal("6001002010109", invoice.StoreDcGln);
         Assert.Equal(6m, Assert.Single(invoice.Lines).Quantity);
 

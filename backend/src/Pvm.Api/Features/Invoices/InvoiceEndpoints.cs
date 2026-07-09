@@ -304,6 +304,7 @@ public static class InvoiceEndpoints
                     SupplierGln = string.IsNullOrWhiteSpace(purchaseOrder.SupplierGln)
                         ? invoice.SupplierGln
                         : purchaseOrder.SupplierGln,
+                    SellerVatRegistrationNumber = ShopriteSupplierProfile.EffectiveSellerVatRegistrationNumber(invoice.SellerVatRegistrationNumber),
                     StoreDcGln = string.IsNullOrWhiteSpace(purchaseOrder.DeliveryGln)
                         ? invoice.StoreDcGln
                         : purchaseOrder.DeliveryGln

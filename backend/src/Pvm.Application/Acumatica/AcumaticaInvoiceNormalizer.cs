@@ -1,3 +1,4 @@
+using Pvm.Application.Shoprite;
 using Pvm.Domain.Invoices;
 
 namespace Pvm.Application.Acumatica;
@@ -7,7 +8,8 @@ public static class AcumaticaInvoiceNormalizer
     public static CanonicalInvoice Normalize(
         AcumaticaInvoiceDto dto,
         string? supplierGln,
-        string? storeDcGln)
+        string? storeDcGln,
+        string? sellerVatRegistrationNumber = null)
     {
         return new CanonicalInvoice(
             AcumaticaInvoiceId: dto.Id,
@@ -16,6 +18,7 @@ public static class AcumaticaInvoiceNormalizer
             CustomerLocation: dto.CustomerLocation,
             ShopritePurchaseOrderNumber: dto.CustomerOrder,
             SupplierGln: supplierGln,
+            SellerVatRegistrationNumber: ShopriteSupplierProfile.EffectiveSellerVatRegistrationNumber(sellerVatRegistrationNumber),
             StoreDcGln: storeDcGln,
             CountryCode: dto.CountryCode,
             CurrencyCode: dto.CurrencyCode,

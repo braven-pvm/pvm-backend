@@ -153,6 +153,7 @@ public sealed class SubmitShopriteInvoiceHandlerTests
             CustomerLocation: "DC-01",
             ShopritePurchaseOrderNumber: "3869384391",
             SupplierGln: "9999999999999",
+            SellerVatRegistrationNumber: "4010137059",
             StoreDcGln: "6001001018104",
             CountryCode: "ZA",
             CurrencyCode: "ZAR",
