@@ -18,7 +18,9 @@ public sealed class ShopriteInvoiceXmlGeneratorTests
 
         Assert.Equal("invoiceMessage", root.Name.LocalName);
         Assert.Equal("INV342699282", SingleValue(root, "InstanceIdentifier"));
-        Assert.Equal("3869384391", SingleValue(root, "purchaseOrder", "entityIdentification"));
+        Assert.Contains(
+            root.Descendants().Where(element => element.Name.LocalName == "entityIdentification"),
+            element => element.Parent?.Name.LocalName == "purchaseOrder" && element.Value == "3869384391");
         Assert.Equal("16001069205048", SingleValue(root, "gtin"));
         Assert.Contains(root.Descendants(), element =>
             element.Name.LocalName == "measurementValue"
@@ -44,6 +46,29 @@ public sealed class ShopriteInvoiceXmlGeneratorTests
             AttributeValue(invoiceBody, "eComStringAttributeValuePairList", "attributeName", "InstanceIdentifier"));
         Assert.Equal("4010137059", SingleValue(invoiceBody, "seller", "organisationDetails", "legalRegistration", "legalRegistrationNumber"));
         Assert.Equal("INV342699282", SingleValue(invoiceBody, "invoice", "entityIdentification"));
+    }
+
+    [Fact]
+    public void Generate_includes_shoprite_mapper_reference_and_container_nodes()
+    {
+        var invoice = ValidInvoice();
+
+        var xml = ShopriteInvoiceXmlGenerator.Generate(invoice);
+
+        var document = XDocument.Parse(xml);
+        var root = Assert.IsType<XElement>(document.Root);
+        var invoiceBody = Assert.Single(root.Elements(), element => element.Name.LocalName == "invoice");
+        var bodyAvpList = Assert.Single(invoiceBody.Elements(), element => element.Name.LocalName == "avpList");
+        var invoiceRefNo = AttributeValue(bodyAvpList, "eComStringAttributeValuePairList", "attributeName", "InvoiceRefNo");
+        var line = Assert.Single(invoiceBody.Elements(), element => element.Name.LocalName == "invoiceLineItem");
+        var lineAvpList = Assert.Single(line.Elements(), element => element.Name.LocalName == "avpList");
+
+        Assert.True(Guid.TryParse(invoiceRefNo, out _));
+        Assert.Equal("ALLOWANCE", SingleValue(invoiceBody, "invoiceAllowanceCharge", "allowanceOrChargeType"));
+        Assert.Contains(invoiceBody.Elements(), element => element.Name.LocalName == "taxCurrencyInformation");
+        Assert.Equal("3869384391", SingleValue(line, "purchaseOrder", "entityIdentification"));
+        Assert.True(Guid.TryParse(AttributeValue(lineAvpList, "eComStringAttributeValuePairList", "attributeName", "InvoiceDetailRefNo"), out _));
+        Assert.Equal(invoiceRefNo, AttributeValue(lineAvpList, "eComStringAttributeValuePairList", "attributeName", "InvoiceRefNo"));
     }
 
     [Fact]

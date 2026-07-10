@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Xml.Linq;
 using Pvm.Domain.Invoices;
 
@@ -20,6 +22,12 @@ public static class ShopriteInvoiceXmlGenerator
         var supplierGln = invoice.SupplierGln ?? string.Empty;
         var sellerVatRegistrationNumber = ShopriteSupplierProfile.EffectiveSellerVatRegistrationNumber(invoice.SellerVatRegistrationNumber);
         var storeDcGln = invoice.StoreDcGln ?? string.Empty;
+        var invoiceRefNo = StableReference(
+            "invoice",
+            supplierGln,
+            storeDcGln,
+            invoice.ShopritePurchaseOrderNumber,
+            invoice.InvoiceNumber);
 
         var document = new XDocument(
             new XDeclaration("1.0", "utf-8", null),
@@ -28,7 +36,7 @@ public static class ShopriteInvoiceXmlGenerator
                 new XAttribute(XNamespace.Xmlns + "xsd", XsdNamespace),
                 new XAttribute(XNamespace.Xmlns + "xsi", XsiNamespace),
                 StandardBusinessDocumentHeader(invoice, createdAt, supplierGln, storeDcGln),
-                Invoice(invoice, createdAt, effectiveDate, supplierGln, sellerVatRegistrationNumber, storeDcGln)));
+                Invoice(invoice, createdAt, effectiveDate, supplierGln, sellerVatRegistrationNumber, storeDcGln, invoiceRefNo)));
 
         return document.Declaration + document.ToString(SaveOptions.DisableFormatting);
     }
@@ -71,7 +79,8 @@ public static class ShopriteInvoiceXmlGenerator
         string effectiveDate,
         string supplierGln,
         string sellerVatRegistrationNumber,
-        string storeDcGln)
+        string storeDcGln,
+        string invoiceRefNo)
         => new(
             "invoice",
             new XElement("creationDateTime", createdAt),
@@ -84,6 +93,10 @@ public static class ShopriteInvoiceXmlGenerator
                 new XElement("date", effectiveDate)),
             new XElement(
                 "avpList",
+                new XElement(
+                    "eComStringAttributeValuePairList",
+                    new XAttribute("attributeName", "InvoiceRefNo"),
+                    invoiceRefNo),
                 new XElement(
                     "eComStringAttributeValuePairList",
                     new XAttribute("attributeName", "InstanceIdentifier"),
@@ -117,6 +130,10 @@ public static class ShopriteInvoiceXmlGenerator
                 MoneyElement("totalInvoiceAmountPayable", invoice.TotalIncludingTax),
                 MoneyElement("totalVATAmount", invoice.TotalTax)),
             new XElement(
+                "invoiceAllowanceCharge",
+                new XElement("allowanceOrChargeType", "ALLOWANCE")),
+            new XElement("taxCurrencyInformation"),
+            new XElement(
                 "purchaseOrder",
                 new XElement("entityIdentification", invoice.ShopritePurchaseOrderNumber ?? string.Empty)),
             new XElement(
@@ -125,9 +142,17 @@ public static class ShopriteInvoiceXmlGenerator
                 new XElement(
                     "contentOwner",
                     new XElement("gln", supplierGln))),
-            invoice.Lines.Select(line => InvoiceLineItem(line, effectiveDate)));
+            invoice.Lines.Select(line => InvoiceLineItem(
+                line,
+                effectiveDate,
+                invoice.ShopritePurchaseOrderNumber ?? string.Empty,
+                invoiceRefNo)));
 
-    private static XElement InvoiceLineItem(CanonicalInvoiceLine line, string effectiveDate)
+    private static XElement InvoiceLineItem(
+        CanonicalInvoiceLine line,
+        string effectiveDate,
+        string purchaseOrderNumber,
+        string invoiceRefNo)
         => new(
             "invoiceLineItem",
             new XElement("lineItemNumber", line.LineNumber.ToString(CultureInfo.InvariantCulture)),
@@ -158,7 +183,25 @@ public static class ShopriteInvoiceXmlGenerator
                 MoneyElement("dutyFeeTaxAmount", line.TaxAmount),
                 new XElement("dutyFeeTaxCategoryCode", line.TaxCategoryCode ?? string.Empty),
                 new XElement("dutyFeeTaxPercentage", Quantity(line.TaxPercentage ?? 0m)),
-                new XElement("dutyFeeTaxTypeCode", "VAT")));
+                new XElement("dutyFeeTaxTypeCode", "VAT")),
+            new XElement(
+                "purchaseOrder",
+                new XElement("entityIdentification", purchaseOrderNumber)),
+            new XElement(
+                "avpList",
+                new XElement(
+                    "eComStringAttributeValuePairList",
+                    new XAttribute("attributeName", "InvoiceDetailRefNo"),
+                    StableReference(
+                        "invoice-line",
+                        invoiceRefNo,
+                        line.LineNumber.ToString(CultureInfo.InvariantCulture),
+                        line.Gtin,
+                        line.AcumaticaInventoryId)),
+                new XElement(
+                    "eComStringAttributeValuePairList",
+                    new XAttribute("attributeName", "InvoiceRefNo"),
+                    invoiceRefNo)));
 
     private static XElement MoneyElement(string name, Money money)
         => new(
@@ -171,4 +214,13 @@ public static class ShopriteInvoiceXmlGenerator
 
     private static string Quantity(decimal value)
         => value.ToString("0.####", CultureInfo.InvariantCulture);
+
+    private static string StableReference(string scope, params string?[] parts)
+    {
+        var input = string.Join("|", new[] { scope }.Concat(parts.Select(part => part ?? string.Empty)));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(input));
+        Span<byte> guidBytes = stackalloc byte[16];
+        hash.AsSpan(0, 16).CopyTo(guidBytes);
+        return new Guid(guidBytes).ToString();
+    }
 }
