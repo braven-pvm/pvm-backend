@@ -44,6 +44,7 @@ public static class ServiceCollectionExtensions
         {
             client.Timeout = TimeSpan.FromSeconds(300);
         });
+        services.AddScoped<ShopritePurchaseOrderRefreshService>();
 
         return services;
     }
