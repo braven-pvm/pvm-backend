@@ -6,6 +6,7 @@ import { createUser, updateUserRoles, updateUserStatus } from "../src/api/admin"
 import {
   refreshInvoiceCandidates,
   refreshPurchaseOrders,
+  seedInvoiceCandidateFromPurchaseOrder,
   submitInvoice,
 } from "../src/api/client";
 
@@ -32,6 +33,16 @@ export async function refreshPurchaseOrdersAction() {
   await refreshPurchaseOrders();
   revalidatePath("/purchase-orders");
   redirect("/purchase-orders");
+}
+
+export async function seedInvoiceFromPurchaseOrderAction(formData: FormData) {
+  const id = requiredString(formData, "id");
+  const candidate = await seedInvoiceCandidateFromPurchaseOrder(id);
+
+  revalidatePath("/invoices");
+  revalidatePath("/purchase-orders");
+  revalidatePath(`/purchase-orders/${id}`);
+  redirect(`/invoices/${candidate.id}`);
 }
 
 export async function createUserAction(formData: FormData) {

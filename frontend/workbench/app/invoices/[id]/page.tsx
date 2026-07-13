@@ -215,6 +215,7 @@ export default async function InvoiceDetailPage({
                 <th>Mode</th>
                 <th>User</th>
                 <th>HTTP</th>
+                <th>Result</th>
                 <th>Created</th>
               </tr>
             </thead>
@@ -225,6 +226,9 @@ export default async function InvoiceDetailPage({
                   <td data-label="Mode">{attempt.initiationMode}</td>
                   <td data-label="User">{attempt.initiatedBy}</td>
                   <td data-label="HTTP">{attempt.responseStatusCode ?? "-"}</td>
+                  <td className="attempt-result" data-label="Result">
+                    {attempt.failureClassification ?? attempt.errorMessage ?? "-"}
+                  </td>
                   <td data-label="Created">
                     {new Date(attempt.createdAt).toLocaleString()}
                   </td>

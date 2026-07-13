@@ -32,8 +32,7 @@ param shopriteUsername string = ''
 @secure()
 param shopritePassword string = ''
 
-param shopriteContractId string = ''
-param shopriteUiUser string = ''
+param shopriteInvoiceSubmissionMode string = 'LocalStub'
 param containerAppMinReplicas int = 1
 
 param tags object
@@ -409,12 +408,8 @@ resource apiContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
               secretRef: 'shoprite-password'
             }
             {
-              name: 'Shoprite__ContractId'
-              value: shopriteContractId
-            }
-            {
-              name: 'Shoprite__UiUser'
-              value: shopriteUiUser
+              name: 'Shoprite__InvoiceSubmissionMode'
+              value: shopriteInvoiceSubmissionMode
             }
           ]
           resources: {

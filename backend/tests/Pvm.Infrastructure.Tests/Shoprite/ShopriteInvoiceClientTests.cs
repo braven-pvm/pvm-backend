@@ -11,37 +11,21 @@ namespace Pvm.Infrastructure.Tests.Shoprite;
 public sealed class ShopriteInvoiceClientTests
 {
     [Fact]
-    public async Task SubmitAsync_SetsBasicAuthenticationHeader()
+    public async Task SubmitAsync_UsesVendorInvoiceEndpointWithCredentialsInQueryString()
     {
         using var handler = new CaptureHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri("https://shoprite.example/")
+            BaseAddress = new Uri("https://shoprite.example/B2BWebAPISupplierServices/api/")
         };
         var client = new ShopriteInvoiceClient(httpClient, Options.Create(DefaultOptions()));
 
         await client.SubmitAsync("<invoice />", CancellationToken.None);
 
-        Assert.NotNull(handler.Request?.Headers.Authorization);
-        var authorization = handler.Request.Headers.Authorization;
-        Assert.Equal("Basic", authorization.Scheme);
-        Assert.Equal(Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("api-user:secret")), authorization.Parameter);
-    }
-
-    [Fact]
-    public async Task SubmitAsync_SetsContractIdAndUiUserHeaders()
-    {
-        using var handler = new CaptureHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
-        using var httpClient = new HttpClient(handler)
-        {
-            BaseAddress = new Uri("https://shoprite.example/")
-        };
-        var client = new ShopriteInvoiceClient(httpClient, Options.Create(DefaultOptions()));
-
-        await client.SubmitAsync("<invoice />", CancellationToken.None);
-
-        Assert.Equal("contract-123", Assert.Single(handler.Request?.Headers.GetValues("ContractID") ?? []));
-        Assert.Equal("ui-user", Assert.Single(handler.Request?.Headers.GetValues("UIUser") ?? []));
+        Assert.Equal("https://shoprite.example/B2BWebAPISupplierServices/api/VendorInvoice", handler.Request?.RequestUri?.GetLeftPart(UriPartial.Path));
+        Assert.Contains("userName=api-user", handler.Request?.RequestUri?.Query);
+        Assert.Contains("password=secret", handler.Request?.RequestUri?.Query);
+        Assert.Null(handler.Request?.Headers.Authorization);
     }
 
     [Fact]
@@ -50,7 +34,7 @@ public sealed class ShopriteInvoiceClientTests
         using var handler = new CaptureHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri("https://shoprite.example/")
+            BaseAddress = new Uri("https://shoprite.example/B2BWebAPISupplierServices/api/")
         };
         var client = new ShopriteInvoiceClient(httpClient, Options.Create(DefaultOptions()));
 
@@ -67,7 +51,7 @@ public sealed class ShopriteInvoiceClientTests
         using var handler = new CaptureHandler(_ => throw new HttpRequestException("connection reset"));
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri("https://shoprite.example/")
+            BaseAddress = new Uri("https://shoprite.example/B2BWebAPISupplierServices/api/")
         };
         var client = new ShopriteInvoiceClient(httpClient, Options.Create(DefaultOptions()));
 
@@ -85,7 +69,7 @@ public sealed class ShopriteInvoiceClientTests
         using var handler = new CaptureHandler(_ => throw new OperationCanceledException("timeout"));
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri("https://shoprite.example/")
+            BaseAddress = new Uri("https://shoprite.example/B2BWebAPISupplierServices/api/")
         };
         var client = new ShopriteInvoiceClient(httpClient, Options.Create(DefaultOptions()));
 
@@ -103,7 +87,7 @@ public sealed class ShopriteInvoiceClientTests
         using var handler = new CaptureHandler(_ => throw new OperationCanceledException());
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri("https://shoprite.example/")
+            BaseAddress = new Uri("https://shoprite.example/B2BWebAPISupplierServices/api/")
         };
         var client = new ShopriteInvoiceClient(httpClient, Options.Create(DefaultOptions()));
         using var cancellationTokenSource = new CancellationTokenSource();
@@ -125,7 +109,7 @@ public sealed class ShopriteInvoiceClientTests
             });
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri("https://shoprite.example/")
+            BaseAddress = new Uri("https://shoprite.example/B2BWebAPISupplierServices/api/")
         };
         var client = new ShopriteInvoiceClient(httpClient, Options.Create(DefaultOptions()));
 
@@ -144,10 +128,6 @@ public sealed class ShopriteInvoiceClientTests
     [InlineData("Username", "   ")]
     [InlineData("Password", "")]
     [InlineData("Password", "   ")]
-    [InlineData("ContractId", "")]
-    [InlineData("ContractId", "   ")]
-    [InlineData("UiUser", "")]
-    [InlineData("UiUser", "   ")]
     public void AddShopriteClient_InvalidRequiredOptionFailsClearly(string key, string value)
     {
         var configurationValues = DefaultConfiguration();
@@ -200,11 +180,9 @@ public sealed class ShopriteInvoiceClientTests
     {
         return new Dictionary<string, string?>
         {
-            ["Shoprite:BaseUrl"] = "https://shoprite.example/",
+            ["Shoprite:BaseUrl"] = "https://shoprite.example/B2BWebAPISupplierServices/api",
             ["Shoprite:Username"] = "api-user",
-            ["Shoprite:Password"] = "secret",
-            ["Shoprite:ContractId"] = "contract-123",
-            ["Shoprite:UiUser"] = "ui-user"
+            ["Shoprite:Password"] = "secret"
         };
     }
 
@@ -212,11 +190,9 @@ public sealed class ShopriteInvoiceClientTests
     {
         return new ShopriteOptions
         {
-            BaseUrl = "https://shoprite.example/",
+            BaseUrl = "https://shoprite.example/B2BWebAPISupplierServices/api",
             Username = "api-user",
-            Password = "secret",
-            ContractId = "contract-123",
-            UiUser = "ui-user"
+            Password = "secret"
         };
     }
 

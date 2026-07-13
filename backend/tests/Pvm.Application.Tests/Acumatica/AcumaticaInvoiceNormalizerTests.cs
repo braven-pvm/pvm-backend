@@ -50,6 +50,7 @@ public sealed class AcumaticaInvoiceNormalizerTests
         Assert.Equal("BRACKENFELL-DC", invoice.CustomerLocation);
         Assert.Equal("3869384391", invoice.ShopritePurchaseOrderNumber);
         Assert.Equal("9999999999999", invoice.SupplierGln);
+        Assert.Equal("4010137059", invoice.SellerVatRegistrationNumber);
         Assert.Equal("6001001018104", invoice.StoreDcGln);
         Assert.Equal("ZA", invoice.CountryCode);
         Assert.Equal("ZAR", invoice.CurrencyCode);

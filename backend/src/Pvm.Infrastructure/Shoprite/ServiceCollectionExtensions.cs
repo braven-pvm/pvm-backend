@@ -23,12 +23,6 @@ public static class ServiceCollectionExtensions
             .Validate(
                 options => !string.IsNullOrWhiteSpace(options.Password),
                 "Shoprite:Password is required.")
-            .Validate(
-                options => !string.IsNullOrWhiteSpace(options.ContractId),
-                "Shoprite:ContractId is required.")
-            .Validate(
-                options => !string.IsNullOrWhiteSpace(options.UiUser),
-                "Shoprite:UiUser is required.")
             .ValidateOnStart();
 
         services.AddHttpClient<IShopriteInvoiceClient, ShopriteInvoiceClient>((provider, client) =>
@@ -50,6 +44,7 @@ public static class ServiceCollectionExtensions
         {
             client.Timeout = TimeSpan.FromSeconds(300);
         });
+        services.AddScoped<ShopritePurchaseOrderRefreshService>();
 
         return services;
     }

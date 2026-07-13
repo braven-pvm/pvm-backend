@@ -1,18 +1,18 @@
 # Current Project Status
 
-Last updated: 2026-07-07
+Last updated: 2026-07-08
 
 ## Overall Status
 
-Shoprite PO inbox implementation is in progress on `feature/shoprite-po-inbox`.
+Shoprite PO inbox is deployed. The current implementation slice is `feature/shoprite-qa-seeded-submit`, which adds seeded Shoprite-QA invoice candidates from loaded POs and enables real Shoprite QA `VendorInvoice` submission behind an explicit QA mode flag.
 
 Azure infrastructure and access are unblocked. Shoprite QA `VendorOrder` credentials have been verified and the backend now has a local PO inbox implementation ready for QA deployment testing.
 
 ## Active Priority
 
-Verify and deploy Shoprite `VendorOrder` PO inbox ingestion, then wire Acumatica staging invoice refresh.
+Run a Shoprite-side QA submission using a seeded invoice candidate generated from a loaded Shoprite QA PO.
 
-Do not switch invoice submission to the real Shoprite QA `VendorInvoice` client until the PO inbox is deployed, invoice candidates match exactly one local PO, and the required Shoprite invoice endpoint credentials/headers are confirmed.
+Acumatica staging invoice refresh remains a separate follow-up. It is not required for this specific Shoprite API acceptance test.
 
 ## Why This Is Next
 
@@ -33,9 +33,12 @@ Done:
 - `GET /api/shoprite/purchase-orders`.
 - `GET /api/shoprite/purchase-orders/{id}`.
 - Workbench PO inbox list/detail screens.
+- PO-detail action to seed a deterministic QA invoice candidate from a selected Shoprite PO.
 - Invoice candidate PO matching against the local PO inbox.
 - PO-derived supplier/delivery GLN enrichment before validation.
 - Validation blocking for invoice candidates whose PO is missing from the local inbox.
+- Runtime guard that blocks submission unless the candidate is matched to a local Shoprite PO.
+- Real Shoprite QA `VendorInvoice` client can be selected with `Shoprite__InvoiceSubmissionMode=RealQa`.
 - Backend build gate fixed by pinning patched `Microsoft.OpenApi`.
 - Fixture-backed invoice candidate refresh.
 - Canonical invoice model and validation.
@@ -51,7 +54,7 @@ Done:
 Not done:
 
 - Real Acumatica staging invoice refresh.
-- Real Shoprite QA `VendorInvoice` submission through the API runtime path.
+- Production-grade payload archive.
 - Blob payload archive.
 - Mapping/admin pages for GLN, GTIN, UOM, pack, tax, and connection settings.
 - Manual ambiguous-resolution actions.
@@ -94,10 +97,18 @@ Ready for operator smoke of the PO inbox in QA:
 4. Click `Refresh POs`.
 5. Confirm the Shoprite QA `VendorOrder` batch loads.
 
-Not ready for invoice-submission UAT:
+Ready for Shoprite-side invoice-submission QA once the seeded-submit branch is deployed:
+
+1. Open `/purchase-orders`.
+2. Open a PO with usable line data.
+3. Click `Seed test invoice`.
+4. Review the generated invoice XML and validation.
+5. Submit manually.
+6. Review the attempt response and duplicate blocking behavior.
+
+Not yet ready for Acumatica-source invoice UAT:
 
 - Acumatica staging invoice refresh still needs tenant/API credentials and field confirmation.
-- Real `VendorInvoice` submission remains intentionally disabled in the runtime path until `ContractID`, `UIUser`, payload acceptance, and duplicate/idempotency behavior are confirmed.
 - CLI-authenticated smoke for protected API endpoints is blocked by Entra consent for Azure CLI against the API scope; browser sign-in remains the correct operator path.
 
 The local host still does not have the .NET SDK installed; backend verification uses the SDK container with Docker socket access.

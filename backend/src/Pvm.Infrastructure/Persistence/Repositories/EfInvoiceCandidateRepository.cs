@@ -41,6 +41,14 @@ public sealed class EfInvoiceCandidateRepository(PvmDbContext dbContext) : IInvo
             : JsonSerializer.Deserialize<ValidationResult>(validationJson, SerializerOptions) ?? new ValidationResult([]);
     }
 
+    public Task<bool> HasMatchedPurchaseOrderAsync(
+        Guid invoiceCandidateId,
+        CancellationToken cancellationToken)
+        => dbContext.InvoiceCandidates.AnyAsync(
+            candidate => candidate.Id == invoiceCandidateId
+                && candidate.MatchedShopritePurchaseOrderId != null,
+            cancellationToken);
+
     public Task<bool> HasUnresolvedAmbiguousSubmissionAsync(
         Guid invoiceCandidateId,
         CancellationToken cancellationToken)

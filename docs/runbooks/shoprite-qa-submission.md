@@ -1,6 +1,6 @@
 # Shoprite QA Invoice Submission Runbook
 
-This runbook covers the QA-only Shoprite invoice upload slice. The current local invoice submission path still uses a sanitized invoice fixture and a local Shoprite stub client, but the Shoprite `VendorOrder` PO inbox is now implemented for QA credential-backed refresh. Do not treat invoice submission as production-ready until Acumatica staging extraction, Shoprite QA invoice submission credentials, and payload storage are wired to real services. The QA workbench/API must remain protected by Microsoft Entra authentication and app-managed roles before real invoice/customer data is connected.
+This runbook covers the QA-only Shoprite invoice upload slice. The Shoprite `VendorOrder` PO inbox is implemented for QA credential-backed refresh, and the workbench can seed a deterministic QA invoice candidate from a selected loaded PO. This lets us test Shoprite QA `VendorInvoice` acceptance before Acumatica staging invoice extraction is wired. Do not treat invoice submission as production-ready until Acumatica staging extraction, payload storage, and production hardening are complete. The QA workbench/API must remain protected by Microsoft Entra authentication and app-managed roles before real invoice/customer data is connected.
 
 ## Scope
 
@@ -22,7 +22,7 @@ The QA run does not prove:
 
 ## Required Access
 
-Acumatica staging:
+Acumatica staging, required for the later ERP-source test:
 
 - base URL for the staging/sandbox tenant
 - integration user credentials or OAuth client details
@@ -37,8 +37,6 @@ Shoprite QA:
 - `VendorInvoice` endpoint availability
 - username
 - password
-- `ContractID`
-- `UIUser`
 - confirmation that QA accepts XML payloads with `Content-Type: application/xml`
 - expected success, validation-error, and duplicate/error response examples
 
@@ -46,6 +44,7 @@ For the PO inbox, the verified QA endpoint shape is:
 
 ```text
 GET /api/VendorOrder?userName={userName}&password={password}
+POST /api/VendorInvoice?userName={userName}&password={password}
 ```
 
 The local workbench uses:
@@ -77,8 +76,7 @@ Shoprite QA values, once the real client is enabled:
 Shoprite__BaseUrl=https://<shoprite-qa-host>/
 Shoprite__Username=<qa-username>
 Shoprite__Password=<qa-password>
-Shoprite__ContractId=<qa-contract-id>
-Shoprite__UiUser=<qa-ui-user>
+Shoprite__InvoiceSubmissionMode=RealQa
 ```
 
 Acumatica staging values, once the real connector is enabled:
@@ -180,7 +178,7 @@ Use the browser sign-in flow. CLI access tokens for the protected API may fail u
 
 ## Refresh Candidates
 
-Current QA slice:
+Fixture QA slice:
 
 - `POST /api/invoices/refresh` imports the sanitized fixture at `backend/src/Pvm.Api/Features/Invoices/Fixtures/shoprite-invoice-basic.json`.
 - The fixture creates invoice `INV342699282`.
@@ -206,6 +204,33 @@ Expected result:
 - validation shows blocking issue `missing-local-shoprite-po` when the PO is not loaded
 - after PO match, validation may still show warning `unverified-shoprite-uom`
 - generated XML is visible on the candidate detail page
+
+## Seed A Candidate From A Shoprite PO
+
+For the first Shoprite-side QA submission test, Acumatica staging is not required. Seed the candidate directly from a loaded Shoprite QA PO:
+
+API:
+
+```powershell
+$po = (Invoke-RestMethod -Uri http://localhost:5000/api/shoprite/purchase-orders)[0]
+Invoke-RestMethod -Method Post -Uri "http://localhost:5000/api/shoprite/purchase-orders/$($po.id)/seed-test-invoice"
+```
+
+Workbench:
+
+- open `/purchase-orders`
+- open a PO detail page
+- click `Seed test invoice`
+- review the generated invoice candidate
+
+Expected result:
+
+- invoice number is deterministic: `QA-INV-{purchaseOrderNumber}`
+- Acumatica ID is deterministic: `QA-SEED-{purchaseOrderNumber}`
+- candidate is linked to the selected local PO
+- supplier GLN, delivery GLN, line GTIN, quantities, and amounts come from the PO
+- validation may show `unverified-shoprite-uom` as a QA warning
+- `Submit to Shoprite` is only enabled when the candidate has a matched local PO
 
 ## Validate Candidate Detail
 
@@ -236,11 +261,17 @@ Block submission if:
 
 ## Submit to Shoprite QA
 
-Current local slice:
+Local stub mode:
 
 - `POST /api/invoices/{id}/submit` calls the submission command path.
-- The registered local client returns a deterministic accepted response.
+- When `Shoprite__InvoiceSubmissionMode` is absent or `LocalStub`, the registered local client returns a deterministic accepted response.
 - This proves the local command, persistence, attempt history, and duplicate blocking path.
+
+Real QA mode:
+
+- When `Shoprite__InvoiceSubmissionMode=RealQa`, the API uses the real Shoprite QA `VendorInvoice` client.
+- The client posts XML to `VendorInvoice?userName={userName}&password={password}`.
+- Credentials must not be printed, logged, or copied into docs.
 
 API:
 
@@ -260,7 +291,7 @@ Expected result:
 When the real Shoprite QA client is enabled:
 
 - verify the outbound URL is the QA `VendorInvoice` endpoint
-- confirm headers include `Authorization`, `ContractID`, `UIUser`, and `Accept: application/xml`
+- confirm the endpoint shape is `VendorInvoice?userName={userName}&password={password}`
 - confirm content type is `application/xml`
 - capture the Shoprite response body and HTTP status
 - compare the accepted/rejected response with the Shoprite API test tool
@@ -317,7 +348,7 @@ For MVP hardening, verify every attempt records:
 ## Known Gaps Before Real QA
 
 - Real Acumatica staging connector is not wired to refresh yet.
-- Real Shoprite QA client is implemented in infrastructure but the API currently uses a local stub client for this slice.
+- Real Shoprite QA client is enabled only when `Shoprite__InvoiceSubmissionMode=RealQa`.
 - Workbench authentication and roles are implemented for QA through Microsoft Entra sign-in and app-managed roles.
 - Mapping admin pages for GLN, GTIN, UOM, pack, tax, and connection settings are not implemented yet.
 - Blob payload archive is not implemented yet.

@@ -3,6 +3,8 @@ import { getApiAuthHeaders } from "../auth/session";
 const apiBaseUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000";
 
+type Nullable<T> = T | null;
+
 export type InvoiceCandidateSummary = {
   id: string;
   invoiceNumber: string;
@@ -48,6 +50,7 @@ export type InvoiceCandidateDetail = {
     customerLocation?: string;
     shopritePurchaseOrderNumber?: string;
     supplierGln?: string;
+    sellerVatRegistrationNumber?: string;
     storeDcGln?: string;
     countryCode: string;
     currencyCode: string;
@@ -94,44 +97,44 @@ export type SubmitInvoiceResult = {
 export type PurchaseOrderSummary = {
   id: string;
   purchaseOrderNumber: string;
-  orderTypeCode?: string;
-  orderTypeLabel?: string;
-  deliveryGln?: string;
-  deliveryLocationCode?: string;
-  deliveryLocationName?: string;
+  orderTypeCode?: Nullable<string>;
+  orderTypeLabel?: Nullable<string>;
+  deliveryGln?: Nullable<string>;
+  deliveryLocationCode?: Nullable<string>;
+  deliveryLocationName?: Nullable<string>;
   deliveryLocationSource: string;
-  supplierGln?: string;
+  supplierGln?: Nullable<string>;
   lineCount: number;
   lastSeenAt: string;
 };
 
 export type PurchaseOrderDetail = PurchaseOrderSummary & {
-  orderHeaderId?: string;
-  buyerGln?: string;
-  currencyCode?: string;
-  totalExcludingTax?: number;
-  totalIncludingTax?: number;
-  totalTax?: number;
+  orderHeaderId?: Nullable<string>;
+  buyerGln?: Nullable<string>;
+  currencyCode?: Nullable<string>;
+  totalExcludingTax?: Nullable<number>;
+  totalIncludingTax?: Nullable<number>;
+  totalTax?: Nullable<number>;
   sourceEnvironment: string;
   sourceEndpoint: string;
-  payloadHash?: string;
-  shopriteCreatedAt?: string;
-  shopriteLastUpdatedAt?: string;
+  payloadHash?: Nullable<string>;
+  shopriteCreatedAt?: Nullable<string>;
+  shopriteLastUpdatedAt?: Nullable<string>;
   firstSeenAt: string;
   lines: Array<{
     id: string;
     lineNumber: number;
-    gtin?: string;
-    buyerItemId?: string;
-    buyerItemDescription?: string;
-    supplierItemId?: string;
-    description?: string;
-    requestedQuantity?: number;
-    measurementUnitCode?: string;
-    netAmount?: number;
-    netPrice?: number;
-    monetaryAmountExcludingTaxes?: number;
-    monetaryAmountIncludingTaxes?: number;
+    gtin?: Nullable<string>;
+    buyerItemId?: Nullable<string>;
+    buyerItemDescription?: Nullable<string>;
+    supplierItemId?: Nullable<string>;
+    description?: Nullable<string>;
+    requestedQuantity?: Nullable<number>;
+    measurementUnitCode?: Nullable<string>;
+    netAmount?: Nullable<number>;
+    netPrice?: Nullable<number>;
+    monetaryAmountExcludingTaxes?: Nullable<number>;
+    monetaryAmountIncludingTaxes?: Nullable<number>;
   }>;
   linkedInvoiceCandidates: Array<{
     id: string;
@@ -140,7 +143,7 @@ export type PurchaseOrderDetail = PurchaseOrderSummary & {
     status: string;
     updatedAt: string;
   }>;
-  rawOrderJson?: string;
+  rawOrderJson?: Nullable<string>;
 };
 
 export type PurchaseOrderRefreshResult = {
@@ -207,13 +210,34 @@ export async function submitInvoice(id: string): Promise<SubmitInvoiceResult> {
     headers,
     cache: "no-store",
   });
-  const result = (await response.json()) as SubmitInvoiceResult;
+  const result = await readJson(response);
 
-  if (!response.ok) {
-    throw new Error(result.message ?? `Failed to submit invoice: ${response.status}`);
+  if (isSubmitInvoiceResult(result)) {
+    return result;
   }
 
-  return result;
+  if (!response.ok) {
+    throw new Error(`Failed to submit invoice: ${response.status}`);
+  }
+
+  throw new Error("Failed to submit invoice: invalid API response.");
+}
+
+async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return undefined;
+  }
+}
+
+function isSubmitInvoiceResult(value: unknown): value is SubmitInvoiceResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const result = value as Partial<SubmitInvoiceResult>;
+  return typeof result.status === "string" && typeof result.message === "string";
 }
 
 export async function getPurchaseOrders(): Promise<PurchaseOrderSummary[]> {
@@ -256,6 +280,26 @@ export async function refreshPurchaseOrders(): Promise<PurchaseOrderRefreshResul
 
   if (!response.ok) {
     throw new Error(`Failed to refresh Shoprite purchase orders: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function seedInvoiceCandidateFromPurchaseOrder(
+  id: string,
+): Promise<InvoiceCandidateSummary> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(
+    `${apiBaseUrl}/api/shoprite/purchase-orders/${id}/seed-test-invoice`,
+    {
+      method: "POST",
+      headers,
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to seed invoice candidate: ${response.status}`);
   }
 
   return response.json();

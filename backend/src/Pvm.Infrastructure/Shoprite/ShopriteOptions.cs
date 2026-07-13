@@ -7,8 +7,4 @@ public sealed class ShopriteOptions
     public string? Username { get; init; }
 
     public string? Password { get; init; }
-
-    public string? ContractId { get; init; }
-
-    public string? UiUser { get; init; }
 }

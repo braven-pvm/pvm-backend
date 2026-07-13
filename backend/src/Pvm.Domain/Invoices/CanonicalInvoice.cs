@@ -7,6 +7,7 @@ public sealed record CanonicalInvoice(
     string? CustomerLocation,
     string? ShopritePurchaseOrderNumber,
     string? SupplierGln,
+    string? SellerVatRegistrationNumber,
     string? StoreDcGln,
     string CountryCode,
     string CurrencyCode,

@@ -9,6 +9,8 @@ public interface IInvoiceCandidateRepository
 
     Task<ValidationResult> GetValidationResultAsync(Guid invoiceCandidateId, CancellationToken cancellationToken);
 
+    Task<bool> HasMatchedPurchaseOrderAsync(Guid invoiceCandidateId, CancellationToken cancellationToken);
+
     Task<bool> HasUnresolvedAmbiguousSubmissionAsync(Guid invoiceCandidateId, CancellationToken cancellationToken);
 
     // Concrete implementations must enforce successful-submission idempotency atomically

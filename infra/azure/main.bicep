@@ -71,11 +71,12 @@ param shopriteUsername string = ''
 @description('Shoprite API password for the deployed API.')
 param shopritePassword string = ''
 
-@description('Shoprite invoice ContractID header value for VendorInvoice. Not required for VendorOrder.')
-param shopriteContractId string = ''
-
-@description('Shoprite invoice UIUser header value for VendorInvoice. Not required for VendorOrder.')
-param shopriteUiUser string = ''
+@description('Shoprite invoice submission mode. Use LocalStub unless QA is intentionally enabled for real VendorInvoice calls.')
+@allowed([
+  'LocalStub'
+  'RealQa'
+])
+param shopriteInvoiceSubmissionMode string = 'LocalStub'
 
 @minValue(0)
 @maxValue(2)
@@ -120,8 +121,7 @@ module platform 'modules/platform.bicep' = {
     shopriteBaseUrl: shopriteBaseUrl
     shopriteUsername: shopriteUsername
     shopritePassword: shopritePassword
-    shopriteContractId: shopriteContractId
-    shopriteUiUser: shopriteUiUser
+    shopriteInvoiceSubmissionMode: shopriteInvoiceSubmissionMode
     containerAppMinReplicas: containerAppMinReplicas
     tags: tags
   }

@@ -16,6 +16,7 @@ public static class ShopriteInvoiceValidator
 
         Require(invoice.ShopritePurchaseOrderNumber, "missing-shoprite-po", "Shoprite PO number is required.", "Acumatica", issues);
         Require(invoice.SupplierGln, "missing-supplier-gln", "Supplier GLN is required.", "integration-config", issues);
+        Require(invoice.SellerVatRegistrationNumber, "missing-seller-vat-registration-number", "Seller VAT registration number is required.", "integration-config", issues);
         Require(invoice.StoreDcGln, "missing-store-dc-gln", "Store/DC GLN is required.", "integration-config", issues);
 
         if (!StringEquals(invoice.CountryCode, "ZA"))

@@ -18,11 +18,57 @@ public sealed class ShopriteInvoiceXmlGeneratorTests
 
         Assert.Equal("invoiceMessage", root.Name.LocalName);
         Assert.Equal("INV342699282", SingleValue(root, "InstanceIdentifier"));
-        Assert.Equal("3869384391", SingleValue(root, "purchaseOrder", "entityIdentification"));
+        Assert.Contains(
+            root.Descendants().Where(element => element.Name.LocalName == "entityIdentification"),
+            element => element.Parent?.Name.LocalName == "purchaseOrder" && element.Value == "3869384391");
         Assert.Equal("16001069205048", SingleValue(root, "gtin"));
         Assert.Contains(root.Descendants(), element =>
             element.Name.LocalName == "measurementValue"
             && (string?)element.Attribute("measurementUnitCode") == "EA");
+    }
+
+    [Fact]
+    public void Generate_includes_shoprite_required_body_identity_and_seller_registration()
+    {
+        var invoice = ValidInvoice();
+
+        var xml = ShopriteInvoiceXmlGenerator.Generate(invoice);
+
+        var document = XDocument.Parse(xml);
+        var root = Assert.IsType<XElement>(document.Root);
+        var invoiceBody = Assert.Single(root.Elements(), element => element.Name.LocalName == "invoice");
+
+        Assert.Equal("EDI 3.2.0", SingleValue(root, "DocumentIdentification", "Standard"));
+        Assert.Equal("true", SingleValue(root, "DocumentIdentification", "MultipleType"));
+        Assert.Equal("1", SingleValue(root, "Manifest", "NumberOfItems"));
+        Assert.Equal(
+            "INV342699282",
+            AttributeValue(invoiceBody, "eComStringAttributeValuePairList", "attributeName", "InstanceIdentifier"));
+        Assert.Equal("4010137059", SingleValue(invoiceBody, "seller", "organisationDetails", "legalRegistration", "legalRegistrationNumber"));
+        Assert.Equal("INV342699282", SingleValue(invoiceBody, "invoice", "entityIdentification"));
+    }
+
+    [Fact]
+    public void Generate_includes_shoprite_mapper_reference_and_container_nodes()
+    {
+        var invoice = ValidInvoice();
+
+        var xml = ShopriteInvoiceXmlGenerator.Generate(invoice);
+
+        var document = XDocument.Parse(xml);
+        var root = Assert.IsType<XElement>(document.Root);
+        var invoiceBody = Assert.Single(root.Elements(), element => element.Name.LocalName == "invoice");
+        var bodyAvpList = Assert.Single(invoiceBody.Elements(), element => element.Name.LocalName == "avpList");
+        var invoiceRefNo = AttributeValue(bodyAvpList, "eComStringAttributeValuePairList", "attributeName", "InvoiceRefNo");
+        var line = Assert.Single(invoiceBody.Elements(), element => element.Name.LocalName == "invoiceLineItem");
+        var lineAvpList = Assert.Single(line.Elements(), element => element.Name.LocalName == "avpList");
+
+        Assert.True(Guid.TryParse(invoiceRefNo, out _));
+        Assert.Equal("ALLOWANCE", SingleValue(invoiceBody, "invoiceAllowanceCharge", "allowanceOrChargeType"));
+        Assert.Contains(invoiceBody.Elements(), element => element.Name.LocalName == "taxCurrencyInformation");
+        Assert.Equal("3869384391", SingleValue(line, "purchaseOrder", "entityIdentification"));
+        Assert.True(Guid.TryParse(AttributeValue(lineAvpList, "eComStringAttributeValuePairList", "attributeName", "InvoiceDetailRefNo"), out _));
+        Assert.Equal(invoiceRefNo, AttributeValue(lineAvpList, "eComStringAttributeValuePairList", "attributeName", "InvoiceRefNo"));
     }
 
     [Fact]
@@ -60,6 +106,7 @@ public sealed class ShopriteInvoiceXmlGeneratorTests
             CustomerLocation: "DC-01",
             ShopritePurchaseOrderNumber: "3869384391",
             SupplierGln: "9999999999999",
+            SellerVatRegistrationNumber: "4010137059",
             StoreDcGln: "6001001018104",
             CountryCode: "ZA",
             CurrencyCode: "ZAR",
@@ -112,5 +159,17 @@ public sealed class ShopriteInvoiceXmlGeneratorTests
         }
 
         return true;
+    }
+
+    private static string AttributeValue(XElement root, string localName, string attributeName, string attributeValue)
+    {
+        var matches = root
+            .Descendants()
+            .Where(element => element.Name.LocalName == localName)
+            .Where(element => (string?)element.Attribute(attributeName) == attributeValue)
+            .Select(element => element.Value)
+            .ToArray();
+
+        return Assert.Single(matches);
     }
 }

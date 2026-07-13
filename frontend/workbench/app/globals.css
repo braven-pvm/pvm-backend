@@ -110,6 +110,14 @@ a {
   max-width: 680px;
 }
 
+.action-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
 .button {
   align-items: center;
   background: var(--accent);
@@ -298,6 +306,11 @@ td {
 .table-action a {
   color: var(--accent);
   font-weight: 700;
+}
+
+.attempt-result {
+  max-width: 380px;
+  overflow-wrap: anywhere;
 }
 
 .status-pill {

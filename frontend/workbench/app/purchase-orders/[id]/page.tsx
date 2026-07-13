@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { seedInvoiceFromPurchaseOrderAction } from "../../actions";
 import { getPurchaseOrder } from "../../../src/api/client";
-import { requireWorkbenchUser } from "../../../src/auth/session";
+import { hasAnyRole, requireWorkbenchUser } from "../../../src/auth/session";
+import { formatMoney } from "../../../src/formatters.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +17,9 @@ export default async function PurchaseOrderDetailPage({
   params,
 }: PurchaseOrderDetailPageProps) {
   const { id } = await params;
-  await requireWorkbenchUser(`/purchase-orders/${id}`);
+  const user = await requireWorkbenchUser(`/purchase-orders/${id}`);
   const order = await loadPurchaseOrder(id);
+  const canWrite = hasAnyRole(user, ["Admin", "Operator"]);
 
   return (
     <main className="page-shell">
@@ -31,7 +34,17 @@ export default async function PurchaseOrderDetailPage({
             {order.deliveryGln ?? "No delivery GLN"}
           </p>
         </div>
-        <span className="status-pill">{order.sourceEnvironment}</span>
+        <div className="action-row">
+          <span className="status-pill">{order.sourceEnvironment}</span>
+          {canWrite ? (
+            <form action={seedInvoiceFromPurchaseOrderAction}>
+              <input name="id" type="hidden" value={order.id} />
+              <button className="button" type="submit">
+                Seed test invoice
+              </button>
+            </form>
+          ) : null}
+        </div>
       </section>
 
       <section className="detail-grid">
@@ -226,15 +239,7 @@ async function loadPurchaseOrder(id: string) {
   }
 }
 
-function formatMoney(currencyCode: string | undefined, amount: number | undefined) {
-  if (amount === undefined) {
-    return "-";
-  }
-
-  return `${currencyCode ?? "ZAR"} ${amount.toFixed(2)}`;
-}
-
-function formatJson(value: string | undefined) {
+function formatJson(value: string | null | undefined) {
   if (!value) {
     return "No raw payload available.";
   }
