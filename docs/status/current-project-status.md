@@ -25,11 +25,11 @@ accordingly. GitHub `AZURE_SUBSCRIPTION_ID` and the deployer service principal's
 role assignments were repointed to the new subscription. The estate was verified
 live: API `/health` `200`, anonymous API `401`, workbench `/invoices` `200`.
 
-The migration config lives on branch `migrate/csp-subscription` (based on
-`feature/acumatica-qa-connector`). Until those changes reach `main` and
-`feature/acumatica-qa-connector`, a deploy triggered from either of those
-branches will fail, because `AZURE_SUBSCRIPTION_ID` now targets the new
-subscription while their Bicep still names the old Key Vault `kv-pvm-int-qa`.
+The migration config is merged into `feature/acumatica-qa-connector`. QA deploy
+run `29340894444` applied that branch at commit `a1a20c904836` to the CSP
+subscription on 2026-07-14. `main` still needs the feature branch merged before
+a push-triggered deployment from `main` can be treated as the canonical release
+path.
 
 ## Active Priority
 
@@ -91,7 +91,6 @@ Done:
 
 Not done:
 
-- Azure Key Vault and Container App values for the Acumatica connector.
 - One finalized Acumatica UAT invoice dated on or after 2026-07-01 whose
   `CustomerOrder` matches a current Shoprite QA PO.
 - End-to-end Acumatica-source candidate match, validation, XML review, and
@@ -110,7 +109,35 @@ Read:
 
 ## Verification Snapshot
 
-Most recent verification on 2026-07-07:
+Most recent deployment verification on 2026-07-14:
+
+- GitHub Actions deploy run `29340894444` passed from commit `a1a20c904836`.
+- Backend: 70 tests passed (12 domain, 16 application, 38 infrastructure, 4 API).
+- Workbench: lint, 2 tests, and production build passed.
+- Deployed QA images:
+  - API: `acrpvmintegrationsqa.azurecr.io/pvm-api:qa-a1a20c904836`
+  - Workbench: `acrpvmintegrationsqa.azurecr.io/pvm-workbench:qa-a1a20c904836`
+- Active revisions are healthy with one replica and 100 percent traffic:
+  - API: `ca-pvm-api-qa--0000002`
+  - Workbench: `ca-pvm-workbench-qa--0000003`
+- Live QA smoke:
+  - API `/health`: `200`
+  - Anonymous invoice candidates API: `401`, expected
+  - Workbench `/invoices`: `200`, ending on the blackbay sign-in page
+- Runtime configuration is verified:
+  - `Acumatica__InvoiceSourceMode=RealQa`
+  - Acumatica base URL, company `PVM`, endpoint `Default/24.200.001`, parent
+    account `DEB2062`, and 2026-07-01 cutover are present.
+  - Acumatica username/password and PostgreSQL connection use Container App
+    secret references.
+  - Workbench callback and API URLs both use the new blackbay FQDNs.
+- Key Vault `kv-pvm-intg-qa` contains all 14 required deployment secrets.
+- PostgreSQL is reachable and contains 40 Shoprite POs, 96 PO lines, one app
+  user, zero invoice candidates, and zero submission attempts.
+- The PO inbox `LastSeenAt` is `2026-07-14 14:06:47 UTC`, so the retained PO
+  context is current for this verification.
+
+Previous verification on 2026-07-07:
 
 - `docker run ... mcr.microsoft.com/dotnet/sdk:10.0 dotnet test backend/Pvm.sln`: passed, 52 tests.
 - `npm --prefix frontend/workbench run lint`: passed.
@@ -163,10 +190,15 @@ Acumatica-source connector verification completed locally on 2026-07-14:
 
 Pending before Acumatica-source invoice UAT:
 
-- Deploy this branch with the Acumatica credentials in Key Vault and the
-  verified non-secret Container App settings.
 - Create/finalize one test invoice against a store/DC child customer and set its
   customer order reference to a current Shoprite QA PO number.
-- CLI-authenticated smoke for protected API endpoints is blocked by Entra consent for Azure CLI against the API scope; browser sign-in remains the correct operator path.
+- Sign in to the blackbay workbench and run `Refresh queue`; the expected result
+  before that invoice exists is zero candidates.
+- After the invoice exists, confirm one candidate, exactly one local PO match,
+  reconciled totals, no blocking validation issues, and the generated XML before
+  the first manual Shoprite QA submission.
+- CLI-authenticated smoke for protected API endpoints is blocked by Entra
+  consent for Azure CLI against the API scope; browser sign-in remains the
+  correct operator path.
 
 The local host still does not have the .NET SDK installed; backend verification uses the SDK container with Docker socket access.
