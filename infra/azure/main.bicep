@@ -190,7 +190,7 @@ resource budget 'Microsoft.Consumption/budgets@2023-11-01' = {
     amount: monthlyBudgetAmountUsd
     timeGrain: 'Monthly'
     timePeriod: {
-      startDate: '2026-05-01T00:00:00Z'
+      startDate: '2026-07-01T00:00:00Z'
       endDate: '2036-05-01T00:00:00Z'
     }
     notifications: {
