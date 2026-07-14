@@ -24,7 +24,7 @@ env:
   AZURE_LOCATION: southafricanorth
   ACR_NAME: acrpvmintegrationsqa
   ACR_LOGIN_SERVER: acrpvmintegrationsqa.azurecr.io
-  KEY_VAULT_NAME: kv-pvm-int-qa
+  KEY_VAULT_NAME: kv-pvm-intg-qa
   API_IMAGE: pvm-api
   WORKBENCH_IMAGE: pvm-workbench
 
