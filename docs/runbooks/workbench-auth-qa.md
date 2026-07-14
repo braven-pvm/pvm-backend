@@ -34,7 +34,7 @@ This runbook records the QA authentication setup for the PVM workbench and API.
 
 ## Key Vault Secrets
 
-Required secrets in `kv-pvm-int-qa`:
+Required secrets in `kv-pvm-intg-qa`:
 
 ```text
 auth--tenantid
