@@ -106,8 +106,8 @@ Provisioning was run from branch `infra/azure-qa-baseline` on 2026-05-19.
 | Item | Value |
 | --- | --- |
 | Resource group | `rg-pvm-integrations-qa` |
-| API URL | `https://ca-pvm-api-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io` |
-| Workbench URL | `https://ca-pvm-workbench-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io` |
+| API URL | `https://ca-pvm-api-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io` |
+| Workbench URL | `https://ca-pvm-workbench-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io` |
 | Image tag | `qa-20260519-01` and `qa-latest` |
 | ACR login server | `acrpvmintegrationsqa.azurecr.io` |
 | PostgreSQL FQDN | `psql-pvm-integrations-qa.postgres.database.azure.com` |
@@ -529,7 +529,7 @@ az containerapp create `
 Initial workbench deployment shape:
 
 ```powershell
-$apiBase = "https://ca-pvm-api-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io"
+$apiBase = "https://ca-pvm-api-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io"
 
 az containerapp create `
   --name ca-pvm-workbench-qa `

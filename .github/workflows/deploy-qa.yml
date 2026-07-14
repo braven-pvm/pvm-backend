@@ -195,7 +195,7 @@ jobs:
             --parameters authNextAuthSecret='${{ steps.values.outputs.auth_nextauth_secret }}' \
             --parameters authBootstrapAdminEmail='${{ steps.values.outputs.auth_bootstrap_admin_email }}' \
             --parameters authBootstrapAdminObjectId='${{ steps.values.outputs.auth_bootstrap_admin_object_id }}' \
-            --parameters workbenchPublicUrl="https://ca-pvm-workbench-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io" \
+            --parameters workbenchPublicUrl="https://ca-pvm-workbench-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io" \
             --parameters shopriteBaseUrl='${{ steps.values.outputs.shoprite_base_url }}' \
             --parameters shopriteUsername='${{ steps.values.outputs.shoprite_username }}' \
             --parameters shopritePassword='${{ steps.values.outputs.shoprite_password }}' \

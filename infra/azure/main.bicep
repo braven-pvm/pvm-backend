@@ -58,7 +58,7 @@ param authBootstrapAdminEmail string = ''
 param authBootstrapAdminObjectId string = ''
 
 @description('Public workbench URL used by the auth callback.')
-param workbenchPublicUrl string = 'https://ca-pvm-workbench-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io'
+param workbenchPublicUrl string = 'https://ca-pvm-workbench-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io'
 
 @description('Shoprite API base URL for the deployed API.')
 param shopriteBaseUrl string = ''

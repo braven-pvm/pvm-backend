@@ -215,7 +215,7 @@ Expected current QA result:
 Deployed QA operator smoke:
 
 ```text
-https://ca-pvm-workbench-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io/purchase-orders
+https://ca-pvm-workbench-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io/purchase-orders
 ```
 
 Use the browser sign-in flow. CLI access tokens for the protected API may fail unless Azure CLI has consent for the API scope in Entra.
