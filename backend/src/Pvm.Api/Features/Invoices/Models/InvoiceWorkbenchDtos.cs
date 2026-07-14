@@ -16,6 +16,8 @@ public sealed record InvoiceCandidateSummaryResponse(
     bool CanSubmit,
     DateTimeOffset UpdatedAt);
 
+public sealed record InvoiceRefreshResponse(int Received, int Created, int Updated);
+
 public sealed record InvoiceCandidateDetailResponse(
     Guid Id,
     string Status,

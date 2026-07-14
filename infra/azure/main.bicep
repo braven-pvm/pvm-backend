@@ -78,6 +78,44 @@ param shopritePassword string = ''
 ])
 param shopriteInvoiceSubmissionMode string = 'LocalStub'
 
+@description('Acumatica invoice source mode. RealQa must be enabled explicitly after QA credentials and schema are verified.')
+@allowed([
+  'Fixture'
+  'RealQa'
+])
+param acumaticaInvoiceSourceMode string = 'Fixture'
+
+@description('Acumatica QA instance base URL.')
+param acumaticaBaseUrl string = ''
+
+@description('Acumatica company or tenant used for API sign-in.')
+param acumaticaCompany string = ''
+
+@description('Acumatica branch used for API sign-in.')
+param acumaticaBranch string = ''
+
+@secure()
+@description('Acumatica integration username.')
+param acumaticaUsername string = ''
+
+@secure()
+@description('Acumatica integration password.')
+param acumaticaPassword string = ''
+
+@description('Acumatica contract REST endpoint name.')
+param acumaticaEndpointName string = 'Default'
+
+@description('Acumatica contract REST endpoint version.')
+param acumaticaEndpointVersion string = '24.200.001'
+
+@description('Acumatica customer account IDs that are eligible for Shoprite invoice refresh.')
+param acumaticaCustomerAccounts array = []
+
+@minValue(1)
+@maxValue(1000)
+@description('Acumatica contract REST page size.')
+param acumaticaPageSize int = 100
+
 @minValue(0)
 @maxValue(2)
 @description('Minimum replicas for QA Container Apps. Use 1 during UAT to avoid cold-start smoke failures.')
@@ -122,6 +160,16 @@ module platform 'modules/platform.bicep' = {
     shopriteUsername: shopriteUsername
     shopritePassword: shopritePassword
     shopriteInvoiceSubmissionMode: shopriteInvoiceSubmissionMode
+    acumaticaInvoiceSourceMode: acumaticaInvoiceSourceMode
+    acumaticaBaseUrl: acumaticaBaseUrl
+    acumaticaCompany: acumaticaCompany
+    acumaticaBranch: acumaticaBranch
+    acumaticaUsername: acumaticaUsername
+    acumaticaPassword: acumaticaPassword
+    acumaticaEndpointName: acumaticaEndpointName
+    acumaticaEndpointVersion: acumaticaEndpointVersion
+    acumaticaCustomerAccounts: acumaticaCustomerAccounts
+    acumaticaPageSize: acumaticaPageSize
     containerAppMinReplicas: containerAppMinReplicas
     tags: tags
   }

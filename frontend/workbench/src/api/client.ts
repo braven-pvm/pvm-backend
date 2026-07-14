@@ -188,7 +188,11 @@ export async function getInvoiceCandidate(
   return response.json();
 }
 
-export async function refreshInvoiceCandidates(): Promise<InvoiceCandidateSummary> {
+export async function refreshInvoiceCandidates(): Promise<{
+  received: number;
+  created: number;
+  updated: number;
+}> {
   const headers = await getApiAuthHeaders();
   const response = await fetch(`${apiBaseUrl}/api/invoices/refresh`, {
     method: "POST",

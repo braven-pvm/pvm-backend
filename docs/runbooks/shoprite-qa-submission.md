@@ -82,16 +82,40 @@ Shoprite__InvoiceSubmissionMode=RealQa
 Acumatica staging values, once the real connector is enabled:
 
 ```powershell
-Acumatica__BaseUrl=https://<acumatica-staging-host>/
-Acumatica__Tenant=<tenant>
-Acumatica__Branch=<branch-or-company>
+Acumatica__InvoiceSourceMode=RealQa
+Acumatica__BaseUrl=https://devtest1.aboutitgroup.co.za/PVMGroup25R101D250625
+Acumatica__Company=<company-or-tenant-shown-at-login-if-applicable>
+Acumatica__Branch=<branch-if-applicable>
 Acumatica__Username=<integration-user>
 Acumatica__Password=<integration-password>
-Acumatica__EndpointName=<endpoint-name>
-Acumatica__EndpointVersion=<endpoint-version>
+Acumatica__EndpointName=Default
+Acumatica__EndpointVersion=24.200.001
+Acumatica__CountryCode=ZA
+Acumatica__CustomerAccounts__0=<shoprite-customer-account-id>
+Acumatica__PageSize=100
 ```
 
+The instance path indicates Acumatica 2025 R1. Acumatica's official 2025 R1
+integration examples use `Default/24.200.001`, but the selected endpoint and
+`SalesInvoice` fields must be confirmed from `SM207060` and the endpoint
+`swagger.json` before enabling `RealQa` in Azure.
+
 Do not commit real values. Use `.env` locally and managed secrets in hosted environments.
+
+Required Acumatica integration-user access:
+
+- sign in through `/entity/auth/login`
+- read the `Default/24.200.001` endpoint schema
+- read `SalesInvoice` headers, `Details`, and tax data
+- read finalized `Open` and `Closed` invoices for the configured Shoprite accounts
+- read customer order/PO reference, invoice/customer/location identifiers, currency,
+  dates, totals, line inventory IDs, descriptions, quantities, UOM, prices, tax,
+  and any exposed barcode/GTIN fields
+
+Before live UAT, capture one finalized test invoice number and verify its
+Shoprite PO number exists in the local PO inbox. If the Default endpoint does
+not expose the required PO, tax, or GTIN fields, extend the endpoint contract
+minimally in `SM207060`; do not add a native Acumatica connector.
 
 ## Local QA Startup
 

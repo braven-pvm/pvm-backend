@@ -334,13 +334,19 @@ shoprite--password
 shoprite--contractid
 shoprite--uiuser
 acumatica--baseurl
-acumatica--tenant
+acumatica--company
 acumatica--branch
 acumatica--username
 acumatica--password
 acumatica--endpointname
 acumatica--endpointversion
 ```
+
+The current QA deployment workflow reads only `acumatica--username` and
+`acumatica--password` as secrets. Base URL, company, branch, endpoint,
+eligible customer accounts, and the explicit `Fixture`/`RealQa` switch are
+non-secret Bicep parameters. Keep the switch at `Fixture` until the endpoint
+schema and a finalized test invoice have been verified.
 
 Set secrets after Key Vault exists:
 

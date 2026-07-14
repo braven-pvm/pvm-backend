@@ -11,9 +11,9 @@ import {
 } from "../src/api/client";
 
 export async function refreshCandidatesAction() {
-  const candidate = await refreshInvoiceCandidates();
+  await refreshInvoiceCandidates();
   revalidatePath("/invoices");
-  redirect(`/invoices/${candidate.id}`);
+  redirect("/invoices");
 }
 
 export async function submitInvoiceAction(formData: FormData) {

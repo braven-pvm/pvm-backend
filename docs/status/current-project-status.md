@@ -1,18 +1,21 @@
 # Current Project Status
 
-Last updated: 2026-07-08
+Last updated: 2026-07-14
 
 ## Overall Status
 
-Shoprite PO inbox is deployed. The current implementation slice is `feature/shoprite-qa-seeded-submit`, which adds seeded Shoprite-QA invoice candidates from loaded POs and enables real Shoprite QA `VendorInvoice` submission behind an explicit QA mode flag.
+Shoprite PO refresh and Shoprite QA seeded invoice submission are deployed and
+verified. The active implementation slice is
+`feature/acumatica-qa-connector`, which replaces fixture-only invoice refresh
+with an explicitly enabled Acumatica QA source.
 
 Azure infrastructure and access are unblocked. Shoprite QA `VendorOrder` credentials have been verified and the backend now has a local PO inbox implementation ready for QA deployment testing.
 
 ## Active Priority
 
-Run a Shoprite-side QA submission using a seeded invoice candidate generated from a loaded Shoprite QA PO.
-
-Acumatica staging invoice refresh remains a separate follow-up. It is not required for this specific Shoprite API acceptance test.
+Connect the supplied Acumatica QA instance, verify its endpoint schema, and
+refresh finalized Shoprite-account invoices into the existing PO-pivoted
+candidate workflow.
 
 ## Why This Is Next
 
@@ -50,10 +53,19 @@ Done:
 - Workbench invoice list/detail.
 - Microsoft Entra workbench auth and app-managed user authorization.
 - Azure QA baseline.
+- Acumatica contract REST session client with explicit login/logout.
+- Finalized `SalesInvoice` account filtering and bounded pagination.
+- Acumatica invoice/detail mapping into the existing source DTO.
+- Idempotent invoice-candidate upsert with local Shoprite PO matching.
+- PO-derived supplier GLN, delivery GLN, and GTIN enrichment.
+- Safe `Fixture` versus `RealQa` invoice-source switch.
 
 Not done:
 
-- Real Acumatica staging invoice refresh.
+- Live Acumatica authentication and endpoint-schema verification.
+- Confirmation of the exact Acumatica company, branch, Shoprite customer account IDs,
+  and invoice line/tax/barcode fields.
+- Azure Key Vault and Container App values for the Acumatica connector.
 - Production-grade payload archive.
 - Blob payload archive.
 - Mapping/admin pages for GLN, GTIN, UOM, pack, tax, and connection settings.
@@ -108,7 +120,8 @@ Ready for Shoprite-side invoice-submission QA once the seeded-submit branch is d
 
 Not yet ready for Acumatica-source invoice UAT:
 
-- Acumatica staging invoice refresh still needs tenant/API credentials and field confirmation.
+- Acumatica staging invoice refresh needs integration-user credentials, company,
+  branch, Shoprite customer account IDs, and field confirmation from the live endpoint schema.
 - CLI-authenticated smoke for protected API endpoints is blocked by Entra consent for Azure CLI against the API scope; browser sign-in remains the correct operator path.
 
 The local host still does not have the .NET SDK installed; backend verification uses the SDK container with Docker socket access.
