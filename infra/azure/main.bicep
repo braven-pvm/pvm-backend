@@ -111,6 +111,12 @@ param acumaticaEndpointVersion string = '24.200.001'
 @description('Acumatica customer account IDs that are eligible for Shoprite invoice refresh.')
 param acumaticaCustomerAccounts array = []
 
+@description('Acumatica parent customer account IDs whose child accounts are eligible for Shoprite invoice refresh.')
+param acumaticaParentCustomerAccounts array = []
+
+@description('Inclusive Acumatica invoice-date cutover used to prevent unbounded historical ingestion.')
+param acumaticaInvoiceDateFrom string = ''
+
 @minValue(1)
 @maxValue(1000)
 @description('Acumatica contract REST page size.')
@@ -169,6 +175,8 @@ module platform 'modules/platform.bicep' = {
     acumaticaEndpointName: acumaticaEndpointName
     acumaticaEndpointVersion: acumaticaEndpointVersion
     acumaticaCustomerAccounts: acumaticaCustomerAccounts
+    acumaticaParentCustomerAccounts: acumaticaParentCustomerAccounts
+    acumaticaInvoiceDateFrom: acumaticaInvoiceDateFrom
     acumaticaPageSize: acumaticaPageSize
     containerAppMinReplicas: containerAppMinReplicas
     tags: tags

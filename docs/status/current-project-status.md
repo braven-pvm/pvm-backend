@@ -59,13 +59,23 @@ Done:
 - Idempotent invoice-candidate upsert with local Shoprite PO matching.
 - PO-derived supplier GLN, delivery GLN, and GTIN enrichment.
 - Safe `Fixture` versus `RealQa` invoice-source switch.
+- Live Acumatica QA authentication for tenant `PVM` and endpoint
+  `Default/24.200.001`.
+- Live `SalesInvoice`, `SalesInvoiceDetail`, `SalesInvoiceTaxDetail`, and
+  `Customer` contract verification.
+- Parent-account expansion from `DEB2062` to invoice-level store/DC customer
+  accounts, including paged customer resolution and bounded invoice-filter chunks.
+- Invoice-only filtering, mandatory invoice-date cutover, and exclusion of credit memos.
+- Per-record invoice detail/tax retrieval compatible with Acumatica's BQL-delegate restriction.
+- Discount-aware line and VAT allocation that reconciles to Acumatica invoice totals.
 
 Not done:
 
-- Live Acumatica authentication and endpoint-schema verification.
-- Confirmation of the exact Acumatica company, branch, Shoprite customer account IDs,
-  and invoice line/tax/barcode fields.
 - Azure Key Vault and Container App values for the Acumatica connector.
+- One finalized Acumatica UAT invoice dated on or after 2026-07-01 whose
+  `CustomerOrder` matches a current Shoprite QA PO.
+- End-to-end Acumatica-source candidate match, validation, XML review, and
+  Shoprite QA submission.
 - Production-grade payload archive.
 - Blob payload archive.
 - Mapping/admin pages for GLN, GTIN, UOM, pack, tax, and connection settings.
@@ -118,10 +128,25 @@ Ready for Shoprite-side invoice-submission QA once the seeded-submit branch is d
 5. Submit manually.
 6. Review the attempt response and duplicate blocking behavior.
 
-Not yet ready for Acumatica-source invoice UAT:
+Acumatica-source connector verification completed locally on 2026-07-14:
 
-- Acumatica staging invoice refresh needs integration-user credentials, company,
-  branch, Shoprite customer account IDs, and field confirmation from the live endpoint schema.
+- Login `204`, live endpoint Swagger `200`, logout `204`.
+- `DEB2062` confirmed as parent account; child account resolution returns more
+  than one page and includes the store/DC customer IDs represented in Shoprite POs.
+- Compiled API refresh against Acumatica QA completed with
+  `received=0, created=0, updated=0` for the 2026-07-01 cutover, confirming no
+  accidental historical import and no current UAT invoice yet.
+- A live historical invoice proved document-discount and tax-detail mapping:
+  header `Amount - TaxTotal` reconciles to the taxable line total, while
+  `DetailTotal` is pre-document-discount and must not be used as invoice total
+  excluding VAT.
+
+Pending before Acumatica-source invoice UAT:
+
+- Deploy this branch with the Acumatica credentials in Key Vault and the
+  verified non-secret Container App settings.
+- Create/finalize one test invoice against a store/DC child customer and set its
+  customer order reference to a current Shoprite QA PO number.
 - CLI-authenticated smoke for protected API endpoints is blocked by Entra consent for Azure CLI against the API scope; browser sign-in remains the correct operator path.
 
 The local host still does not have the .NET SDK installed; backend verification uses the SDK container with Docker socket access.

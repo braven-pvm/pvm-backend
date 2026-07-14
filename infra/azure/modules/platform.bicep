@@ -47,6 +47,8 @@ param acumaticaPassword string = ''
 param acumaticaEndpointName string = 'Default'
 param acumaticaEndpointVersion string = '24.200.001'
 param acumaticaCustomerAccounts array = []
+param acumaticaParentCustomerAccounts array = []
+param acumaticaInvoiceDateFrom string = ''
 param acumaticaPageSize int = 100
 param containerAppMinReplicas int = 1
 
@@ -105,6 +107,10 @@ var acumaticaCredentialEnvironment = hasAcumaticaCredentials ? [
 ] : []
 var acumaticaCustomerEnvironment = map(acumaticaCustomerAccounts, (account, index) => {
   name: 'Acumatica__CustomerAccounts__${index}'
+  value: account
+})
+var acumaticaParentCustomerEnvironment = map(acumaticaParentCustomerAccounts, (account, index) => {
+  name: 'Acumatica__ParentCustomerAccounts__${index}'
   value: account
 })
 var apiEnvironment = concat([
@@ -184,7 +190,11 @@ var apiEnvironment = concat([
     name: 'Acumatica__PageSize'
     value: string(acumaticaPageSize)
   }
-], acumaticaCredentialEnvironment, acumaticaCustomerEnvironment)
+  {
+    name: 'Acumatica__InvoiceDateFrom'
+    value: acumaticaInvoiceDateFrom
+  }
+], acumaticaCredentialEnvironment, acumaticaCustomerEnvironment, acumaticaParentCustomerEnvironment)
 
 var acrPullRoleDefinitionId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
 var keyVaultSecretsOfficerRoleDefinitionId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')

@@ -107,6 +107,8 @@ jobs:
             "shoprite_base_url"
             "shoprite_username"
             "shoprite_password"
+            "acumatica_username"
+            "acumatica_password"
           )
           for value_name in "${required_values[@]}"; do
             if [ -z "${!value_name}" ]; then

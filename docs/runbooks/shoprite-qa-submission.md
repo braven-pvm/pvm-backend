@@ -84,21 +84,38 @@ Acumatica staging values, once the real connector is enabled:
 ```powershell
 Acumatica__InvoiceSourceMode=RealQa
 Acumatica__BaseUrl=https://devtest1.aboutitgroup.co.za/PVMGroup25R101D250625
-Acumatica__Company=<company-or-tenant-shown-at-login-if-applicable>
+Acumatica__Company=PVM
 Acumatica__Branch=<branch-if-applicable>
 Acumatica__Username=<integration-user>
 Acumatica__Password=<integration-password>
 Acumatica__EndpointName=Default
 Acumatica__EndpointVersion=24.200.001
 Acumatica__CountryCode=ZA
-Acumatica__CustomerAccounts__0=<shoprite-customer-account-id>
+Acumatica__ParentCustomerAccounts__0=DEB2062
+Acumatica__InvoiceDateFrom=2026-07-01T00:00:00+02:00
 Acumatica__PageSize=100
 ```
 
+Use `Acumatica__CustomerAccounts__N` only for explicit invoice-level customer
+accounts. `DEB2062` is the Shoprite/Checkers parent account, not the customer ID
+stored on store/DC invoices, so it must be configured under
+`ParentCustomerAccounts`. The connector resolves all children through the
+`Customer` endpoint and chunks invoice filters to keep request URIs bounded.
+`InvoiceDateFrom` is mandatory in `RealQa` so the first refresh cannot import
+the full historical closed-invoice population.
+
 The instance path indicates Acumatica 2025 R1. Acumatica's official 2025 R1
 integration examples use `Default/24.200.001`, but the selected endpoint and
-`SalesInvoice` fields must be confirmed from `SM207060` and the endpoint
-`swagger.json` before enabling `RealQa` in Azure.
+`SalesInvoice` fields were confirmed from the live `swagger.json` on 2026-07-14.
+The standard endpoint exposes `CustomerOrder`, `Details`, `TaxDetails`,
+`DiscountTotal`, `Amount`, and `TaxTotal`. It does not expose an invoice-level
+delivery location, which is acceptable because the matched Shoprite PO remains
+the source of delivery GLN/location truth.
+
+Do not expand `TaxDetails` on the paged `SalesInvoice` collection request. The
+live instance rejects that optimized export because the taxes view has a BQL
+delegate. The connector pages invoice summaries, then retrieves each selected
+invoice by session entity ID with `Details,TaxDetails` expanded.
 
 Do not commit real values. Use `.env` locally and managed secrets in hosted environments.
 
@@ -112,10 +129,13 @@ Required Acumatica integration-user access:
   dates, totals, line inventory IDs, descriptions, quantities, UOM, prices, tax,
   and any exposed barcode/GTIN fields
 
-Before live UAT, capture one finalized test invoice number and verify its
-Shoprite PO number exists in the local PO inbox. If the Default endpoint does
-not expose the required PO, tax, or GTIN fields, extend the endpoint contract
-minimally in `SM207060`; do not add a native Acumatica connector.
+Before live UAT, create or capture one finalized test invoice dated on or after
+the configured cutover and verify its Shoprite PO number exists in the local PO
+inbox. The invoice customer must be the store/DC child customer represented by
+the PO delivery location, not parent account `DEB2062`. If the Default endpoint
+does not expose a required GTIN, enrich it from the matched Shoprite PO line or
+extend the endpoint contract minimally in `SM207060`; do not add a native
+Acumatica connector.
 
 ## Local QA Startup
 

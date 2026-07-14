@@ -22,6 +22,10 @@ public sealed record AcumaticaOptions
 
     public string[] CustomerAccounts { get; init; } = [];
 
+    public string[] ParentCustomerAccounts { get; init; } = [];
+
+    public DateTimeOffset? InvoiceDateFrom { get; init; }
+
     public int PageSize { get; init; } = 100;
 }
 
