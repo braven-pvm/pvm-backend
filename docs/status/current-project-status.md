@@ -11,6 +11,26 @@ with an explicitly enabled Acumatica QA source.
 
 Azure infrastructure and access are unblocked. Shoprite QA `VendorOrder` credentials have been verified and the backend now has a local PO inbox implementation ready for QA deployment testing.
 
+## Infrastructure Subscription (moved 2026-07-14)
+
+The QA estate was migrated off the pay-as-you-go subscription `PVM-01`
+(`51497af4-8223-42c4-a2ef-f6f625094d2f`) onto the CSP subscription
+`Azure subscription 1` (`1d0e7292-24e5-425e-870b-c56904b70da6`) so cost bills
+through the Westcon CSP partner. The old resource group was deleted and a fresh
+Bicep deploy recreated the estate under the same names, except the Key Vault,
+now `kv-pvm-intg-qa` (the old vault's purge protection reserves its name for 30
+days). The new Container Apps environment domain suffix is `blackbay-85d5b3d6`,
+so the workbench/API FQDNs and the workbench Entra redirect URI changed
+accordingly. GitHub `AZURE_SUBSCRIPTION_ID` and the deployer service principal's
+role assignments were repointed to the new subscription. The estate was verified
+live: API `/health` `200`, anonymous API `401`, workbench `/invoices` `200`.
+
+The migration config lives on branch `migrate/csp-subscription` (based on
+`feature/acumatica-qa-connector`). Until those changes reach `main` and
+`feature/acumatica-qa-connector`, a deploy triggered from either of those
+branches will fail, because `AZURE_SUBSCRIPTION_ID` now targets the new
+subscription while their Bicep still names the old Key Vault `kv-pvm-int-qa`.
+
 ## Active Priority
 
 Connect the supplied Acumatica QA instance, verify its endpoint schema, and
