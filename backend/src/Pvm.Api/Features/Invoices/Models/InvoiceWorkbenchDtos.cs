@@ -18,6 +18,10 @@ public sealed record InvoiceCandidateSummaryResponse(
 
 public sealed record InvoiceRefreshResponse(int Received, int Created, int Updated);
 
+public sealed record SaveInvoiceLineMappingRequest(
+    Guid PurchaseOrderLineId,
+    ShopriteMeasurementUnit ShopriteUom);
+
 public sealed record InvoiceCandidateDetailResponse(
     Guid Id,
     string Status,
@@ -38,7 +42,17 @@ public sealed record InvoiceCandidatePurchaseOrderResponse(
     string? DeliveryLocationCode,
     string? DeliveryLocationName,
     string DeliveryLocationSource,
-    int LineCount);
+    int LineCount,
+    IReadOnlyList<InvoiceCandidatePurchaseOrderLineResponse> Lines);
+
+public sealed record InvoiceCandidatePurchaseOrderLineResponse(
+    Guid Id,
+    int LineNumber,
+    string? Gtin,
+    string? BuyerItemId,
+    string? BuyerItemDescription,
+    string? Description,
+    decimal? RequestedQuantity);
 
 public sealed record InvoiceSubmissionAttemptResponse(
     Guid Id,

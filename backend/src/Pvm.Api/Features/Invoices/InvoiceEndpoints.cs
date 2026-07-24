@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Pvm.Api.Auth;
 using Pvm.Api.Features.Invoices.Models;
 using Pvm.Application.Acumatica;
 using Pvm.Application.Shoprite;
@@ -9,6 +10,7 @@ using Pvm.Domain.Validation;
 using Pvm.Infrastructure.Persistence;
 using Pvm.Infrastructure.Persistence.Entities;
 using Pvm.Infrastructure.Acumatica;
+using Pvm.Infrastructure.Shoprite;
 
 namespace Pvm.Api.Features.Invoices;
 
@@ -28,6 +30,8 @@ public static class InvoiceEndpoints
             .RequireAuthorization("Invoices.Write");
         group.MapPost("/{id:guid}/revalidate", RevalidateCandidateAsync)
             .RequireAuthorization("Invoices.Write");
+        group.MapPut("/{id:guid}/line-mappings/{lineNumber:int}", SaveLineMappingAsync)
+            .RequireAuthorization("Admin");
 
         return app;
     }
@@ -101,6 +105,7 @@ public static class InvoiceEndpoints
         PvmDbContext dbContext,
         IOptions<AcumaticaOptions> acumaticaOptions,
         AcumaticaInvoiceCandidateRefreshService acumaticaRefreshService,
+        ShopriteInvoiceCandidateMatcher candidateMatcher,
         CancellationToken cancellationToken)
     {
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
@@ -136,7 +141,7 @@ public static class InvoiceEndpoints
             fixture.Invoice,
             fixture.SupplierGln,
             fixture.StoreDcGln);
-        var enriched = await MatchPurchaseOrderAndValidateAsync(canonical, dbContext, cancellationToken);
+        var enriched = await candidateMatcher.MatchAndValidateAsync(canonical, cancellationToken);
         canonical = enriched.Invoice;
         var validation = enriched.Validation;
         var idempotencyKey = BuildIdempotencyKey(canonical);
@@ -189,6 +194,7 @@ public static class InvoiceEndpoints
     private static async Task<IResult> RevalidateCandidateAsync(
         Guid id,
         PvmDbContext dbContext,
+        ShopriteInvoiceCandidateMatcher candidateMatcher,
         CancellationToken cancellationToken)
     {
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
@@ -207,21 +213,59 @@ public static class InvoiceEndpoints
             return Results.Problem("Invoice candidate has no canonical invoice payload.");
         }
 
-        var enriched = await MatchPurchaseOrderAndValidateAsync(canonical, dbContext, cancellationToken);
+        var enriched = await candidateMatcher.MatchAndValidateAsync(canonical, cancellationToken);
         canonical = enriched.Invoice;
         var validation = enriched.Validation;
-        candidate.ValidationJson = JsonSerializer.Serialize(validation, SerializerOptions);
-        candidate.CanonicalJson = JsonSerializer.Serialize(canonical, SerializerOptions);
-        candidate.MatchedShopritePurchaseOrderId = enriched.MatchedPurchaseOrderId;
-        candidate.SupplierGln = canonical.SupplierGln;
-        candidate.StoreDcGln = canonical.StoreDcGln;
-        candidate.IdempotencyKey = BuildIdempotencyKey(canonical);
-        candidate.Status = CandidateStatus(validation, candidate.Status);
-        candidate.UpdatedAt = DateTimeOffset.UtcNow;
+        ApplyMatch(candidate, enriched, DateTimeOffset.UtcNow);
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return Results.Ok(ToSummaryResponse(candidate));
+    }
+
+    private static async Task<IResult> SaveLineMappingAsync(
+        Guid id,
+        int lineNumber,
+        SaveInvoiceLineMappingRequest request,
+        CurrentAppUserAccessor currentUser,
+        ShopriteInvoiceLineMappingService mappingService,
+        CancellationToken cancellationToken)
+    {
+        if (currentUser.User is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var result = await mappingService.SaveAsync(
+            id,
+            lineNumber,
+            request.PurchaseOrderLineId,
+            request.ShopriteUom,
+            currentUser.User.Email,
+            cancellationToken);
+
+        if (result.Status == ShopriteLineMappingSaveStatus.Saved && result.Candidate is not null)
+        {
+            return Results.Ok(ToSummaryResponse(result.Candidate));
+        }
+
+        if (result.Status == ShopriteLineMappingSaveStatus.CandidateNotFound)
+        {
+            return Results.NotFound(new { id, message = result.Message });
+        }
+
+        if (result.Status == ShopriteLineMappingSaveStatus.CandidateLocked)
+        {
+            return Results.Conflict(new { id, message = result.Message });
+        }
+
+        return Results.BadRequest(new
+        {
+            id,
+            lineNumber,
+            request.PurchaseOrderLineId,
+            message = result.Message
+        });
     }
 
     private static InvoiceCandidateSummaryResponse ToSummaryResponse(InvoiceCandidateEntity candidate)
@@ -257,7 +301,18 @@ public static class InvoiceEndpoints
             order.DeliveryLocationCode,
             order.DeliveryLocationName,
             order.DeliveryLocationSource,
-            order.Lines.Count);
+            order.Lines.Count,
+            order.Lines
+                .OrderBy(line => line.LineNumber)
+                .Select(line => new InvoiceCandidatePurchaseOrderLineResponse(
+                    line.Id,
+                    line.LineNumber,
+                    line.Gtin,
+                    line.BuyerItemId,
+                    line.BuyerItemDescription,
+                    line.Description,
+                    line.RequestedQuantity))
+                .ToArray());
 
     private static InvoiceSubmissionAttemptResponse ToAttemptResponse(InvoiceSubmissionAttemptEntity attempt)
         => new(
@@ -281,60 +336,19 @@ public static class InvoiceEndpoints
         return validation.CanSubmit ? "Ready" : "NeedsReview";
     }
 
-    private static async Task<MatchedInvoiceValidation> MatchPurchaseOrderAndValidateAsync(
-        CanonicalInvoice invoice,
-        PvmDbContext dbContext,
-        CancellationToken cancellationToken)
+    private static void ApplyMatch(
+        InvoiceCandidateEntity candidate,
+        ShopriteInvoiceMatchResult match,
+        DateTimeOffset updatedAt)
     {
-        var issues = new List<ValidationIssue>();
-        Guid? matchedPurchaseOrderId = null;
-
-        if (!string.IsNullOrWhiteSpace(invoice.ShopritePurchaseOrderNumber))
-        {
-            var matches = await dbContext.ShopritePurchaseOrders
-                .AsNoTracking()
-                .Where(order => order.PurchaseOrderNumber == invoice.ShopritePurchaseOrderNumber)
-                .ToListAsync(cancellationToken);
-
-            if (matches.Count == 0)
-            {
-                issues.Add(new ValidationIssue(
-                    "missing-local-shoprite-po",
-                    $"Shoprite PO {invoice.ShopritePurchaseOrderNumber} has not been loaded into the local PO inbox.",
-                    ValidationSeverity.Blocking,
-                    "Shoprite PO inbox"));
-            }
-            else if (matches.Count > 1)
-            {
-                issues.Add(new ValidationIssue(
-                    "ambiguous-local-shoprite-po",
-                    $"Shoprite PO {invoice.ShopritePurchaseOrderNumber} matched multiple local PO records.",
-                    ValidationSeverity.Blocking,
-                    "integration-config"));
-            }
-            else
-            {
-                var purchaseOrder = matches[0];
-                matchedPurchaseOrderId = purchaseOrder.Id;
-                invoice = invoice with
-                {
-                    SupplierGln = string.IsNullOrWhiteSpace(purchaseOrder.SupplierGln)
-                        ? invoice.SupplierGln
-                        : purchaseOrder.SupplierGln,
-                    SellerVatRegistrationNumber = ShopriteSupplierProfile.EffectiveSellerVatRegistrationNumber(invoice.SellerVatRegistrationNumber),
-                    StoreDcGln = string.IsNullOrWhiteSpace(purchaseOrder.DeliveryGln)
-                        ? invoice.StoreDcGln
-                        : purchaseOrder.DeliveryGln
-                };
-            }
-        }
-
-        var baseValidation = ShopriteInvoiceValidator.Validate(invoice, ShopriteValidationEnvironment.Qa);
-        var validation = issues.Count == 0
-            ? baseValidation
-            : new ValidationResult(baseValidation.Issues.Concat(issues).ToArray());
-
-        return new MatchedInvoiceValidation(invoice, matchedPurchaseOrderId, validation);
+        candidate.ValidationJson = JsonSerializer.Serialize(match.Validation, SerializerOptions);
+        candidate.CanonicalJson = JsonSerializer.Serialize(match.Invoice, SerializerOptions);
+        candidate.MatchedShopritePurchaseOrderId = match.MatchedPurchaseOrderId;
+        candidate.SupplierGln = match.Invoice.SupplierGln;
+        candidate.StoreDcGln = match.Invoice.StoreDcGln;
+        candidate.IdempotencyKey = BuildIdempotencyKey(match.Invoice);
+        candidate.Status = CandidateStatus(match.Validation, candidate.Status);
+        candidate.UpdatedAt = updatedAt;
     }
 
     private static string PurchaseOrderMatchStatus(InvoiceCandidateEntity candidate)
@@ -357,8 +371,4 @@ public static class InvoiceEndpoints
             ? default
             : JsonSerializer.Deserialize<T>(json, SerializerOptions);
 
-    private sealed record MatchedInvoiceValidation(
-        CanonicalInvoice Invoice,
-        Guid? MatchedPurchaseOrderId,
-        ValidationResult Validation);
 }

@@ -313,6 +313,26 @@ td {
   overflow-wrap: anywhere;
 }
 
+.mapping-table select {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  min-height: 40px;
+  padding: 0 10px;
+  width: 100%;
+}
+
+.mapping-table th:nth-child(3) {
+  width: 40%;
+}
+
+.mapping-table .button {
+  min-height: 36px;
+  padding: 0 12px;
+}
+
 .status-pill {
   background: #e8f3ec;
   border: 1px solid #bad8c4;

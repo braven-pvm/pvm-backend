@@ -18,16 +18,18 @@ Use `.agents/skills/overseer/SKILL.md` for status, planning, readiness, review, 
 
 ## Current Ground Truth
 
-As of 2026-06-10:
+As of 2026-07-24:
 
 - Azure is locked in and the QA estate is provisioned or provisionable.
 - `developer@pvm.co.za` has subscription `Owner` on `PVM-01`.
 - Cost visibility and budget access are confirmed.
 - Required Azure resource providers are registered.
-- The QA workbench/API infrastructure exists.
+- The QA workbench/API infrastructure exists in the CSP subscription.
 - Microsoft Entra workbench auth and app-managed users are implemented.
-- The local invoice submission vertical slice exists but still uses fixture invoice data and a local Shoprite stub client.
-- The next implementation slice is Shoprite `VendorOrder` PO inbox ingestion.
+- Real Shoprite QA `VendorOrder` refresh and `VendorInvoice` submission are implemented.
+- Real Acumatica QA finalized-invoice refresh is deployed.
+- Live invoice `INV158888` is matched to Shoprite PO `1212021109` and awaits
+  verified item/GTIN and UOM mappings before its first manual submission.
 
 ## Important Design Decisions
 
@@ -42,16 +44,15 @@ As of 2026-06-10:
 
 ## Active Next Slice
 
-Implement Shoprite PO inbox ingestion:
+Complete and deploy reusable Shoprite mappings:
 
-1. Add a `VendorOrder` client using Shoprite QA credentials.
-2. Persist raw PO payloads and extracted PO/location/line context.
-3. Add `POST /api/shoprite/purchase-orders/refresh`.
-4. Add PO list/detail workbench views.
-5. Match invoice candidates to local POs by captured PO number.
-6. Use PO-derived delivery location and GTIN context in validation/generation.
-
-Do not jump straight to real `VendorInvoice` submission until the PO inbox is stored and invoice candidates can match to exactly one local PO.
+1. Persist audited item/GTIN and item/UOM mappings.
+2. Restrict mapping changes to Admin users.
+3. Apply the same mapping and validation path during Acumatica refresh and
+   manual revalidation.
+4. Resolve `INV158888` from its matched PO line.
+5. Review the generated XML and perform the first manual Acumatica-source
+   submission to Shoprite QA.
 
 ## Verification
 

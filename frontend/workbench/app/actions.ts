@@ -6,6 +6,7 @@ import { createUser, updateUserRoles, updateUserStatus } from "../src/api/admin"
 import {
   refreshInvoiceCandidates,
   refreshPurchaseOrders,
+  saveInvoiceLineMapping,
   seedInvoiceCandidateFromPurchaseOrder,
   submitInvoice,
 } from "../src/api/client";
@@ -24,6 +25,25 @@ export async function submitInvoiceAction(formData: FormData) {
   }
 
   await submitInvoice(id);
+  revalidatePath("/invoices");
+  revalidatePath(`/invoices/${id}`);
+  redirect(`/invoices/${id}`);
+}
+
+export async function saveInvoiceLineMappingAction(formData: FormData) {
+  const id = requiredString(formData, "id");
+  const lineNumber = Number(requiredString(formData, "lineNumber"));
+  const purchaseOrderLineId = requiredString(formData, "purchaseOrderLineId");
+  const shopriteUom = requiredShopriteUom(formData, "shopriteUom");
+
+  if (!Number.isInteger(lineNumber) || lineNumber <= 0) {
+    throw new Error("lineNumber must be a positive integer.");
+  }
+
+  await saveInvoiceLineMapping(id, lineNumber, {
+    purchaseOrderLineId,
+    shopriteUom,
+  });
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${id}`);
   redirect(`/invoices/${id}`);
@@ -85,4 +105,13 @@ function requiredString(formData: FormData, key: string) {
 function optionalString(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function requiredShopriteUom(formData: FormData, key: string) {
+  const value = requiredString(formData, key);
+  if (!["EA", "CA", "CS", "KG"].includes(value)) {
+    throw new Error(`${key} is invalid.`);
+  }
+
+  return value as "EA" | "CA" | "CS" | "KG";
 }

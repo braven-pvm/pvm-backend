@@ -34,4 +34,7 @@ Use this index to orient quickly.
 
 ## Current Priority
 
-The next implementation slice is Shoprite `VendorOrder` PO inbox ingestion. Read the current handoff before starting.
+The active slice is reusable Shoprite item/GTIN and UOM mapping for live
+Acumatica candidate `INV158888`, followed by generated XML review and the first
+manual Acumatica-source submission to Shoprite QA. Read
+`docs/status/current-project-status.md` before starting.
