@@ -80,6 +80,15 @@ export type InvoiceCandidateDetail = {
     deliveryLocationName?: string;
     deliveryLocationSource: string;
     lineCount: number;
+    lines: Array<{
+      id: string;
+      lineNumber: number;
+      gtin?: string;
+      buyerItemId?: string;
+      buyerItemDescription?: string;
+      description?: string;
+      requestedQuantity?: number;
+    }>;
   };
   validation: {
     issues: ValidationIssue[];
@@ -225,6 +234,35 @@ export async function submitInvoice(id: string): Promise<SubmitInvoiceResult> {
   }
 
   throw new Error("Failed to submit invoice: invalid API response.");
+}
+
+export async function saveInvoiceLineMapping(
+  id: string,
+  lineNumber: number,
+  input: {
+    purchaseOrderLineId: string;
+    shopriteUom: "EA" | "CA" | "CS" | "KG";
+  },
+): Promise<InvoiceCandidateSummary> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(
+    `${apiBaseUrl}/api/invoices/${id}/line-mappings/${lineNumber}`,
+    {
+      method: "PUT",
+      headers: {
+        ...headers,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to save invoice line mapping: ${response.status}`);
+  }
+
+  return response.json();
 }
 
 async function readJson(response: Response): Promise<unknown> {

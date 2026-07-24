@@ -10,8 +10,8 @@
     "test": "node --test src/**/*.test.mjs"
   },
   "dependencies": {
-    "next": "16.2.6",
-    "next-auth": "^4.24.14",
+    "next": "16.2.11",
+    "next-auth": "^4.24.15",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },

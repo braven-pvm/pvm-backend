@@ -22,6 +22,8 @@ public static class ServiceCollectionExtensions
         services.AddDbContext<PvmDbContext>(options => options.UseNpgsql(connectionString));
         services.AddScoped<IInvoiceCandidateRepository, EfInvoiceCandidateRepository>();
         services.AddScoped<ShopriteSeedInvoiceCandidateService>();
+        services.AddScoped<ShopriteInvoiceCandidateMatcher>();
+        services.AddScoped<ShopriteInvoiceLineMappingService>();
         return services;
     }
 }

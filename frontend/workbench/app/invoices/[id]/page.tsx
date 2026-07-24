@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { submitInvoiceAction } from "../../actions";
+import {
+  saveInvoiceLineMappingAction,
+  submitInvoiceAction,
+} from "../../actions";
 import { getInvoiceCandidate } from "../../../src/api/client";
 import { hasAnyRole, requireWorkbenchUser } from "../../../src/auth/session";
 
@@ -20,6 +23,7 @@ export default async function InvoiceDetailPage({
   const candidate = await loadCandidate(id);
   const invoice = candidate.canonicalInvoice;
   const canWrite = hasAnyRole(user, ["Admin", "Operator"]);
+  const canManageMappings = hasAnyRole(user, ["Admin"]);
 
   return (
     <main className="page-shell">
@@ -154,6 +158,106 @@ export default async function InvoiceDetailPage({
           </dl>
         </div>
       </section>
+
+      {canManageMappings &&
+      candidate.matchedPurchaseOrder &&
+      invoice?.lines.length ? (
+        <section className="table-panel detail-section">
+          <div className="table-toolbar">
+            <h2>Line mappings</h2>
+            <span>Admin managed</span>
+          </div>
+          <table className="mapping-table">
+            <thead>
+              <tr>
+                <th>Acumatica line</th>
+                <th>Current mapping</th>
+                <th>Shoprite PO line</th>
+                <th>Shoprite UOM</th>
+                <th aria-label="Action" />
+              </tr>
+            </thead>
+            <tbody>
+              {invoice.lines.map((line) => {
+                const formId = `line-mapping-${line.lineNumber}`;
+                const selectedPoLine =
+                  candidate.matchedPurchaseOrder?.lines.find(
+                    (poLine) => poLine.gtin === line.gtin,
+                  ) ??
+                  (candidate.matchedPurchaseOrder?.lines.length === 1
+                    ? candidate.matchedPurchaseOrder.lines[0]
+                    : undefined);
+
+                return (
+                  <tr key={line.lineNumber}>
+                    <td data-label="Acumatica line">
+                      <strong>{line.acumaticaInventoryId}</strong>
+                      <span>
+                        Line {line.lineNumber} · {line.acumaticaUom}
+                      </span>
+                    </td>
+                    <td data-label="Current mapping">
+                      {line.gtin ?? "No GTIN"}
+                      <span>
+                        {line.shopriteUom
+                          ? `${line.shopriteUom}${line.isShopriteUomVerified ? " · verified" : " · unverified"}`
+                          : "No Shoprite UOM"}
+                      </span>
+                    </td>
+                    <td data-label="Shoprite PO line">
+                      <select
+                        defaultValue={selectedPoLine?.id ?? ""}
+                        form={formId}
+                        name="purchaseOrderLineId"
+                        required
+                      >
+                        <option value="">Select PO line</option>
+                        {candidate.matchedPurchaseOrder?.lines.map((poLine) => (
+                          <option key={poLine.id} value={poLine.id}>
+                            {poLine.lineNumber} ·{" "}
+                            {poLine.buyerItemId ?? "No buyer item"} ·{" "}
+                            {poLine.gtin ?? "No GTIN"} ·{" "}
+                            {poLine.buyerItemDescription ??
+                              poLine.description ??
+                              "No description"}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td data-label="Shoprite UOM">
+                      <select
+                        defaultValue={line.shopriteUom ?? ""}
+                        form={formId}
+                        name="shopriteUom"
+                        required
+                      >
+                        <option value="">Select UOM</option>
+                        <option value="EA">EA · each</option>
+                        <option value="CA">CA · case</option>
+                        <option value="CS">CS · case</option>
+                        <option value="KG">KG · kilogram</option>
+                      </select>
+                    </td>
+                    <td className="table-action" data-label="Action">
+                      <form action={saveInvoiceLineMappingAction} id={formId}>
+                        <input name="id" type="hidden" value={candidate.id} />
+                        <input
+                          name="lineNumber"
+                          type="hidden"
+                          value={line.lineNumber}
+                        />
+                        <button className="button secondary" type="submit">
+                          Save mapping
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
 
       <section className="table-panel detail-section">
         <div className="table-toolbar">
