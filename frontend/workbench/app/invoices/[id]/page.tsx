@@ -232,10 +232,10 @@ export default async function InvoiceDetailPage({
                         required
                       >
                         <option value="">Select UOM</option>
-                        <option value="EA">EA · each</option>
-                        <option value="CA">CA · case</option>
-                        <option value="CS">CS · case</option>
-                        <option value="KG">KG · kilogram</option>
+                        <option value="EA">EA</option>
+                        <option value="CA">CA</option>
+                        <option value="CS">CS</option>
+                        <option value="KG">KG</option>
                       </select>
                     </td>
                     <td className="table-action" data-label="Action">

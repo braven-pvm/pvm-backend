@@ -9,10 +9,10 @@ invoice source are deployed and verified. Live finalized invoice `INV158888`
 has been imported, matched exactly once to Shoprite PO `1212021109`, and
 reconciled to the Acumatica totals.
 
-The active implementation slice is `feature/shoprite-item-uom-mappings`. It
-adds the reusable item/GTIN and item/UOM mappings needed to clear the live
-candidate's two remaining validation blockers without hard-coded invoice data.
-Azure infrastructure and access are unblocked.
+Reusable item/GTIN and item/UOM mappings are deployed. The active UAT step is
+to select the verified mapping for `INV158888`, review the regenerated XML,
+and perform the first real Acumatica-source submission to Shoprite QA. Azure
+infrastructure and access are unblocked.
 
 ## Infrastructure Subscription (moved 2026-07-14)
 
@@ -34,9 +34,9 @@ current canonical release.
 
 ## Active Priority
 
-Deploy the Admin-only item/GTIN and item/UOM mapping workflow, resolve
-`INV158888`, review the generated XML, and perform the first real
-Acumatica-source submission to Shoprite QA.
+Resolve `INV158888` with the deployed Admin-only mapping workflow, review the
+generated XML, and perform the first real Acumatica-source submission to
+Shoprite QA.
 
 ## Why This Is Next
 
@@ -103,8 +103,7 @@ Done:
 
 Not done:
 
-- End-to-end Acumatica-source candidate match, validation, XML review, and
-  Shoprite QA submission.
+- First real Acumatica-source Shoprite QA submission.
 - Production-grade payload archive.
 - Blob payload archive.
 - Global mapping list/edit pages for GLN, GTIN, UOM, pack, tax, and connection
@@ -137,17 +136,17 @@ Mapping slice verification on 2026-07-24:
   returned a `Ready` candidate with verified UOM and zero validation issues.
 - Playwright desktop and 390 px mobile screenshots verified the mapping control
   without overlap or clipped container content.
-- QA deployment remains pending for this feature branch.
+- QA deployment run `30092563471` passed from merge commit `7e4b6c1ff5aa`.
 
-Current Acumatica connector deployment verification on 2026-07-24:
+Current QA deployment verification on 2026-07-24:
 
-- GitHub Actions deploy run `30087501452` passed from commit `f9bf5c84ff94`.
+- GitHub Actions deploy run `30092563471` passed from commit `7e4b6c1ff5aa`.
 - Deployed QA images:
-  - API: `acrpvmintegrationsqa.azurecr.io/pvm-api:qa-f9bf5c84ff94`
-  - Workbench: `acrpvmintegrationsqa.azurecr.io/pvm-workbench:qa-f9bf5c84ff94`
+  - API: `acrpvmintegrationsqa.azurecr.io/pvm-api:qa-7e4b6c1ff5aa`
+  - Workbench: `acrpvmintegrationsqa.azurecr.io/pvm-workbench:qa-7e4b6c1ff5aa`
 - Active revisions are healthy with one replica and 100 percent traffic:
-  - API: `ca-pvm-api-qa--0000003`
-  - Workbench: `ca-pvm-workbench-qa--0000004`
+  - API: `ca-pvm-api-qa--0000004`
+  - Workbench: `ca-pvm-workbench-qa--0000005`
 - Live QA smoke:
   - API `/health`: `200`
   - Anonymous invoice candidates API: `401`, expected
@@ -218,7 +217,6 @@ Acumatica-source connector verification completed locally on 2026-07-14:
 
 Pending before Acumatica-source invoice UAT:
 
-- Merge and deploy `feature/shoprite-item-uom-mappings`.
 - Open `INV158888`, select its single matched Shoprite PO line, and choose the
   verified Shoprite UOM that represents Acumatica `BOX`.
 - Confirm the candidate becomes `Ready`, has no blocking validation issues, and

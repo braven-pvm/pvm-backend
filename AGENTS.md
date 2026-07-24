@@ -28,8 +28,8 @@ As of 2026-07-24:
 - Microsoft Entra workbench auth and app-managed users are implemented.
 - Real Shoprite QA `VendorOrder` refresh and `VendorInvoice` submission are implemented.
 - Real Acumatica QA finalized-invoice refresh is deployed.
-- Live invoice `INV158888` is matched to Shoprite PO `1212021109` and awaits
-  verified item/GTIN and UOM mappings before its first manual submission.
+- Live invoice `INV158888` is matched to Shoprite PO `1212021109`; the
+  Admin-only item/GTIN and UOM mapping workflow is deployed.
 
 ## Important Design Decisions
 
@@ -44,15 +44,13 @@ As of 2026-07-24:
 
 ## Active Next Slice
 
-Complete and deploy reusable Shoprite mappings:
+Complete the first real Acumatica-source Shoprite QA UAT:
 
-1. Persist audited item/GTIN and item/UOM mappings.
-2. Restrict mapping changes to Admin users.
-3. Apply the same mapping and validation path during Acumatica refresh and
-   manual revalidation.
-4. Resolve `INV158888` from its matched PO line.
-5. Review the generated XML and perform the first manual Acumatica-source
-   submission to Shoprite QA.
+1. Resolve `INV158888` from its matched PO line using an Admin account.
+2. Select and verify the Shoprite UOM that represents Acumatica `BOX`.
+3. Confirm the candidate becomes `Ready` with no blocking issues.
+4. Review the generated XML.
+5. Submit manually and inspect the persisted attempt response.
 
 ## Verification
 
