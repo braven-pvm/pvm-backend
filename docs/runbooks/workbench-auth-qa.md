@@ -30,11 +30,11 @@ This runbook records the QA authentication setup for the PVM workbench and API.
 | API scope | `api://2ea883c8-83df-4cd5-9beb-9421552713ce/access_as_user` |
 | Workbench display name | `pvm-backend-qa-workbench` |
 | Workbench client ID | `b0ad7b66-5063-48c2-b524-0a673b127ad3` |
-| Workbench callback URL | `https://ca-pvm-workbench-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io/api/auth/callback/azure-ad` |
+| Workbench callback URL | `https://ca-pvm-workbench-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io/api/auth/callback/azure-ad` |
 
 ## Key Vault Secrets
 
-Required secrets in `kv-pvm-int-qa`:
+Required secrets in `kv-pvm-intg-qa`:
 
 ```text
 auth--tenantid

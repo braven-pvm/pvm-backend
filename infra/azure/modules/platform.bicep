@@ -33,6 +33,23 @@ param shopriteUsername string = ''
 param shopritePassword string = ''
 
 param shopriteInvoiceSubmissionMode string = 'LocalStub'
+param acumaticaInvoiceSourceMode string = 'Fixture'
+param acumaticaBaseUrl string = ''
+param acumaticaCompany string = ''
+param acumaticaBranch string = ''
+
+@secure()
+param acumaticaUsername string = ''
+
+@secure()
+param acumaticaPassword string = ''
+
+param acumaticaEndpointName string = 'Default'
+param acumaticaEndpointVersion string = '24.200.001'
+param acumaticaCustomerAccounts array = []
+param acumaticaParentCustomerAccounts array = []
+param acumaticaInvoiceDateFrom string = ''
+param acumaticaPageSize int = 100
 param containerAppMinReplicas int = 1
 
 param tags object
@@ -46,13 +63,138 @@ var logName = 'log-pvm-integrations-${suffix}'
 var appInsightsName = 'appi-pvm-integrations-${suffix}'
 var containerAppsEnvironmentName = 'cae-pvm-integrations-${suffix}'
 var identityName = 'id-pvm-integrations-${suffix}'
-var keyVaultName = 'kv-pvm-int-${suffix}'
+var keyVaultName = 'kv-pvm-intg-${suffix}'
 var storageAccountName = 'stpvmintegrations${suffix}'
 var serviceBusNamespaceName = 'sb-pvm-integrations-${suffix}'
 var postgresServerName = 'psql-pvm-integrations-${suffix}'
 var postgresAdminUser = 'pvmadmin'
 var databaseName = 'pvm'
 var pvmConnectionString = 'Host=${postgres.properties.fullyQualifiedDomainName};Port=5432;Database=${databaseName};Username=${postgresAdminUser};Password=${postgresAdminPassword};Ssl Mode=Require;Trust Server Certificate=true'
+var hasAcumaticaCredentials = !empty(acumaticaUsername) && !empty(acumaticaPassword)
+var acumaticaCredentialSecrets = hasAcumaticaCredentials ? [
+  {
+    name: 'acumatica-username'
+    value: acumaticaUsername
+  }
+  {
+    name: 'acumatica-password'
+    value: acumaticaPassword
+  }
+] : []
+var apiSecrets = concat([
+  {
+    name: 'connectionstrings-pvm'
+    value: pvmConnectionString
+  }
+  {
+    name: 'shoprite-username'
+    value: shopriteUsername
+  }
+  {
+    name: 'shoprite-password'
+    value: shopritePassword
+  }
+], acumaticaCredentialSecrets)
+var acumaticaCredentialEnvironment = hasAcumaticaCredentials ? [
+  {
+    name: 'Acumatica__Username'
+    secretRef: 'acumatica-username'
+  }
+  {
+    name: 'Acumatica__Password'
+    secretRef: 'acumatica-password'
+  }
+] : []
+var acumaticaCustomerEnvironment = map(acumaticaCustomerAccounts, (account, index) => {
+  name: 'Acumatica__CustomerAccounts__${index}'
+  value: account
+})
+var acumaticaParentCustomerEnvironment = map(acumaticaParentCustomerAccounts, (account, index) => {
+  name: 'Acumatica__ParentCustomerAccounts__${index}'
+  value: account
+})
+var apiEnvironment = concat([
+  {
+    name: 'ASPNETCORE_ENVIRONMENT'
+    value: 'Production'
+  }
+  {
+    name: 'ConnectionStrings__Pvm'
+    secretRef: 'connectionstrings-pvm'
+  }
+  {
+    name: 'Auth__Mode'
+    value: authMode
+  }
+  {
+    name: 'Auth__TenantId'
+    value: authTenantId
+  }
+  {
+    name: 'Auth__Audience'
+    value: authApiClientId
+  }
+  {
+    name: 'Auth__BootstrapAdminEmails__0'
+    value: authBootstrapAdminEmail
+  }
+  {
+    name: 'Auth__BootstrapAdminObjectIds__0'
+    value: authBootstrapAdminObjectId
+  }
+  {
+    name: 'Shoprite__BaseUrl'
+    value: shopriteBaseUrl
+  }
+  {
+    name: 'Shoprite__Username'
+    secretRef: 'shoprite-username'
+  }
+  {
+    name: 'Shoprite__Password'
+    secretRef: 'shoprite-password'
+  }
+  {
+    name: 'Shoprite__InvoiceSubmissionMode'
+    value: shopriteInvoiceSubmissionMode
+  }
+  {
+    name: 'Acumatica__InvoiceSourceMode'
+    value: acumaticaInvoiceSourceMode
+  }
+  {
+    name: 'Acumatica__BaseUrl'
+    value: acumaticaBaseUrl
+  }
+  {
+    name: 'Acumatica__Company'
+    value: acumaticaCompany
+  }
+  {
+    name: 'Acumatica__Branch'
+    value: acumaticaBranch
+  }
+  {
+    name: 'Acumatica__EndpointName'
+    value: acumaticaEndpointName
+  }
+  {
+    name: 'Acumatica__EndpointVersion'
+    value: acumaticaEndpointVersion
+  }
+  {
+    name: 'Acumatica__CountryCode'
+    value: 'ZA'
+  }
+  {
+    name: 'Acumatica__PageSize'
+    value: string(acumaticaPageSize)
+  }
+  {
+    name: 'Acumatica__InvoiceDateFrom'
+    value: acumaticaInvoiceDateFrom
+  }
+], acumaticaCredentialEnvironment, acumaticaCustomerEnvironment, acumaticaParentCustomerEnvironment)
 
 var acrPullRoleDefinitionId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
 var keyVaultSecretsOfficerRoleDefinitionId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')
@@ -342,20 +484,7 @@ resource apiContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
           identity: identity.id
         }
       ]
-      secrets: [
-        {
-          name: 'connectionstrings-pvm'
-          value: pvmConnectionString
-        }
-        {
-          name: 'shoprite-username'
-          value: shopriteUsername
-        }
-        {
-          name: 'shoprite-password'
-          value: shopritePassword
-        }
-      ]
+      secrets: apiSecrets
     }
     template: {
       scale: {
@@ -366,52 +495,7 @@ resource apiContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: apiContainerAppName
           image: '${acr.properties.loginServer}/pvm-api:${apiImageTag}'
-          env: [
-            {
-              name: 'ASPNETCORE_ENVIRONMENT'
-              value: 'Production'
-            }
-            {
-              name: 'ConnectionStrings__Pvm'
-              secretRef: 'connectionstrings-pvm'
-            }
-            {
-              name: 'Auth__Mode'
-              value: authMode
-            }
-            {
-              name: 'Auth__TenantId'
-              value: authTenantId
-            }
-            {
-              name: 'Auth__Audience'
-              value: authApiClientId
-            }
-            {
-              name: 'Auth__BootstrapAdminEmails__0'
-              value: authBootstrapAdminEmail
-            }
-            {
-              name: 'Auth__BootstrapAdminObjectIds__0'
-              value: authBootstrapAdminObjectId
-            }
-            {
-              name: 'Shoprite__BaseUrl'
-              value: shopriteBaseUrl
-            }
-            {
-              name: 'Shoprite__Username'
-              secretRef: 'shoprite-username'
-            }
-            {
-              name: 'Shoprite__Password'
-              secretRef: 'shoprite-password'
-            }
-            {
-              name: 'Shoprite__InvoiceSubmissionMode'
-              value: shopriteInvoiceSubmissionMode
-            }
-          ]
+          env: apiEnvironment
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'

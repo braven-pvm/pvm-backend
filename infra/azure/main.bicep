@@ -58,7 +58,7 @@ param authBootstrapAdminEmail string = ''
 param authBootstrapAdminObjectId string = ''
 
 @description('Public workbench URL used by the auth callback.')
-param workbenchPublicUrl string = 'https://ca-pvm-workbench-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io'
+param workbenchPublicUrl string = 'https://ca-pvm-workbench-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io'
 
 @description('Shoprite API base URL for the deployed API.')
 param shopriteBaseUrl string = ''
@@ -77,6 +77,50 @@ param shopritePassword string = ''
   'RealQa'
 ])
 param shopriteInvoiceSubmissionMode string = 'LocalStub'
+
+@description('Acumatica invoice source mode. RealQa must be enabled explicitly after QA credentials and schema are verified.')
+@allowed([
+  'Fixture'
+  'RealQa'
+])
+param acumaticaInvoiceSourceMode string = 'Fixture'
+
+@description('Acumatica QA instance base URL.')
+param acumaticaBaseUrl string = ''
+
+@description('Acumatica company or tenant used for API sign-in.')
+param acumaticaCompany string = ''
+
+@description('Acumatica branch used for API sign-in.')
+param acumaticaBranch string = ''
+
+@secure()
+@description('Acumatica integration username.')
+param acumaticaUsername string = ''
+
+@secure()
+@description('Acumatica integration password.')
+param acumaticaPassword string = ''
+
+@description('Acumatica contract REST endpoint name.')
+param acumaticaEndpointName string = 'Default'
+
+@description('Acumatica contract REST endpoint version.')
+param acumaticaEndpointVersion string = '24.200.001'
+
+@description('Acumatica customer account IDs that are eligible for Shoprite invoice refresh.')
+param acumaticaCustomerAccounts array = []
+
+@description('Acumatica parent customer account IDs whose child accounts are eligible for Shoprite invoice refresh.')
+param acumaticaParentCustomerAccounts array = []
+
+@description('Inclusive Acumatica invoice-date cutover used to prevent unbounded historical ingestion.')
+param acumaticaInvoiceDateFrom string = ''
+
+@minValue(1)
+@maxValue(1000)
+@description('Acumatica contract REST page size.')
+param acumaticaPageSize int = 100
 
 @minValue(0)
 @maxValue(2)
@@ -122,6 +166,18 @@ module platform 'modules/platform.bicep' = {
     shopriteUsername: shopriteUsername
     shopritePassword: shopritePassword
     shopriteInvoiceSubmissionMode: shopriteInvoiceSubmissionMode
+    acumaticaInvoiceSourceMode: acumaticaInvoiceSourceMode
+    acumaticaBaseUrl: acumaticaBaseUrl
+    acumaticaCompany: acumaticaCompany
+    acumaticaBranch: acumaticaBranch
+    acumaticaUsername: acumaticaUsername
+    acumaticaPassword: acumaticaPassword
+    acumaticaEndpointName: acumaticaEndpointName
+    acumaticaEndpointVersion: acumaticaEndpointVersion
+    acumaticaCustomerAccounts: acumaticaCustomerAccounts
+    acumaticaParentCustomerAccounts: acumaticaParentCustomerAccounts
+    acumaticaInvoiceDateFrom: acumaticaInvoiceDateFrom
+    acumaticaPageSize: acumaticaPageSize
     containerAppMinReplicas: containerAppMinReplicas
     tags: tags
   }
@@ -134,7 +190,7 @@ resource budget 'Microsoft.Consumption/budgets@2023-11-01' = {
     amount: monthlyBudgetAmountUsd
     timeGrain: 'Monthly'
     timePeriod: {
-      startDate: '2026-05-01T00:00:00Z'
+      startDate: '2026-07-01T00:00:00Z'
       endDate: '2036-05-01T00:00:00Z'
     }
     notifications: {

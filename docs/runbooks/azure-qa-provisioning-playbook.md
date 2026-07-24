@@ -12,7 +12,7 @@ Verified by Azure CLI on 2026-05-19:
 | --- | --- |
 | Tenant ID | `cf6de706-07fd-492e-9ff7-13234a0961a6` |
 | Subscription name | `PVM-01` |
-| Subscription ID | `51497af4-8223-42c4-a2ef-f6f625094d2f` |
+| Subscription ID | `1d0e7292-24e5-425e-870b-c56904b70da6` |
 | CLI user | `developer@pvm.co.za` |
 | User object ID | `35425387-d19a-4e63-97b5-2165cce0032b` |
 | Current role | `Owner` at subscription scope |
@@ -43,7 +43,7 @@ Current CLI verification confirms:
 | Item | Status |
 | --- | --- |
 | Current CLI user | `developer@pvm.co.za` |
-| Subscription | `PVM-01` / `51497af4-8223-42c4-a2ef-f6f625094d2f` |
+| Subscription | `PVM-01` / `1d0e7292-24e5-425e-870b-c56904b70da6` |
 | `developer@pvm.co.za` Azure role | `Owner` at subscription scope |
 | `pvm-backend-qa-deploy` service principal | `Contributor` at subscription scope |
 | `pvm-backend-qa-deploy` service principal | `Owner` on `rg-pvm-integrations-qa` |
@@ -90,7 +90,7 @@ Alignment conclusion:
 | Workbench Container App | `ca-pvm-workbench-qa` | Next.js admin UI | min replicas 0 initially |
 | PostgreSQL Flexible Server | `psql-pvm-integrations-qa` | Operational state DB | Burstable B1ms/B2s class, small storage |
 | PostgreSQL database | `pvm` | App database | single DB |
-| Key Vault | `kv-pvm-int-qa` | Secrets | Standard |
+| Key Vault | `kv-pvm-intg-qa` | Secrets | Standard |
 | Storage Account | `stpvmintegrationsqa` | Payload archive | Standard LRS, hot |
 | Blob container | `payloads` | XML/JSON payloads | private |
 | Service Bus namespace | `sb-pvm-integrations-qa` | Future queue/dead-letter processing | Standard, can defer |
@@ -106,12 +106,12 @@ Provisioning was run from branch `infra/azure-qa-baseline` on 2026-05-19.
 | Item | Value |
 | --- | --- |
 | Resource group | `rg-pvm-integrations-qa` |
-| API URL | `https://ca-pvm-api-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io` |
-| Workbench URL | `https://ca-pvm-workbench-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io` |
+| API URL | `https://ca-pvm-api-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io` |
+| Workbench URL | `https://ca-pvm-workbench-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io` |
 | Image tag | `qa-20260519-01` and `qa-latest` |
 | ACR login server | `acrpvmintegrationsqa.azurecr.io` |
 | PostgreSQL FQDN | `psql-pvm-integrations-qa.postgres.database.azure.com` |
-| Key Vault | `kv-pvm-int-qa` |
+| Key Vault | `kv-pvm-intg-qa` |
 | Storage account | `stpvmintegrationsqa` |
 | Service Bus namespace | `sb-pvm-integrations-qa` |
 | Managed identity | `id-pvm-integrations-qa` |
@@ -177,7 +177,7 @@ Partner billing may differ due to CSP pricing, exchange rate, VAT, support, or m
 Register required providers once per subscription:
 
 ```powershell
-az account set --subscription 51497af4-8223-42c4-a2ef-f6f625094d2f
+az account set --subscription 1d0e7292-24e5-425e-870b-c56904b70da6
 
 az provider register --namespace Microsoft.App
 az provider register --namespace Microsoft.ContainerRegistry
@@ -334,7 +334,7 @@ shoprite--password
 shoprite--contractid
 shoprite--uiuser
 acumatica--baseurl
-acumatica--tenant
+acumatica--company
 acumatica--branch
 acumatica--username
 acumatica--password
@@ -342,10 +342,16 @@ acumatica--endpointname
 acumatica--endpointversion
 ```
 
+The current QA deployment workflow reads only `acumatica--username` and
+`acumatica--password` as secrets. Base URL, company, branch, endpoint,
+eligible customer accounts, and the explicit `Fixture`/`RealQa` switch are
+non-secret Bicep parameters. Keep the switch at `Fixture` until the endpoint
+schema and a finalized test invoice have been verified.
+
 Set secrets after Key Vault exists:
 
 ```powershell
-az keyvault secret set --vault-name kv-pvm-int-qa --name shoprite--baseurl --value "https://..."
+az keyvault secret set --vault-name kv-pvm-intg-qa --name shoprite--baseurl --value "https://..."
 ```
 
 For local operator testing, `.env` remains local only and must not be committed.
@@ -360,7 +366,7 @@ id-pvm-integrations-qa
 
 Assign:
 
-- Key Vault Secrets User on `kv-pvm-int-qa`
+- Key Vault Secrets User on `kv-pvm-intg-qa`
 - Storage Blob Data Contributor on `stpvmintegrationsqa`
 - AcrPull on `acrpvmintegrationsqa` for container apps identity if needed
 
@@ -418,7 +424,7 @@ Commands:
 ```powershell
 az account show
 az group list
-az policy assignment list --disable-scope-strict-match --scope /subscriptions/51497af4-8223-42c4-a2ef-f6f625094d2f
+az policy assignment list --disable-scope-strict-match --scope /subscriptions/1d0e7292-24e5-425e-870b-c56904b70da6
 az provider list --query "[?registrationState!='Registered'].namespace" --output table
 ```
 
@@ -499,7 +505,7 @@ Initial API deployment shape:
 $resourceGroup = "rg-pvm-integrations-qa"
 $environment = "cae-pvm-integrations-qa"
 $identityId = az identity show -g $resourceGroup -n id-pvm-integrations-qa --query id -o tsv
-$connectionString = az keyvault secret show --vault-name kv-pvm-int-qa --name connectionstrings--pvm --query value -o tsv
+$connectionString = az keyvault secret show --vault-name kv-pvm-intg-qa --name connectionstrings--pvm --query value -o tsv
 $loginServer = "acrpvmintegrationsqa.azurecr.io"
 
 az containerapp create `
@@ -523,7 +529,7 @@ az containerapp create `
 Initial workbench deployment shape:
 
 ```powershell
-$apiBase = "https://ca-pvm-api-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io"
+$apiBase = "https://ca-pvm-api-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io"
 
 az containerapp create `
   --name ca-pvm-workbench-qa `

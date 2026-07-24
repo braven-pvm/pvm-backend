@@ -13,8 +13,8 @@ The QA infrastructure is active and deployable through GitHub Actions OIDC. The 
 - Workbench server actions call the API directly.
 - API submission audit uses a hardcoded initiated-by value of `admin`.
 - QA URLs are live:
-  - API: `https://ca-pvm-api-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io`
-  - Workbench: `https://ca-pvm-workbench-qa.lemonocean-3257d28f.southafricanorth.azurecontainerapps.io`
+  - API: `https://ca-pvm-api-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io`
+  - Workbench: `https://ca-pvm-workbench-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io`
 
 ## Recommendation
 

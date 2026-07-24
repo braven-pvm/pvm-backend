@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Pvm.Api.Features.Invoices.Models;
 using Pvm.Application.Acumatica;
 using Pvm.Application.Shoprite;
@@ -7,6 +8,7 @@ using Pvm.Domain.Invoices;
 using Pvm.Domain.Validation;
 using Pvm.Infrastructure.Persistence;
 using Pvm.Infrastructure.Persistence.Entities;
+using Pvm.Infrastructure.Acumatica;
 
 namespace Pvm.Api.Features.Invoices;
 
@@ -97,9 +99,20 @@ public static class InvoiceEndpoints
     private static async Task<IResult> RefreshCandidatesAsync(
         IWebHostEnvironment environment,
         PvmDbContext dbContext,
+        IOptions<AcumaticaOptions> acumaticaOptions,
+        AcumaticaInvoiceCandidateRefreshService acumaticaRefreshService,
         CancellationToken cancellationToken)
     {
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+
+        if (acumaticaOptions.Value.InvoiceSourceMode == AcumaticaInvoiceSourceMode.RealQa)
+        {
+            var result = await acumaticaRefreshService.RefreshAsync(cancellationToken);
+            return Results.Ok(new InvoiceRefreshResponse(
+                result.Received,
+                result.Created,
+                result.Updated));
+        }
 
         var fixturePath = Path.Combine(
             environment.ContentRootPath,
@@ -131,6 +144,7 @@ public static class InvoiceEndpoints
 
         var candidate = await dbContext.InvoiceCandidates
             .SingleOrDefaultAsync(candidate => candidate.AcumaticaInvoiceId == canonical.AcumaticaInvoiceId, cancellationToken);
+        var created = candidate is null;
 
         if (candidate is null)
         {
@@ -166,7 +180,10 @@ public static class InvoiceEndpoints
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return Results.Ok(ToSummaryResponse(candidate));
+        return Results.Ok(new InvoiceRefreshResponse(
+            Received: 1,
+            Created: created ? 1 : 0,
+            Updated: created ? 0 : 1));
     }
 
     private static async Task<IResult> RevalidateCandidateAsync(

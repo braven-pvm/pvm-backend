@@ -22,7 +22,7 @@ Environment variables:
 | --- | --- |
 | `AZURE_CLIENT_ID` | `5e2f54fb-4db7-4e2c-841c-7dfa81e505af` |
 | `AZURE_TENANT_ID` | `cf6de706-07fd-492e-9ff7-13234a0961a6` |
-| `AZURE_SUBSCRIPTION_ID` | `51497af4-8223-42c4-a2ef-f6f625094d2f` |
+| `AZURE_SUBSCRIPTION_ID` | `1d0e7292-24e5-425e-870b-c56904b70da6` |
 
 No GitHub client secret is required. The workflow uses GitHub OIDC with `id-token: write`.
 
@@ -50,10 +50,10 @@ The deployment identity currently has:
 
 | Role | Scope | Reason |
 | --- | --- | --- |
-| `Contributor` | `/subscriptions/51497af4-8223-42c4-a2ef-f6f625094d2f` | Subscription-scope Bicep deployment, resource group, budget, and resource updates. |
-| `Owner` | `/subscriptions/51497af4-8223-42c4-a2ef-f6f625094d2f/resourceGroups/rg-pvm-integrations-qa` | Allows Bicep-managed role assignments inside the QA resource group. |
+| `Contributor` | `/subscriptions/1d0e7292-24e5-425e-870b-c56904b70da6` | Subscription-scope Bicep deployment, resource group, budget, and resource updates. |
+| `Owner` | `/subscriptions/1d0e7292-24e5-425e-870b-c56904b70da6/resourceGroups/rg-pvm-integrations-qa` | Allows Bicep-managed role assignments inside the QA resource group. |
 | `AcrPush` | `acrpvmintegrationsqa` | Push API and workbench images. |
-| `Key Vault Secrets User` | `kv-pvm-int-qa` | Read the existing PostgreSQL connection string during deployment. |
+| `Key Vault Secrets User` | `kv-pvm-intg-qa` | Read the existing PostgreSQL connection string during deployment. |
 
 The role footprint can be tightened later by moving the budget/RG creation out of the deploy workflow and replacing broad subscription `Contributor` with resource-group scoped roles.
 
@@ -81,7 +81,7 @@ The workflow:
 - Do not connect real Shoprite or Acumatica data unless the QA workbench remains protected by Microsoft Entra authentication and app-managed roles.
 - The workflow currently uses the existing QA PostgreSQL admin password from Key Vault to avoid rotating the password on every deployment.
 - If the Key Vault connection string is intentionally rotated, the workflow automatically uses the new value on the next run.
-- Required auth secrets must exist in `kv-pvm-int-qa` before deployment:
+- Required auth secrets must exist in `kv-pvm-intg-qa` before deployment:
   - `auth--tenantid`
   - `auth--api-clientid`
   - `auth--workbench-clientid`
