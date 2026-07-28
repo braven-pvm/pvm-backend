@@ -17,8 +17,6 @@ public static class SubmissionEndpoints
             PvmDbContext dbContext,
             CancellationToken cancellationToken) =>
         {
-            await dbContext.Database.EnsureCreatedAsync(cancellationToken);
-
             var attempts = dbContext.InvoiceSubmissionAttempts
                 .Where(attempt => attempt.InvoiceCandidateId == id)
                 .OrderByDescending(attempt => attempt.CreatedAt)
@@ -41,20 +39,18 @@ public static class SubmissionEndpoints
 
     private static async Task<IResult> SubmitInvoiceAsync(
         Guid id,
-        PvmDbContext dbContext,
         SubmitShopriteInvoiceHandler handler,
         CurrentAppUserAccessor currentUser,
         CancellationToken cancellationToken)
     {
-        await dbContext.Database.EnsureCreatedAsync(cancellationToken);
-
         var result = await handler.HandleAsync(
-            new SubmitShopriteInvoiceCommand(id, currentUser.User?.Email ?? "unknown", "manual"),
+            new SubmitShopriteInvoiceCommand(Guid.NewGuid(), id, currentUser.User?.Email ?? "unknown", "manual"),
             cancellationToken);
 
         return result.Status switch
         {
             SubmitShopriteInvoiceStatus.Submitted => Results.Ok(result),
+            SubmitShopriteInvoiceStatus.InProgress => Results.Accepted($"/api/invoices/candidates/{id}", result),
             SubmitShopriteInvoiceStatus.ValidationBlocked => Results.BadRequest(result),
             SubmitShopriteInvoiceStatus.DuplicateBlocked => Results.Conflict(result),
             SubmitShopriteInvoiceStatus.ManualReviewRequired => Results.Conflict(result),

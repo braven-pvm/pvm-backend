@@ -28,4 +28,16 @@ public sealed class InvoiceCandidateReadinessTests
 
         Assert.True(result);
     }
+
+    [Fact]
+    public void CanSubmit_ReturnsFalseWhenCandidateWasRejectedAndNeedsAdminReview()
+    {
+        var result = InvoiceCandidateReadiness.CanSubmit(
+            new ValidationResult([]),
+            matchedPurchaseOrderId: Guid.NewGuid(),
+            candidateStatus: "Rejected",
+            attemptStatuses: ["Rejected"]);
+
+        Assert.False(result);
+    }
 }

@@ -11,6 +11,6 @@ public static class InvoiceCandidateReadiness
         IReadOnlyCollection<string> attemptStatuses)
         => validation.CanSubmit
             && matchedPurchaseOrderId is not null
-            && candidateStatus is not "Submitted" and not "Ambiguous"
-            && !attemptStatuses.Any(status => status is "Submitted" or "Ambiguous");
+            && candidateStatus is not "Submitted" and not "Rejected" and not "Ambiguous"
+            && !attemptStatuses.Any(status => status is "Submitted" or "Rejected" or "Ambiguous");
 }

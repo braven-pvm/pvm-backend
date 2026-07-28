@@ -40,8 +40,6 @@ public static class InvoiceEndpoints
         PvmDbContext dbContext,
         CancellationToken cancellationToken)
     {
-        await dbContext.Database.EnsureCreatedAsync(cancellationToken);
-
         var candidates = await dbContext.InvoiceCandidates
             .AsNoTracking()
             .OrderByDescending(candidate => candidate.UpdatedAt)
@@ -55,8 +53,6 @@ public static class InvoiceEndpoints
         PvmDbContext dbContext,
         CancellationToken cancellationToken)
     {
-        await dbContext.Database.EnsureCreatedAsync(cancellationToken);
-
         var candidate = await dbContext.InvoiceCandidates
             .AsNoTracking()
             .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
@@ -108,8 +104,6 @@ public static class InvoiceEndpoints
         ShopriteInvoiceCandidateMatcher candidateMatcher,
         CancellationToken cancellationToken)
     {
-        await dbContext.Database.EnsureCreatedAsync(cancellationToken);
-
         if (acumaticaOptions.Value.InvoiceSourceMode == AcumaticaInvoiceSourceMode.RealQa)
         {
             var result = await acumaticaRefreshService.RefreshAsync(cancellationToken);
@@ -197,8 +191,6 @@ public static class InvoiceEndpoints
         ShopriteInvoiceCandidateMatcher candidateMatcher,
         CancellationToken cancellationToken)
     {
-        await dbContext.Database.EnsureCreatedAsync(cancellationToken);
-
         var candidate = await dbContext.InvoiceCandidates
             .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
 
@@ -328,7 +320,7 @@ public static class InvoiceEndpoints
 
     private static string CandidateStatus(ValidationResult validation, string? currentStatus)
     {
-        if (currentStatus is "Submitted" or "Ambiguous")
+        if (currentStatus is "Submitted" or "Rejected" or "Ambiguous")
         {
             return currentStatus;
         }

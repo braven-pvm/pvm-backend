@@ -157,6 +157,15 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Apply database migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          connection_string="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name connectionstrings--pvm --query value -o tsv)"
+          echo "::add-mask::$connection_string"
+          export ConnectionStrings__Pvm="$connection_string"
+          dotnet run --project backend/src/Pvm.DatabaseMigrator/Pvm.DatabaseMigrator.csproj --configuration Release
+
       - name: Build and push API image
         run: |
           az acr login --name "$ACR_NAME"
