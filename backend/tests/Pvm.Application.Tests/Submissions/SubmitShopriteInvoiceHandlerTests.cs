@@ -25,7 +25,7 @@ public sealed class SubmitShopriteInvoiceHandlerTests
             ])
         };
         var shopriteClient = new FakeShopriteInvoiceClient();
-        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient);
+        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient, new FakePayloadArchive());
 
         var result = await handler.HandleAsync(Command, CancellationToken.None);
 
@@ -47,7 +47,8 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         {
             Response = new ShopriteInvoiceResponse(true, 200, "accepted", IsAmbiguous: false)
         };
-        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient);
+        var archive = new FakePayloadArchive();
+        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient, archive);
 
         var result = await handler.HandleAsync(Command, CancellationToken.None);
 
@@ -61,6 +62,13 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         Assert.Equal(shopriteClient.LastXml, attempt.Xml);
         Assert.Contains("INV342699282", attempt.Xml);
         Assert.Equal(shopriteClient.Response, attempt.Response);
+        Assert.Collection(
+            archive.Writes,
+            payload => Assert.Equal(PayloadArchiveKind.AcumaticaSource, payload.Kind),
+            payload => Assert.Equal(PayloadArchiveKind.CanonicalInvoice, payload.Kind),
+            payload => Assert.Equal(PayloadArchiveKind.ShopriteRequest, payload.Kind),
+            payload => Assert.Equal(PayloadArchiveKind.ShopriteResponse, payload.Kind));
+        Assert.True(repository.PreparedPayloadsRecordedBeforeStart);
     }
 
     [Fact]
@@ -72,7 +80,7 @@ public sealed class SubmitShopriteInvoiceHandlerTests
             ValidationResult = new ValidationResult([])
         };
         var shopriteClient = new FakeShopriteInvoiceClient();
-        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient);
+        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient, new FakePayloadArchive());
 
         var result = await handler.HandleAsync(Command, CancellationToken.None);
 
@@ -95,7 +103,7 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         {
             Response = new ShopriteInvoiceResponse(false, null, "Shoprite request timed out.", IsAmbiguous: true)
         };
-        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient);
+        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient, new FakePayloadArchive());
 
         var result = await handler.HandleAsync(Command, CancellationToken.None);
 
@@ -118,7 +126,7 @@ public sealed class SubmitShopriteInvoiceHandlerTests
             HasUnresolvedAmbiguousSubmission = true
         };
         var shopriteClient = new FakeShopriteInvoiceClient();
-        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient);
+        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient, new FakePayloadArchive());
 
         var result = await handler.HandleAsync(Command, CancellationToken.None);
 
@@ -138,7 +146,7 @@ public sealed class SubmitShopriteInvoiceHandlerTests
             HasSuccessfulSubmission = true
         };
         var shopriteClient = new FakeShopriteInvoiceClient();
-        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient);
+        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient, new FakePayloadArchive());
 
         var result = await handler.HandleAsync(Command, CancellationToken.None);
 
@@ -160,7 +168,7 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         {
             Response = new ShopriteInvoiceResponse(true, 200, "accepted", IsAmbiguous: false)
         };
-        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient);
+        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient, new FakePayloadArchive());
 
         await Task.WhenAll(
             Enumerable.Range(0, 20)
@@ -182,7 +190,7 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         {
             Exception = new HttpRequestException("https://user:password@example.invalid")
         };
-        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient);
+        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient, new FakePayloadArchive());
 
         var result = await handler.HandleAsync(Command, CancellationToken.None);
 
@@ -190,6 +198,53 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         var attempt = Assert.Single(repository.Attempts);
         Assert.True(attempt.Response.IsAmbiguous);
         Assert.DoesNotContain("password", attempt.Response.Body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Archive_failure_before_send_boundary_does_not_call_shoprite()
+    {
+        var repository = new FakeInvoiceCandidateRepository
+        {
+            Invoice = ValidInvoice(),
+            ValidationResult = new ValidationResult([]),
+            HasMatchedPurchaseOrder = true
+        };
+        var shopriteClient = new FakeShopriteInvoiceClient();
+        var archive = new FakePayloadArchive
+        {
+            WriteException = new IOException("archive unavailable")
+        };
+        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient, archive);
+
+        var result = await handler.HandleAsync(Command, CancellationToken.None);
+
+        Assert.Equal(SubmitShopriteInvoiceStatus.Failed, result.Status);
+        Assert.Contains("Nothing was sent", result.Message);
+        Assert.Equal(0, shopriteClient.SubmitCallCount);
+        Assert.False(repository.StartWasCalled);
+    }
+
+    [Fact]
+    public async Task Response_archive_failure_after_send_is_marked_ambiguous()
+    {
+        var repository = new FakeInvoiceCandidateRepository
+        {
+            Invoice = ValidInvoice(),
+            ValidationResult = new ValidationResult([]),
+            HasMatchedPurchaseOrder = true
+        };
+        var shopriteClient = new FakeShopriteInvoiceClient();
+        var archive = new FakePayloadArchive
+        {
+            FailingKind = PayloadArchiveKind.ShopriteResponse
+        };
+        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient, archive);
+
+        var result = await handler.HandleAsync(Command, CancellationToken.None);
+
+        Assert.Equal(SubmitShopriteInvoiceStatus.Ambiguous, result.Status);
+        Assert.Equal(1, shopriteClient.SubmitCallCount);
+        Assert.True(repository.ArchiveFailureWasMarkedAmbiguous);
     }
 
     private static CanonicalInvoice ValidInvoice()
@@ -238,6 +293,9 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         public bool HasUnresolvedAmbiguousSubmission { get; init; }
         public bool HasSuccessfulSubmission { get; init; }
         public ConcurrentBag<RecordedAttempt> Attempts { get; } = [];
+        public bool PreparedPayloadsRecordedBeforeStart { get; private set; }
+        public bool StartWasCalled { get; private set; }
+        public bool ArchiveFailureWasMarkedAmbiguous { get; private set; }
 
         public Task<InvoiceSubmissionSnapshot?> GetSubmissionSnapshotAsync(
             Guid invoiceCandidateId,
@@ -287,11 +345,32 @@ public sealed class SubmitShopriteInvoiceHandlerTests
                     1,
                     initialState,
                     request.SourceVersion,
+                    request.FrozenSourceJson,
+                    request.FrozenCanonicalJson,
                     request.RequestPayload,
-                    "payload-hash");
+                    "payload-hash",
+                    DateTimeOffset.UtcNow,
+                    []);
                 _operations.Add(request.CommandId, (request, operation));
                 return Task.FromResult(operation);
             }
+        }
+
+        public Task RecordPreparedPayloadArchivesAsync(
+            Guid submissionOperationId,
+            IReadOnlyCollection<PayloadArchiveRecord> payloads,
+            CancellationToken cancellationToken)
+        {
+            lock (_sync)
+            {
+                var item = _operations.Single(pair => pair.Value.Operation.Id == submissionOperationId);
+                _operations[item.Key] = (
+                    item.Value.Request,
+                    item.Value.Operation with { PayloadArchives = payloads.ToArray() });
+                PreparedPayloadsRecordedBeforeStart = true;
+            }
+
+            return Task.CompletedTask;
         }
 
         public Task<bool> TryStartSubmissionOperationAsync(
@@ -301,6 +380,7 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         {
             lock (_sync)
             {
+                StartWasCalled = true;
                 var item = _operations.Single(pair => pair.Value.Operation.Id == submissionOperationId);
                 if (item.Value.Operation.State != SubmissionOperationState.Pending)
                 {
@@ -330,6 +410,7 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         public Task CompleteSubmissionOperationAsync(
             Guid submissionOperationId,
             ShopriteInvoiceResponse response,
+            PayloadArchiveRecord responsePayload,
             CancellationToken cancellationToken)
         {
             lock (_sync)
@@ -349,6 +430,23 @@ public sealed class SubmitShopriteInvoiceHandlerTests
                     item.Value.Request.InitiationMode,
                     item.Value.Request.RequestPayload,
                     response));
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task MarkSubmissionOperationArchiveFailureAmbiguousAsync(
+            Guid submissionOperationId,
+            DateTimeOffset detectedAt,
+            CancellationToken cancellationToken)
+        {
+            lock (_sync)
+            {
+                var item = _operations.Single(pair => pair.Value.Operation.Id == submissionOperationId);
+                _operations[item.Key] = (
+                    item.Value.Request,
+                    item.Value.Operation with { State = SubmissionOperationState.Ambiguous });
+                ArchiveFailureWasMarkedAmbiguous = true;
             }
 
             return Task.CompletedTask;
@@ -380,6 +478,46 @@ public sealed class SubmitShopriteInvoiceHandlerTests
             }
 
             return Task.FromResult(Response);
+        }
+    }
+
+    private sealed class FakePayloadArchive : IPayloadArchive
+    {
+        private readonly ConcurrentDictionary<string, (string Content, PayloadArchiveRecord Record)> _payloads = [];
+
+        public Exception? WriteException { get; init; }
+        public PayloadArchiveKind? FailingKind { get; init; }
+        public ConcurrentQueue<PayloadArchiveWrite> Writes { get; } = [];
+
+        public Task<PayloadArchiveRecord> WriteAsync(
+            PayloadArchiveWrite payload,
+            CancellationToken cancellationToken)
+        {
+            if (WriteException is not null || payload.Kind == FailingKind)
+            {
+                throw WriteException ?? new IOException("archive unavailable");
+            }
+
+            Writes.Enqueue(payload);
+            var record = new PayloadArchiveRecord(
+                payload.Kind,
+                $"payloads/{payload.Path}",
+                Convert.ToHexString(
+                    System.Security.Cryptography.SHA256.HashData(
+                        System.Text.Encoding.UTF8.GetBytes(payload.Content))).ToLowerInvariant(),
+                payload.ContentType,
+                System.Text.Encoding.UTF8.GetByteCount(payload.Content),
+                DateTimeOffset.UtcNow);
+            _payloads[payload.Path] = (payload.Content, record);
+            return Task.FromResult(record);
+        }
+
+        public Task<string> ReadVerifiedAsync(
+            PayloadArchiveRecord payload,
+            CancellationToken cancellationToken)
+        {
+            var stored = _payloads.Values.Single(item => item.Record.Location == payload.Location);
+            return Task.FromResult(stored.Content);
         }
     }
 

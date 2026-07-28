@@ -19,9 +19,20 @@ public interface IInvoiceCandidateRepository
         Guid submissionOperationId,
         CancellationToken cancellationToken);
 
+    Task RecordPreparedPayloadArchivesAsync(
+        Guid submissionOperationId,
+        IReadOnlyCollection<PayloadArchiveRecord> payloads,
+        CancellationToken cancellationToken);
+
     Task CompleteSubmissionOperationAsync(
         Guid submissionOperationId,
         ShopriteInvoiceResponse response,
+        PayloadArchiveRecord responsePayload,
+        CancellationToken cancellationToken);
+
+    Task MarkSubmissionOperationArchiveFailureAmbiguousAsync(
+        Guid submissionOperationId,
+        DateTimeOffset detectedAt,
         CancellationToken cancellationToken);
 
     Task<int> MarkStaleSendingOperationsAmbiguousAsync(

@@ -16,8 +16,12 @@ public sealed record SubmissionOperation(
     int Generation,
     SubmissionOperationState State,
     string SourceVersion,
-    string RequestPayload,
-    string RequestPayloadHash);
+    string? FrozenSourceJson,
+    string? FrozenCanonicalJson,
+    string? RequestPayload,
+    string RequestPayloadHash,
+    DateTimeOffset CreatedAt,
+    IReadOnlyList<PayloadArchiveRecord> PayloadArchives);
 
 public sealed record PrepareSubmissionOperation(
     Guid InvoiceCandidateId,

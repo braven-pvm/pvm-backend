@@ -4,7 +4,8 @@ namespace Pvm.Application.Submissions;
 
 public sealed class SubmitShopriteInvoiceHandler(
     IInvoiceCandidateRepository repository,
-    IShopriteInvoiceClient shopriteClient)
+    IShopriteInvoiceClient shopriteClient,
+    IPayloadArchive payloadArchive)
 {
     private static readonly TimeSpan SendingRecoveryThreshold = TimeSpan.FromMinutes(15);
 
@@ -55,6 +56,23 @@ public sealed class SubmitShopriteInvoiceHandler(
             return ExistingOperationResult(operation);
         }
 
+        string requestPayload;
+        try
+        {
+            requestPayload = await EnsurePreparedPayloadsArchivedAsync(operation, payloadArchive, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return new SubmitShopriteInvoiceResult(
+                SubmitShopriteInvoiceStatus.Failed,
+                "Submission evidence could not be archived. Nothing was sent to Shoprite.",
+                operation.Id);
+        }
+
         var started = await repository.TryStartSubmissionOperationAsync(
             operation.Id,
             DateTimeOffset.UtcNow,
@@ -73,7 +91,7 @@ public sealed class SubmitShopriteInvoiceHandler(
         ShopriteInvoiceResponse response;
         try
         {
-            response = await shopriteClient.SubmitAsync(operation.RequestPayload, cancellationToken);
+            response = await shopriteClient.SubmitAsync(requestPayload, cancellationToken);
         }
         catch (Exception)
         {
@@ -84,7 +102,34 @@ public sealed class SubmitShopriteInvoiceHandler(
                 IsAmbiguous: true);
         }
 
-        await repository.CompleteSubmissionOperationAsync(operation.Id, response, CancellationToken.None);
+        PayloadArchiveRecord responsePayload;
+        try
+        {
+            responsePayload = await payloadArchive.WriteAsync(
+                new PayloadArchiveWrite(
+                    PayloadArchiveKind.ShopriteResponse,
+                    OperationPath(operation, "response.txt"),
+                    "text/plain; charset=utf-8",
+                    response.Body),
+                CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            await repository.MarkSubmissionOperationArchiveFailureAmbiguousAsync(
+                operation.Id,
+                DateTimeOffset.UtcNow,
+                CancellationToken.None);
+            return new SubmitShopriteInvoiceResult(
+                SubmitShopriteInvoiceStatus.Ambiguous,
+                "Shoprite responded, but response evidence could not be archived. Manual review is required.",
+                operation.Id);
+        }
+
+        await repository.CompleteSubmissionOperationAsync(
+            operation.Id,
+            response,
+            responsePayload,
+            CancellationToken.None);
 
         if (response.IsAmbiguous)
         {
@@ -126,4 +171,58 @@ public sealed class SubmitShopriteInvoiceHandler(
                 operation.Id),
             _ => throw new ArgumentOutOfRangeException(nameof(operation))
         };
+
+    private async Task<string> EnsurePreparedPayloadsArchivedAsync(
+        SubmissionOperation operation,
+        IPayloadArchive archive,
+        CancellationToken cancellationToken)
+    {
+        var existingRequest = operation.PayloadArchives
+            .SingleOrDefault(payload => payload.Kind == PayloadArchiveKind.ShopriteRequest);
+        if (existingRequest is not null)
+        {
+            return await archive.ReadVerifiedAsync(existingRequest, cancellationToken);
+        }
+
+        if (operation.RequestPayload is null || operation.FrozenCanonicalJson is null)
+        {
+            throw new InvalidOperationException("The frozen submission payload is incomplete.");
+        }
+
+        var payloads = new List<PayloadArchiveRecord>(3);
+        if (operation.FrozenSourceJson is not null)
+        {
+            payloads.Add(await archive.WriteAsync(
+                new PayloadArchiveWrite(
+                    PayloadArchiveKind.AcumaticaSource,
+                    SourcePath(operation, "source.json"),
+                    "application/json",
+                    operation.FrozenSourceJson),
+                cancellationToken));
+        }
+
+        payloads.Add(await archive.WriteAsync(
+            new PayloadArchiveWrite(
+                PayloadArchiveKind.CanonicalInvoice,
+                SourcePath(operation, "canonical.json"),
+                "application/json",
+                operation.FrozenCanonicalJson),
+            cancellationToken));
+        payloads.Add(await archive.WriteAsync(
+            new PayloadArchiveWrite(
+                PayloadArchiveKind.ShopriteRequest,
+                OperationPath(operation, "request.xml"),
+                "application/xml",
+                operation.RequestPayload),
+            cancellationToken));
+
+        await repository.RecordPreparedPayloadArchivesAsync(operation.Id, payloads, cancellationToken);
+        return operation.RequestPayload;
+    }
+
+    private static string SourcePath(SubmissionOperation operation, string fileName)
+        => $"acumatica/invoices/{operation.CreatedAt:yyyy/MM}/{operation.InvoiceCandidateId:D}/{operation.SourceVersion}/{fileName}";
+
+    private static string OperationPath(SubmissionOperation operation, string fileName)
+        => $"shoprite/invoices/{operation.CreatedAt:yyyy/MM}/{operation.Id:D}/{fileName}";
 }

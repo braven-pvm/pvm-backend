@@ -11,6 +11,11 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<SubmissionOperationEntity> SubmissionOperations => Set<SubmissionOperationEntity>();
 
+    public DbSet<PayloadArchiveEntity> PayloadArchives => Set<PayloadArchiveEntity>();
+
+    public DbSet<SubmissionOperationTransitionEntity> SubmissionOperationTransitions
+        => Set<SubmissionOperationTransitionEntity>();
+
     public DbSet<ShopritePurchaseOrderEntity> ShopritePurchaseOrders => Set<ShopritePurchaseOrderEntity>();
 
     public DbSet<ShopritePurchaseOrderLineEntity> ShopritePurchaseOrderLines => Set<ShopritePurchaseOrderLineEntity>();
@@ -94,6 +99,61 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(operation => operation.ResponsePayload).HasColumnType("text");
             entity.Property(operation => operation.ResponsePayloadHash).HasMaxLength(128);
             entity.Property(operation => operation.FailureClassification).HasMaxLength(128);
+            entity
+                .HasMany(operation => operation.PayloadArchives)
+                .WithOne()
+                .HasForeignKey(payload => payload.SubmissionOperationId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<PayloadArchiveEntity>(entity =>
+        {
+            entity.ToTable("payload_archives");
+            entity.HasKey(payload => payload.Id);
+            entity.HasIndex(payload => new { payload.SubmissionOperationId, payload.Kind }).IsUnique();
+            entity.HasIndex(payload => payload.InvoiceCandidateId);
+            entity.Property(payload => payload.Kind).HasMaxLength(64);
+            entity.Property(payload => payload.Location).HasMaxLength(1024);
+            entity.Property(payload => payload.Sha256Hash).HasMaxLength(64);
+            entity.Property(payload => payload.ContentType).HasMaxLength(128);
+            entity
+                .HasOne<InvoiceCandidateEntity>()
+                .WithMany()
+                .HasForeignKey(payload => payload.InvoiceCandidateId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<SubmissionOperationTransitionEntity>(entity =>
+        {
+            entity.ToTable("submission_operation_transitions");
+            entity.HasKey(transition => transition.Id);
+            entity.HasIndex(transition => new
+            {
+                transition.SubmissionOperationId,
+                transition.CreatedAt
+            });
+            entity.HasIndex(transition => new
+            {
+                transition.InvoiceCandidateId,
+                transition.CreatedAt
+            });
+            entity.Property(transition => transition.Actor).HasMaxLength(320);
+            entity.Property(transition => transition.Mode).HasMaxLength(64);
+            entity.Property(transition => transition.PreviousState).HasMaxLength(64);
+            entity.Property(transition => transition.NewState).HasMaxLength(64);
+            entity.Property(transition => transition.Reason).HasMaxLength(256);
+            entity.Property(transition => transition.SourceVersion).HasMaxLength(128);
+            entity.Property(transition => transition.PayloadHash).HasMaxLength(64);
+            entity
+                .HasOne<SubmissionOperationEntity>()
+                .WithMany()
+                .HasForeignKey(transition => transition.SubmissionOperationId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity
+                .HasOne<InvoiceCandidateEntity>()
+                .WithMany()
+                .HasForeignKey(transition => transition.InvoiceCandidateId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<ShopritePurchaseOrderEntity>(entity =>

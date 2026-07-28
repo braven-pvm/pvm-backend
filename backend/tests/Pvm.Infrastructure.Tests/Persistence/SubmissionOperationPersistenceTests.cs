@@ -1,12 +1,14 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Pvm.Application.Submissions;
 using Pvm.Domain.Invoices;
 using Pvm.Domain.Validation;
 using Pvm.Infrastructure.Persistence;
 using Pvm.Infrastructure.Persistence.Entities;
 using Pvm.Infrastructure.Persistence.Repositories;
+using Pvm.Infrastructure.PayloadArchive;
 using Testcontainers.PostgreSql;
 
 namespace Pvm.Infrastructure.Tests.Persistence;
@@ -15,6 +17,9 @@ public sealed class SubmissionOperationPersistenceTests : IAsyncLifetime
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:16").Build();
+    private readonly IPayloadArchive _archive = new FileSystemPayloadArchive(
+        Path.Combine(Path.GetTempPath(), $"pvm-payload-tests-{Guid.NewGuid():N}"),
+        "payloads");
 
     public Task InitializeAsync() => _postgres.StartAsync();
 
@@ -34,7 +39,8 @@ public sealed class SubmissionOperationPersistenceTests : IAsyncLifetime
                 await using var db = CreateDbContext();
                 var handler = new SubmitShopriteInvoiceHandler(
                     new EfInvoiceCandidateRepository(db),
-                    client);
+                    client,
+                    _archive);
                 return await handler.HandleAsync(
                     new SubmitShopriteInvoiceCommand(
                         Guid.NewGuid(),
@@ -63,15 +69,65 @@ public sealed class SubmissionOperationPersistenceTests : IAsyncLifetime
         Assert.NotNull(operation.SendingStartedAt);
         Assert.NotNull(operation.CompletedAt);
         Assert.False(string.IsNullOrWhiteSpace(operation.SourceVersion));
+        Assert.Null(operation.FrozenSourceJson);
+        Assert.Null(operation.FrozenCanonicalJson);
+        Assert.Null(operation.RequestPayload);
+        Assert.Null(operation.ResponsePayload);
+        Assert.Equal(64, operation.RequestPayloadHash.Length);
+        var payloads = await verificationDb.PayloadArchives
+            .OrderBy(payload => payload.Kind)
+            .ToArrayAsync();
+        Assert.Equal(4, payloads.Length);
+        Assert.All(payloads, payload => Assert.Equal(64, payload.Sha256Hash.Length));
+        var reconstructed = new Dictionary<PayloadArchiveKind, string>();
+        foreach (var payload in payloads)
+        {
+            var kind = Enum.Parse<PayloadArchiveKind>(payload.Kind);
+            reconstructed[kind] = await _archive.ReadVerifiedAsync(
+                new PayloadArchiveRecord(
+                    kind,
+                    payload.Location,
+                    payload.Sha256Hash,
+                    payload.ContentType,
+                    payload.ByteCount,
+                    payload.CreatedAt),
+                CancellationToken.None);
+        }
+
         Assert.True(JsonNode.DeepEquals(
             JsonNode.Parse("""{"source":"acumatica","version":1}"""),
-            JsonNode.Parse(operation.FrozenSourceJson!)));
+            JsonNode.Parse(reconstructed[PayloadArchiveKind.AcumaticaSource])));
         Assert.Equal(
             "INV-1",
-            JsonNode.Parse(operation.FrozenCanonicalJson)!["invoiceNumber"]!.GetValue<string>());
-        Assert.Contains("invoiceMessage", operation.RequestPayload);
-        Assert.Equal(64, operation.RequestPayloadHash.Length);
-        Assert.Single(await verificationDb.InvoiceSubmissionAttempts.ToListAsync());
+            JsonNode.Parse(reconstructed[PayloadArchiveKind.CanonicalInvoice])![
+                "invoiceNumber"]!.GetValue<string>());
+        Assert.Contains(
+            "invoiceMessage",
+            reconstructed[PayloadArchiveKind.ShopriteRequest]);
+        Assert.Equal("accepted", reconstructed[PayloadArchiveKind.ShopriteResponse]);
+        var attempt = Assert.Single(await verificationDb.InvoiceSubmissionAttempts.ToListAsync());
+        Assert.Null(attempt.RequestPayload);
+        Assert.Null(attempt.ResponsePayload);
+        Assert.NotNull(attempt.RequestPayloadLocation);
+        Assert.NotNull(attempt.ResponsePayloadLocation);
+        var transitions = await verificationDb.SubmissionOperationTransitions
+            .OrderBy(transition => transition.CreatedAt)
+            .ToArrayAsync();
+        Assert.Equal(
+            new[] { "Pending", "Sending", "Submitted" },
+            transitions.Select(transition => transition.NewState));
+        Assert.Equal(
+            new string?[] { null, "Pending", "Sending" },
+            transitions.Select(transition => transition.PreviousState));
+        Assert.All(transitions, transition =>
+        {
+            Assert.Equal("worker@test", transition.Actor);
+            Assert.Equal("automatic", transition.Mode);
+            Assert.Equal(operation.CorrelationId, transition.CorrelationId);
+            Assert.Equal(operation.SourceVersion, transition.SourceVersion);
+            Assert.Equal(operation.RequestPayloadHash, transition.PayloadHash);
+            Assert.False(string.IsNullOrWhiteSpace(transition.Reason));
+        });
     }
 
     [Fact]
@@ -90,7 +146,8 @@ public sealed class SubmissionOperationPersistenceTests : IAsyncLifetime
         {
             var handler = new SubmitShopriteInvoiceHandler(
                 new EfInvoiceCandidateRepository(firstDb),
-                client);
+                client,
+                _archive);
             var first = await handler.HandleAsync(command, CancellationToken.None);
             Assert.Equal(SubmitShopriteInvoiceStatus.Failed, first.Status);
         }
@@ -99,7 +156,8 @@ public sealed class SubmissionOperationPersistenceTests : IAsyncLifetime
         {
             var handler = new SubmitShopriteInvoiceHandler(
                 new EfInvoiceCandidateRepository(redeliveryDb),
-                client);
+                client,
+                _archive);
             var redelivery = await handler.HandleAsync(command, CancellationToken.None);
             Assert.Equal(SubmitShopriteInvoiceStatus.Failed, redelivery.Status);
         }
@@ -108,7 +166,8 @@ public sealed class SubmissionOperationPersistenceTests : IAsyncLifetime
         {
             var handler = new SubmitShopriteInvoiceHandler(
                 new EfInvoiceCandidateRepository(newCommandDb),
-                client);
+                client,
+                _archive);
             var newCommand = await handler.HandleAsync(
                 command with { CommandId = Guid.NewGuid() },
                 CancellationToken.None);
@@ -132,7 +191,8 @@ public sealed class SubmissionOperationPersistenceTests : IAsyncLifetime
                 await using var db = CreateDbContext();
                 var handler = new SubmitShopriteInvoiceHandler(
                     new EfInvoiceCandidateRepository(db),
-                    client);
+                    client,
+                    _archive);
                 return await handler.HandleAsync(
                     new SubmitShopriteInvoiceCommand(
                         Guid.NewGuid(),
@@ -179,10 +239,17 @@ public sealed class SubmissionOperationPersistenceTests : IAsyncLifetime
                     "<invoice />"),
                 CancellationToken.None);
             operationId = operation.Id;
+            await ArchivePreparedOperationAsync(repository, operation);
             Assert.True(await repository.TryStartSubmissionOperationAsync(
                 operation.Id,
-                DateTimeOffset.UtcNow.AddHours(-1),
+                DateTimeOffset.UtcNow,
                 CancellationToken.None));
+            await preparationDb.SubmissionOperations
+                .Where(item => item.Id == operation.Id)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(
+                        item => item.SendingStartedAt,
+                        DateTimeOffset.UtcNow.AddHours(-1)));
         }
 
         var client = new CountingShopriteInvoiceClient(
@@ -191,7 +258,8 @@ public sealed class SubmissionOperationPersistenceTests : IAsyncLifetime
         {
             var handler = new SubmitShopriteInvoiceHandler(
                 new EfInvoiceCandidateRepository(redeliveryDb),
-                client);
+                client,
+                _archive);
             var result = await handler.HandleAsync(
                 new SubmitShopriteInvoiceCommand(commandId, candidateId, "worker@test", "automatic"),
                 CancellationToken.None);
@@ -200,6 +268,14 @@ public sealed class SubmissionOperationPersistenceTests : IAsyncLifetime
         }
 
         Assert.Equal(0, client.SubmitCallCount);
+        await using var verificationDb = CreateDbContext();
+        Assert.Equal(
+            new[] { "Pending", "Sending", "Ambiguous" },
+            await verificationDb.SubmissionOperationTransitions
+                .Where(transition => transition.SubmissionOperationId == operationId)
+                .OrderBy(transition => transition.CreatedAt)
+                .Select(transition => transition.NewState)
+                .ToArrayAsync());
     }
 
     [Fact]
@@ -226,18 +302,34 @@ public sealed class SubmissionOperationPersistenceTests : IAsyncLifetime
                     "<invoice />"),
                 CancellationToken.None);
             operationId = operation.Id;
+            await ArchivePreparedOperationAsync(repository, operation);
             Assert.True(await repository.TryStartSubmissionOperationAsync(
                 operation.Id,
-                DateTimeOffset.UtcNow.AddHours(-1),
+                DateTimeOffset.UtcNow,
                 CancellationToken.None));
+            await preparationDb.SubmissionOperations
+                .Where(item => item.Id == operation.Id)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(
+                        item => item.SendingStartedAt,
+                        DateTimeOffset.UtcNow.AddHours(-1)));
         }
 
         var completion = Task.Run(async () =>
         {
             await using var db = CreateDbContext();
+            var response = new ShopriteInvoiceResponse(true, 200, "accepted", IsAmbiguous: false);
+            var responseArchive = await _archive.WriteAsync(
+                new PayloadArchiveWrite(
+                    PayloadArchiveKind.ShopriteResponse,
+                    $"shoprite/invoices/2026/07/{operationId:D}/response.txt",
+                    "text/plain; charset=utf-8",
+                    response.Body),
+                CancellationToken.None);
             await new EfInvoiceCandidateRepository(db).CompleteSubmissionOperationAsync(
                 operationId,
-                new ShopriteInvoiceResponse(true, 200, "accepted", IsAmbiguous: false),
+                response,
+                responseArchive,
                 CancellationToken.None);
         });
         var recovery = Task.Run(async () =>
@@ -264,10 +356,118 @@ public sealed class SubmissionOperationPersistenceTests : IAsyncLifetime
         Assert.Equal(operationStatus, candidateStatus);
     }
 
+    [Fact]
+    public async Task Persisted_transition_history_cannot_be_edited()
+    {
+        var candidateId = await ResetAndSeedCandidateAsync();
+        var client = new CountingShopriteInvoiceClient(
+            new ShopriteInvoiceResponse(true, 200, "accepted", IsAmbiguous: false));
+        await using (var submissionDb = CreateDbContext())
+        {
+            var handler = new SubmitShopriteInvoiceHandler(
+                new EfInvoiceCandidateRepository(submissionDb),
+                client,
+                _archive);
+            var result = await handler.HandleAsync(
+                new SubmitShopriteInvoiceCommand(
+                    Guid.NewGuid(),
+                    candidateId,
+                    "operator@test",
+                    "manual"),
+                CancellationToken.None);
+            Assert.Equal(SubmitShopriteInvoiceStatus.Submitted, result.Status);
+        }
+
+        await using var tamperDb = CreateDbContext();
+        var transition = await tamperDb.SubmissionOperationTransitions.FirstAsync();
+        transition.Reason = "edited";
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => tamperDb.SaveChangesAsync());
+        var updateException = Assert.IsType<DbUpdateException>(exception.InnerException);
+        var databaseException = Assert.IsType<PostgresException>(updateException.InnerException);
+        Assert.Equal("55000", databaseException.SqlState);
+    }
+
+    [Fact]
+    public async Task Response_archive_failure_after_send_is_persisted_as_ambiguous()
+    {
+        var candidateId = await ResetAndSeedCandidateAsync();
+        var client = new CountingShopriteInvoiceClient(
+            new ShopriteInvoiceResponse(true, 200, "accepted", IsAmbiguous: false));
+        await using (var submissionDb = CreateDbContext())
+        {
+            var handler = new SubmitShopriteInvoiceHandler(
+                new EfInvoiceCandidateRepository(submissionDb),
+                client,
+                new FailingResponseArchive(_archive));
+            var result = await handler.HandleAsync(
+                new SubmitShopriteInvoiceCommand(
+                    Guid.NewGuid(),
+                    candidateId,
+                    "operator@test",
+                    "manual"),
+                CancellationToken.None);
+            Assert.Equal(SubmitShopriteInvoiceStatus.Ambiguous, result.Status);
+        }
+
+        await using var verificationDb = CreateDbContext();
+        var operation = Assert.Single(await verificationDb.SubmissionOperations.ToListAsync());
+        Assert.Equal("Ambiguous", operation.Status);
+        Assert.Equal("response-archive-failed", operation.FailureClassification);
+        Assert.Null(operation.ResponsePayload);
+        var attempt = Assert.Single(await verificationDb.InvoiceSubmissionAttempts.ToListAsync());
+        Assert.Equal("response-archive-failed", attempt.FailureClassification);
+        Assert.False(attempt.IsRetryEligible);
+        Assert.Equal(
+            new[] { "Pending", "Sending", "Ambiguous" },
+            await verificationDb.SubmissionOperationTransitions
+                .OrderBy(transition => transition.CreatedAt)
+                .Select(transition => transition.NewState)
+                .ToArrayAsync());
+    }
+
+    private async Task ArchivePreparedOperationAsync(
+        EfInvoiceCandidateRepository repository,
+        SubmissionOperation operation)
+    {
+        var source = Assert.IsType<string>(operation.FrozenSourceJson);
+        var canonical = Assert.IsType<string>(operation.FrozenCanonicalJson);
+        var request = Assert.IsType<string>(operation.RequestPayload);
+        var payloads = new[]
+        {
+            await _archive.WriteAsync(
+                new PayloadArchiveWrite(
+                    PayloadArchiveKind.AcumaticaSource,
+                    $"acumatica/invoices/2026/07/{operation.InvoiceCandidateId:D}/{operation.SourceVersion}/source.json",
+                    "application/json",
+                    source),
+                CancellationToken.None),
+            await _archive.WriteAsync(
+                new PayloadArchiveWrite(
+                    PayloadArchiveKind.CanonicalInvoice,
+                    $"acumatica/invoices/2026/07/{operation.InvoiceCandidateId:D}/{operation.SourceVersion}/canonical.json",
+                    "application/json",
+                    canonical),
+                CancellationToken.None),
+            await _archive.WriteAsync(
+                new PayloadArchiveWrite(
+                    PayloadArchiveKind.ShopriteRequest,
+                    $"shoprite/invoices/2026/07/{operation.Id:D}/request.xml",
+                    "application/xml",
+                    request),
+                CancellationToken.None)
+        };
+        await repository.RecordPreparedPayloadArchivesAsync(
+            operation.Id,
+            payloads,
+            CancellationToken.None);
+    }
+
     private async Task<Guid> ResetAndSeedCandidateAsync()
     {
         await using var db = CreateDbContext();
-        await db.Database.EnsureCreatedAsync();
+        await DatabaseMigrationRunner.MigrateAsync(db);
 
         var purchaseOrder = new ShopritePurchaseOrderEntity
         {
@@ -364,5 +564,20 @@ public sealed class SubmissionOperationPersistenceTests : IAsyncLifetime
 
             return response;
         }
+    }
+
+    private sealed class FailingResponseArchive(IPayloadArchive inner) : IPayloadArchive
+    {
+        public Task<PayloadArchiveRecord> WriteAsync(
+            PayloadArchiveWrite payload,
+            CancellationToken cancellationToken)
+            => payload.Kind == PayloadArchiveKind.ShopriteResponse
+                ? throw new IOException("response archive unavailable")
+                : inner.WriteAsync(payload, cancellationToken);
+
+        public Task<string> ReadVerifiedAsync(
+            PayloadArchiveRecord payload,
+            CancellationToken cancellationToken)
+            => inner.ReadVerifiedAsync(payload, cancellationToken);
     }
 }

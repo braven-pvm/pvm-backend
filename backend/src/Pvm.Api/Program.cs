@@ -7,6 +7,7 @@ using Pvm.Api.Features.ShopritePurchaseOrders;
 using Pvm.Api.Features.Submissions;
 using Pvm.Application.Submissions;
 using Pvm.Infrastructure.Acumatica;
+using Pvm.Infrastructure.PayloadArchive;
 using Pvm.Infrastructure.Persistence;
 using Pvm.Infrastructure.Shoprite;
 
@@ -19,6 +20,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 builder.Services.AddPvmPersistence(builder.Configuration);
+builder.Services.AddPayloadArchive(builder.Configuration);
 builder.Services.AddPvmAuth(builder.Configuration, builder.Environment);
 builder.Services.AddAcumaticaInvoiceSource(builder.Configuration);
 builder.Services.AddShopritePurchaseOrderClient(builder.Configuration);

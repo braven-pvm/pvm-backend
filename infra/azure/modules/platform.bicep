@@ -123,6 +123,22 @@ var apiEnvironment = concat([
     secretRef: 'connectionstrings-pvm'
   }
   {
+    name: 'PayloadArchive__Provider'
+    value: 'AzureBlob'
+  }
+  {
+    name: 'PayloadArchive__ContainerName'
+    value: 'payloads'
+  }
+  {
+    name: 'PayloadArchive__ServiceUri'
+    value: 'https://${storageAccountName}.blob.${environment().suffixes.storage}'
+  }
+  {
+    name: 'AZURE_CLIENT_ID'
+    value: identity.properties.clientId
+  }
+  {
     name: 'Auth__Mode'
     value: authMode
   }
@@ -296,6 +312,7 @@ resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01'
   parent: storage
   name: 'default'
   properties: {
+    isVersioningEnabled: true
     deleteRetentionPolicy: {
       enabled: true
       days: 7
