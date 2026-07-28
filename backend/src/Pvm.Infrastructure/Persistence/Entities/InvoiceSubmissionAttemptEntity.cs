@@ -4,6 +4,7 @@ public sealed class InvoiceSubmissionAttemptEntity
 {
     public Guid Id { get; set; }
     public Guid InvoiceCandidateId { get; set; }
+    public Guid? SubmissionOperationId { get; set; }
     public required string InitiatedBy { get; set; }
     public required string InitiationMode { get; set; }
     public required string Status { get; set; }

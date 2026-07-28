@@ -1,27 +1,31 @@
-using Pvm.Domain.Invoices;
-using Pvm.Domain.Validation;
-
 namespace Pvm.Application.Submissions;
 
 public interface IInvoiceCandidateRepository
 {
-    Task<CanonicalInvoice?> GetCanonicalInvoiceAsync(Guid invoiceCandidateId, CancellationToken cancellationToken);
-
-    Task<ValidationResult> GetValidationResultAsync(Guid invoiceCandidateId, CancellationToken cancellationToken);
-
-    Task<bool> HasMatchedPurchaseOrderAsync(Guid invoiceCandidateId, CancellationToken cancellationToken);
-
-    Task<bool> HasUnresolvedAmbiguousSubmissionAsync(Guid invoiceCandidateId, CancellationToken cancellationToken);
-
-    // Concrete implementations must enforce successful-submission idempotency atomically
-    // at the persistence boundary before this contract is wired to API/UI submission paths.
-    Task<bool> HasSuccessfulSubmissionAsync(Guid invoiceCandidateId, CancellationToken cancellationToken);
-
-    Task RecordAttemptAsync(
+    Task<InvoiceSubmissionSnapshot?> GetSubmissionSnapshotAsync(
         Guid invoiceCandidateId,
-        string initiatedBy,
-        string initiationMode,
-        string xml,
+        CancellationToken cancellationToken);
+
+    Task<SubmissionOperation> GetOrCreateSubmissionOperationAsync(
+        PrepareSubmissionOperation request,
+        CancellationToken cancellationToken);
+
+    Task<bool> TryStartSubmissionOperationAsync(
+        Guid submissionOperationId,
+        DateTimeOffset startedAt,
+        CancellationToken cancellationToken);
+
+    Task<SubmissionOperation?> GetSubmissionOperationAsync(
+        Guid submissionOperationId,
+        CancellationToken cancellationToken);
+
+    Task CompleteSubmissionOperationAsync(
+        Guid submissionOperationId,
         ShopriteInvoiceResponse response,
+        CancellationToken cancellationToken);
+
+    Task<int> MarkStaleSendingOperationsAmbiguousAsync(
+        DateTimeOffset staleBefore,
+        DateTimeOffset detectedAt,
         CancellationToken cancellationToken);
 }

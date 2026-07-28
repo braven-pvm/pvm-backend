@@ -1,12 +1,14 @@
 using Pvm.Application.Submissions;
 using Pvm.Domain.Invoices;
 using Pvm.Domain.Validation;
+using System.Collections.Concurrent;
 
 namespace Pvm.Application.Tests.Submissions;
 
 public sealed class SubmitShopriteInvoiceHandlerTests
 {
     private static readonly SubmitShopriteInvoiceCommand Command = new(
+        CommandId: Guid.Parse("624912ce-0a98-4056-9f7c-8671bb16a3fd"),
         InvoiceCandidateId: Guid.Parse("9bc85839-70e4-4dbf-900a-c0e5d2608c50"),
         InitiatedBy: "qa-user",
         InitiationMode: "manual");
@@ -145,6 +147,51 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         Assert.Empty(repository.Attempts);
     }
 
+    [Fact]
+    public async Task Concurrent_delivery_of_the_same_command_sends_at_most_once()
+    {
+        var repository = new FakeInvoiceCandidateRepository
+        {
+            Invoice = ValidInvoice(),
+            ValidationResult = new ValidationResult([]),
+            HasMatchedPurchaseOrder = true
+        };
+        var shopriteClient = new FakeShopriteInvoiceClient
+        {
+            Response = new ShopriteInvoiceResponse(true, 200, "accepted", IsAmbiguous: false)
+        };
+        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient);
+
+        await Task.WhenAll(
+            Enumerable.Range(0, 20)
+                .Select(_ => handler.HandleAsync(Command, CancellationToken.None)));
+
+        Assert.Equal(1, shopriteClient.SubmitCallCount);
+    }
+
+    [Fact]
+    public async Task Client_exception_after_send_boundary_is_recorded_as_ambiguous()
+    {
+        var repository = new FakeInvoiceCandidateRepository
+        {
+            Invoice = ValidInvoice(),
+            ValidationResult = new ValidationResult([]),
+            HasMatchedPurchaseOrder = true
+        };
+        var shopriteClient = new FakeShopriteInvoiceClient
+        {
+            Exception = new HttpRequestException("https://user:password@example.invalid")
+        };
+        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient);
+
+        var result = await handler.HandleAsync(Command, CancellationToken.None);
+
+        Assert.Equal(SubmitShopriteInvoiceStatus.Ambiguous, result.Status);
+        var attempt = Assert.Single(repository.Attempts);
+        Assert.True(attempt.Response.IsAmbiguous);
+        Assert.DoesNotContain("password", attempt.Response.Body, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static CanonicalInvoice ValidInvoice()
         => new(
             AcumaticaInvoiceId: "INV-1",
@@ -182,51 +229,156 @@ public sealed class SubmitShopriteInvoiceHandlerTests
 
     private sealed class FakeInvoiceCandidateRepository : IInvoiceCandidateRepository
     {
+        private readonly object _sync = new();
+        private readonly Dictionary<Guid, (PrepareSubmissionOperation Request, SubmissionOperation Operation)> _operations = [];
+
         public CanonicalInvoice? Invoice { get; init; }
         public ValidationResult ValidationResult { get; init; } = new([]);
         public bool HasMatchedPurchaseOrder { get; init; }
         public bool HasUnresolvedAmbiguousSubmission { get; init; }
         public bool HasSuccessfulSubmission { get; init; }
-        public List<RecordedAttempt> Attempts { get; } = [];
+        public ConcurrentBag<RecordedAttempt> Attempts { get; } = [];
 
-        public Task<CanonicalInvoice?> GetCanonicalInvoiceAsync(Guid invoiceCandidateId, CancellationToken cancellationToken)
-            => Task.FromResult(Invoice);
-
-        public Task<ValidationResult> GetValidationResultAsync(Guid invoiceCandidateId, CancellationToken cancellationToken)
-            => Task.FromResult(ValidationResult);
-
-        public Task<bool> HasMatchedPurchaseOrderAsync(Guid invoiceCandidateId, CancellationToken cancellationToken)
-            => Task.FromResult(HasMatchedPurchaseOrder);
-
-        public Task<bool> HasUnresolvedAmbiguousSubmissionAsync(Guid invoiceCandidateId, CancellationToken cancellationToken)
-            => Task.FromResult(HasUnresolvedAmbiguousSubmission);
-
-        public Task<bool> HasSuccessfulSubmissionAsync(Guid invoiceCandidateId, CancellationToken cancellationToken)
-            => Task.FromResult(HasSuccessfulSubmission);
-
-        public Task RecordAttemptAsync(
+        public Task<InvoiceSubmissionSnapshot?> GetSubmissionSnapshotAsync(
             Guid invoiceCandidateId,
-            string initiatedBy,
-            string initiationMode,
-            string xml,
+            CancellationToken cancellationToken)
+            => Task.FromResult(Invoice is null
+                ? null
+                : new InvoiceSubmissionSnapshot(
+                    invoiceCandidateId,
+                    Invoice,
+                    ValidationResult,
+                    HasMatchedPurchaseOrder,
+                    "candidate-key",
+                    """{"source":"fixture"}""",
+                    """{"canonical":"fixture"}""",
+                    "source-version"));
+
+        public Task<SubmissionOperation> GetOrCreateSubmissionOperationAsync(
+            PrepareSubmissionOperation request,
+            CancellationToken cancellationToken)
+        {
+            lock (_sync)
+            {
+                if (_operations.TryGetValue(request.CommandId, out var existingCommand))
+                {
+                    return Task.FromResult(existingCommand.Operation);
+                }
+
+                var active = _operations.Values.FirstOrDefault(item =>
+                    item.Operation.State is SubmissionOperationState.Pending
+                        or SubmissionOperationState.Sending
+                        or SubmissionOperationState.Submitted
+                        or SubmissionOperationState.Ambiguous);
+                if (active.Operation is not null)
+                {
+                    return Task.FromResult(active.Operation);
+                }
+
+                var initialState = HasUnresolvedAmbiguousSubmission
+                    ? SubmissionOperationState.Ambiguous
+                    : HasSuccessfulSubmission
+                        ? SubmissionOperationState.Submitted
+                        : SubmissionOperationState.Pending;
+                var operation = new SubmissionOperation(
+                    Guid.NewGuid(),
+                    request.InvoiceCandidateId,
+                    request.CommandId,
+                    1,
+                    initialState,
+                    request.SourceVersion,
+                    request.RequestPayload,
+                    "payload-hash");
+                _operations.Add(request.CommandId, (request, operation));
+                return Task.FromResult(operation);
+            }
+        }
+
+        public Task<bool> TryStartSubmissionOperationAsync(
+            Guid submissionOperationId,
+            DateTimeOffset startedAt,
+            CancellationToken cancellationToken)
+        {
+            lock (_sync)
+            {
+                var item = _operations.Single(pair => pair.Value.Operation.Id == submissionOperationId);
+                if (item.Value.Operation.State != SubmissionOperationState.Pending)
+                {
+                    return Task.FromResult(false);
+                }
+
+                _operations[item.Key] = (
+                    item.Value.Request,
+                    item.Value.Operation with { State = SubmissionOperationState.Sending });
+                return Task.FromResult(true);
+            }
+        }
+
+        public Task<SubmissionOperation?> GetSubmissionOperationAsync(
+            Guid submissionOperationId,
+            CancellationToken cancellationToken)
+        {
+            lock (_sync)
+            {
+                var operation = _operations.Values
+                    .Select(item => item.Operation)
+                    .SingleOrDefault(item => item.Id == submissionOperationId);
+                return Task.FromResult(operation);
+            }
+        }
+
+        public Task CompleteSubmissionOperationAsync(
+            Guid submissionOperationId,
             ShopriteInvoiceResponse response,
             CancellationToken cancellationToken)
         {
-            Attempts.Add(new RecordedAttempt(invoiceCandidateId, initiatedBy, initiationMode, xml, response));
+            lock (_sync)
+            {
+                var item = _operations.Single(pair => pair.Value.Operation.Id == submissionOperationId);
+                var state = response.IsAmbiguous
+                    ? SubmissionOperationState.Ambiguous
+                    : response.Success
+                        ? SubmissionOperationState.Submitted
+                        : SubmissionOperationState.Rejected;
+                _operations[item.Key] = (
+                    item.Value.Request,
+                    item.Value.Operation with { State = state });
+                Attempts.Add(new RecordedAttempt(
+                    item.Value.Request.InvoiceCandidateId,
+                    item.Value.Request.InitiatedBy,
+                    item.Value.Request.InitiationMode,
+                    item.Value.Request.RequestPayload,
+                    response));
+            }
+
             return Task.CompletedTask;
         }
+
+        public Task<int> MarkStaleSendingOperationsAmbiguousAsync(
+            DateTimeOffset staleBefore,
+            DateTimeOffset detectedAt,
+            CancellationToken cancellationToken)
+            => Task.FromResult(0);
     }
 
     private sealed class FakeShopriteInvoiceClient : IShopriteInvoiceClient
     {
         public ShopriteInvoiceResponse Response { get; init; } = new(true, 200, "accepted", IsAmbiguous: false);
-        public int SubmitCallCount { get; private set; }
+        public Exception? Exception { get; init; }
+        private int _submitCallCount;
+
+        public int SubmitCallCount => _submitCallCount;
         public string? LastXml { get; private set; }
 
         public Task<ShopriteInvoiceResponse> SubmitAsync(string xml, CancellationToken cancellationToken)
         {
-            SubmitCallCount++;
+            Interlocked.Increment(ref _submitCallCount);
             LastXml = xml;
+            if (Exception is not null)
+            {
+                throw Exception;
+            }
+
             return Task.FromResult(Response);
         }
     }

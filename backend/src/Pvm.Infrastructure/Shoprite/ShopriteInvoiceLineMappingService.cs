@@ -21,9 +21,6 @@ public sealed class ShopriteInvoiceLineMappingService(
         string actor,
         CancellationToken cancellationToken)
     {
-        await dbContext.Database.EnsureCreatedAsync(cancellationToken);
-        await dbContext.EnsureShopriteMappingSchemaAsync(cancellationToken);
-
         var candidate = await dbContext.InvoiceCandidates
             .SingleOrDefaultAsync(entity => entity.Id == candidateId, cancellationToken);
         if (candidate is null)
@@ -221,7 +218,7 @@ public sealed class ShopriteInvoiceLineMappingService(
 
     private static string CandidateStatus(ValidationResult validation, string? currentStatus)
     {
-        if (currentStatus is "Submitted" or "Ambiguous")
+        if (currentStatus is "Submitted" or "Rejected" or "Ambiguous")
         {
             return currentStatus;
         }

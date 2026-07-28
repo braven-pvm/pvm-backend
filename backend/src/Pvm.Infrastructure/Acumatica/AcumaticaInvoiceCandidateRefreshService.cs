@@ -18,8 +18,6 @@ public sealed class AcumaticaInvoiceCandidateRefreshService(
 
     public async Task<AcumaticaInvoiceRefreshResult> RefreshAsync(CancellationToken cancellationToken)
     {
-        await dbContext.Database.EnsureCreatedAsync(cancellationToken);
-        await dbContext.EnsureShopriteMappingSchemaAsync(cancellationToken);
         var invoices = await invoiceClient.FetchFinalizedInvoicesAsync(cancellationToken);
         var created = 0;
         var updated = 0;
@@ -83,7 +81,7 @@ public sealed class AcumaticaInvoiceCandidateRefreshService(
 
     private static string CandidateStatus(ValidationResult validation, string? currentStatus)
     {
-        if (currentStatus is "Submitted" or "Ambiguous")
+        if (currentStatus is "Submitted" or "Rejected" or "Ambiguous")
         {
             return currentStatus;
         }

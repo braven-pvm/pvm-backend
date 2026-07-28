@@ -3,6 +3,7 @@ namespace Pvm.Application.Submissions;
 public enum SubmitShopriteInvoiceStatus
 {
     Submitted,
+    InProgress,
     ValidationBlocked,
     DuplicateBlocked,
     ManualReviewRequired,
@@ -12,4 +13,5 @@ public enum SubmitShopriteInvoiceStatus
 
 public sealed record SubmitShopriteInvoiceResult(
     SubmitShopriteInvoiceStatus Status,
-    string Message);
+    string Message,
+    Guid? SubmissionOperationId = null);

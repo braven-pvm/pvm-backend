@@ -71,36 +71,6 @@ public sealed class InvoicePersistenceTests : IAsyncLifetime
         Assert.Empty(await db.ShopritePurchaseOrderLines.ToListAsync());
     }
 
-    [Fact]
-    public async Task Purchase_order_schema_initializer_backfills_existing_invoice_database()
-    {
-        await using var db = CreateDbContext();
-        await CreatePrePurchaseOrderSchemaAsync(db);
-
-        await db.Database.EnsureCreatedAsync();
-
-        Assert.False(await TableExistsAsync(db, "shoprite_purchase_orders"));
-
-        await db.EnsureShopritePurchaseOrderSchemaAsync();
-
-        Assert.True(await TableExistsAsync(db, "shoprite_purchase_orders"));
-        Assert.True(await TableExistsAsync(db, "shoprite_purchase_order_lines"));
-        Assert.True(await ColumnExistsAsync(db, "invoice_candidates", "MatchedShopritePurchaseOrderId"));
-
-        var order = NewPurchaseOrder("PO123");
-        var candidate = NewCandidate("key-2", "INV003");
-        candidate.ShopritePurchaseOrderNumber = order.PurchaseOrderNumber;
-        candidate.MatchedShopritePurchaseOrderId = order.Id;
-
-        db.ShopritePurchaseOrders.Add(order);
-        db.InvoiceCandidates.Add(candidate);
-
-        await db.SaveChangesAsync();
-
-        var savedCandidate = await db.InvoiceCandidates.SingleAsync(candidate => candidate.InvoiceNumber == "INV003");
-        Assert.Equal(order.Id, savedCandidate.MatchedShopritePurchaseOrderId);
-    }
-
     private PvmDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<PvmDbContext>()
@@ -109,51 +79,6 @@ public sealed class InvoicePersistenceTests : IAsyncLifetime
 
         return new PvmDbContext(options);
     }
-
-    private static async Task CreatePrePurchaseOrderSchemaAsync(PvmDbContext db)
-    {
-        await db.Database.ExecuteSqlRawAsync(
-            """
-            create table invoice_candidates (
-                "Id" uuid primary key,
-                "AcumaticaInvoiceId" text not null,
-                "InvoiceNumber" text not null,
-                "CustomerAccount" text not null,
-                "CustomerLocation" text null,
-                "ShopritePurchaseOrderNumber" text null,
-                "SupplierGln" text null,
-                "StoreDcGln" text null,
-                "IdempotencyKey" character varying(512) not null,
-                "Status" character varying(64) not null,
-                "SourceJson" jsonb null,
-                "CanonicalJson" jsonb null,
-                "ValidationJson" jsonb null,
-                "CreatedAt" timestamp with time zone not null,
-                "UpdatedAt" timestamp with time zone not null
-            );
-
-            create unique index "IX_invoice_candidates_IdempotencyKey"
-                on invoice_candidates ("IdempotencyKey");
-            """);
-    }
-
-    private static Task<bool> TableExistsAsync(PvmDbContext db, string tableName)
-        => db.Database.SqlQuery<bool>(
-                $"select to_regclass({"public." + tableName}) is not null as \"Value\"")
-            .SingleAsync();
-
-    private static Task<bool> ColumnExistsAsync(PvmDbContext db, string tableName, string columnName)
-        => db.Database.SqlQuery<bool>(
-                $"""
-                select exists (
-                    select 1
-                    from information_schema.columns
-                    where table_schema = 'public'
-                        and table_name = {tableName}
-                        and column_name = {columnName}
-                ) as "Value"
-                """)
-            .SingleAsync();
 
     private static InvoiceCandidateEntity NewCandidate(string key, string invoiceNumber)
         => new()

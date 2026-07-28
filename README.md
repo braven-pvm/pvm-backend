@@ -17,6 +17,16 @@ Start PostgreSQL:
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
+Apply database migrations:
+
+```powershell
+$env:ConnectionStrings__Pvm="Host=localhost;Port=54329;Database=pvm;Username=pvm;Password=pvm"
+dotnet run --project backend/src/Pvm.DatabaseMigrator/Pvm.DatabaseMigrator.csproj
+```
+
+The API and workers do not create or alter schemas at runtime. Run the
+migrator once per deployment before starting a new application revision.
+
 Run backend checks:
 
 ```powershell

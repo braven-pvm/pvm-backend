@@ -9,6 +9,8 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<InvoiceSubmissionAttemptEntity> InvoiceSubmissionAttempts => Set<InvoiceSubmissionAttemptEntity>();
 
+    public DbSet<SubmissionOperationEntity> SubmissionOperations => Set<SubmissionOperationEntity>();
+
     public DbSet<ShopritePurchaseOrderEntity> ShopritePurchaseOrders => Set<ShopritePurchaseOrderEntity>();
 
     public DbSet<ShopritePurchaseOrderLineEntity> ShopritePurchaseOrderLines => Set<ShopritePurchaseOrderLineEntity>();
@@ -49,6 +51,9 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.ToTable("invoice_submission_attempts");
             entity.HasKey(attempt => attempt.Id);
             entity.HasIndex(attempt => attempt.InvoiceCandidateId);
+            entity.HasIndex(attempt => attempt.SubmissionOperationId)
+                .IsUnique()
+                .HasFilter("\"SubmissionOperationId\" IS NOT NULL");
             entity
                 .HasOne<InvoiceCandidateEntity>()
                 .WithMany()
@@ -60,6 +65,35 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(attempt => attempt.FailureClassification).HasMaxLength(128);
             entity.Property(attempt => attempt.RecommendedFixLocation).HasMaxLength(128);
             entity.Property(attempt => attempt.ResponsibleRole).HasMaxLength(128);
+        });
+
+        modelBuilder.Entity<SubmissionOperationEntity>(entity =>
+        {
+            entity.ToTable("submission_operations");
+            entity.HasKey(operation => operation.Id);
+            entity.HasIndex(operation => operation.CommandId).IsUnique();
+            entity.HasIndex(operation => new { operation.InvoiceCandidateId, operation.Generation }).IsUnique();
+            entity.HasIndex(operation => new { operation.Status, operation.SendingStartedAt });
+            entity.HasIndex(operation => operation.InvoiceCandidateId)
+                .IsUnique()
+                .HasFilter("\"Status\" IN ('Pending', 'Sending', 'Submitted', 'Ambiguous')");
+            entity
+                .HasOne<InvoiceCandidateEntity>()
+                .WithMany()
+                .HasForeignKey(operation => operation.InvoiceCandidateId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.Property(operation => operation.IdempotencyKey).HasMaxLength(512);
+            entity.Property(operation => operation.Status).HasMaxLength(64);
+            entity.Property(operation => operation.InitiatedBy).HasMaxLength(320);
+            entity.Property(operation => operation.InitiationMode).HasMaxLength(64);
+            entity.Property(operation => operation.SourceVersion).HasMaxLength(128);
+            entity.Property(operation => operation.FrozenSourceJson).HasColumnType("jsonb");
+            entity.Property(operation => operation.FrozenCanonicalJson).HasColumnType("jsonb");
+            entity.Property(operation => operation.RequestPayload).HasColumnType("text");
+            entity.Property(operation => operation.RequestPayloadHash).HasMaxLength(128);
+            entity.Property(operation => operation.ResponsePayload).HasColumnType("text");
+            entity.Property(operation => operation.ResponsePayloadHash).HasMaxLength(128);
+            entity.Property(operation => operation.FailureClassification).HasMaxLength(128);
         });
 
         modelBuilder.Entity<ShopritePurchaseOrderEntity>(entity =>

@@ -33,8 +33,6 @@ public static class PurchaseOrderEndpoints
         PvmDbContext dbContext,
         CancellationToken cancellationToken)
     {
-        await dbContext.Database.EnsureCreatedAsync(cancellationToken);
-
         var orders = await dbContext.ShopritePurchaseOrders
             .AsNoTracking()
             .Include(order => order.Lines)
@@ -49,8 +47,6 @@ public static class PurchaseOrderEndpoints
         PvmDbContext dbContext,
         CancellationToken cancellationToken)
     {
-        await dbContext.Database.EnsureCreatedAsync(cancellationToken);
-
         var order = await dbContext.ShopritePurchaseOrders
             .AsNoTracking()
             .Include(order => order.Lines)
@@ -76,8 +72,6 @@ public static class PurchaseOrderEndpoints
         PvmDbContext dbContext,
         CancellationToken cancellationToken)
     {
-        await dbContext.Database.EnsureCreatedAsync(cancellationToken);
-
         ShopritePurchaseOrderBatch batch;
         try
         {
@@ -206,7 +200,7 @@ public static class PurchaseOrderEndpoints
             candidate.Status,
             validation.CanSubmit
                 && candidate.MatchedShopritePurchaseOrderId is not null
-                && candidate.Status is not "Submitted" and not "Ambiguous",
+                && candidate.Status is not "Submitted" and not "Rejected" and not "Ambiguous",
             candidate.UpdatedAt);
     }
 
