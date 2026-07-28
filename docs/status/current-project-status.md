@@ -1,18 +1,19 @@
 # Current Project Status
 
-Last updated: 2026-07-24
+Last updated: 2026-07-28
 
 ## Overall Status
 
-Shoprite PO refresh, seeded invoice submission, and the real Acumatica QA
-invoice source are deployed and verified. Live finalized invoice `INV158888`
-has been imported, matched exactly once to Shoprite PO `1212021109`, and
-reconciled to the Acumatica totals.
+Shoprite PO refresh, real Acumatica QA invoice ingestion, matching, mapping,
+XML generation, and real Shoprite QA submission are deployed and verified.
+Live finalized invoice `INV158888` was imported, matched exactly once to
+Shoprite PO `1212021109`, reconciled to Acumatica totals, mapped, and submitted.
+On 2026-07-27 Shoprite confirmed that the submitted invoice was structurally
+sound, correct, and verified.
 
-Reusable item/GTIN and item/UOM mappings are deployed. The active UAT step is
-to select the verified mapping for `INV158888`, review the regenerated XML,
-and perform the first real Acumatica-source submission to Shoprite QA. Azure
-infrastructure and access are unblocked.
+The QA payload-contract milestone is complete for the tested normal-order
+scenario. The project is ready to implement production automation hardening;
+it is not yet ready to enable automatic production submissions.
 
 ## Infrastructure Subscription (moved 2026-07-14)
 
@@ -25,18 +26,27 @@ now `kv-pvm-intg-qa` (the old vault's purge protection reserves its name for 30
 days). The new Container Apps environment domain suffix is `blackbay-85d5b3d6`,
 so the workbench/API FQDNs and the workbench Entra redirect URI changed
 accordingly. GitHub `AZURE_SUBSCRIPTION_ID` and the deployer service principal's
-role assignments were repointed to the new subscription. The estate was verified
-live: API `/health` `200`, anonymous API `401`, workbench `/invoices` `200`.
+role assignments were repointed to the new subscription.
 
-The migration and Acumatica connector are merged to `main`. QA deployment run
-`30087501452` applied merge commit `f9bf5c84ff94` on 2026-07-24 and is the
-current canonical release.
+Live estate check on 2026-07-27:
+
+- `main` and `origin/main` are `daab72a7a36d`.
+- QA deployment run `30093253715` completed successfully for that commit.
+- API revision `ca-pvm-api-qa--0000005` and workbench revision
+  `ca-pvm-workbench-qa--0000006` serve 100 percent of traffic.
+- Both images use tag `qa-daab72a7a36d`.
+- API `/health` returns `200`; anonymous invoice API returns `401`; unauthenticated
+  workbench `/invoices` redirects to sign-in.
+- The only PVM resource group is `rg-pvm-integrations-qa`; no production group
+  has been provisioned.
+- Service Bus namespace `sb-pvm-integrations-qa` exists but contains no queues.
 
 ## Active Priority
 
-Resolve `INV158888` with the deployed Admin-only mapping workflow, review the
-generated XML, and perform the first real Acumatica-source submission to
-Shoprite QA.
+Implement the production automation plan in
+`docs/implementation-plans/shoprite-production-automation-plan.md`, starting
+with explicit database migrations and a concurrency-safe submission-operation
+state machine.
 
 ## Why This Is Next
 
@@ -91,6 +101,8 @@ Done:
 - Discount-aware line and VAT allocation that reconciles to Acumatica invoice totals.
 - Live Acumatica invoice `INV158888` imported and matched to Shoprite PO
   `1212021109`.
+- Live Acumatica invoice `INV158888` mapped, submitted to Shoprite QA, and
+  confirmed by Shoprite as structurally sound and correct.
 - Persistent, verified item/GTIN mappings keyed by Acumatica inventory ID and
   Shoprite buyer item ID.
 - Persistent, verified UOM mappings keyed by Acumatica inventory ID and
@@ -103,12 +115,45 @@ Done:
 
 Not done:
 
-- First real Acumatica-source Shoprite QA submission.
-- Production-grade payload archive.
+- Concurrency-safe production submission-operation state machine.
+- Service Bus queues and worker runtime.
+- Acumatica push-notification webhook and incremental reconciliation.
+- Scheduled Shoprite PO refresh.
+- Automation modes, allowlists, shadow mode, and kill switch.
+- Full production admin control plane and operational read models.
+- Separate production infrastructure and release pipeline.
 - Blob payload archive.
 - Global mapping list/edit pages for GLN, GTIN, UOM, pack, tax, and connection
   settings. The MVP invoice-detail mapping action is implemented.
 - Manual ambiguous-resolution actions.
+
+## Production Automation Position
+
+Status: **Approved and ready to implement; production sending remains
+disabled.**
+
+The approved architecture is:
+
+- Acumatica push notification for low-latency discovery.
+- Scheduled last-modified reconciliation for completeness.
+- Scheduled Shoprite PO inbox refresh.
+- PostgreSQL inbox/outbox and submission-operation state.
+- Azure Service Bus worker commands and dead letters.
+- Shared manual/automatic submission command.
+- `Disabled -> Shadow -> Allowlisted -> Enabled` rollout.
+- No automatic retry after an uncertain Shoprite POST.
+- Functional admin control plane for health, invoices, POs, exceptions, runs,
+  mappings, automation, connections, audit, users, and emergency stop.
+
+The immediate implementation slice is submission concurrency/idempotency and
+explicit EF migrations. Do not build a scheduler that calls the current
+check-send-record path concurrently.
+
+The admin console is specified in
+`docs/implementation-plans/integration-admin-console-plan.md`. Its read-only
+control-room foundation follows the operational read-model decisions; its
+mutating controls must use completed backend command paths. Production cannot
+move beyond `Shadow` until the required console go-live gates pass.
 
 ## Canonical Handoff
 
@@ -138,7 +183,7 @@ Mapping slice verification on 2026-07-24:
   without overlap or clipped container content.
 - QA deployment run `30092563471` passed from merge commit `7e4b6c1ff5aa`.
 
-Current QA deployment verification on 2026-07-24:
+Historical QA deployment verification on 2026-07-24:
 
 - GitHub Actions deploy run `30092563471` passed from commit `7e4b6c1ff5aa`.
 - Deployed QA images:
@@ -161,8 +206,9 @@ Current QA deployment verification on 2026-07-24:
 - Key Vault `kv-pvm-intg-qa` contains all 14 required deployment secrets.
 - PostgreSQL contains 75 Shoprite POs and 190 PO lines. All 190 lines include a
   GTIN; none include a supplier item ID or measurement UOM.
-- `INV158888` is persisted with zero submission attempts and exactly one match
-  to PO `1212021109`.
+- At this snapshot, `INV158888` was persisted with zero submission attempts and
+  exactly one match to PO `1212021109`. It was mapped and submitted after this
+  snapshot.
 
 Previous verification on 2026-07-07:
 
@@ -183,24 +229,23 @@ Previous verification on 2026-07-07:
   - Workbench `/purchase-orders`: `200`
 - `npm ci` reported 6 npm audit findings in the frontend dependency tree: 1 low, 5 moderate.
 
-## Current UAT Position
+## QA UAT Outcome
 
-Ready for operator smoke of the PO inbox in QA:
+Passed for the tested normal-order invoice path:
 
-1. Open the QA workbench.
-2. Sign in with an authorized Microsoft account.
-3. Open `/purchase-orders`.
-4. Click `Refresh POs`.
-5. Confirm the Shoprite QA `VendorOrder` batch loads.
+1. Shoprite QA POs refreshed into the durable local inbox.
+2. Finalized Acumatica invoice `INV158888` refreshed from the real QA instance.
+3. The captured PO reference matched exactly one Shoprite PO.
+4. Item/GTIN and UOM mappings were verified.
+5. Candidate validation and generated XML were reviewed.
+6. The invoice was manually submitted through the real Shoprite QA
+   `VendorInvoice` endpoint.
+7. Shoprite confirmed that the submitted invoice was structurally sound,
+   correct, and verified.
 
-Ready for Shoprite-side invoice-submission QA once the seeded-submit branch is deployed:
-
-1. Open `/purchase-orders`.
-2. Open a PO with usable line data.
-3. Click `Seed test invoice`.
-4. Review the generated invoice XML and validation.
-5. Submit manually.
-6. Review the attempt response and duplicate blocking behavior.
+This closes the QA contract milestone for that scenario. Allocation orders,
+catch-weight items, production connectivity, event delivery, concurrency,
+automatic policy, and production recovery remain separate gates.
 
 Acumatica-source connector verification completed locally on 2026-07-14:
 
@@ -215,14 +260,10 @@ Acumatica-source connector verification completed locally on 2026-07-14:
   `DetailTotal` is pre-document-discount and must not be used as invoice total
   excluding VAT.
 
-Pending before Acumatica-source invoice UAT:
+Operator note:
 
-- Open `INV158888`, select its single matched Shoprite PO line, and choose the
-  verified Shoprite UOM that represents Acumatica `BOX`.
-- Confirm the candidate becomes `Ready`, has no blocking validation issues, and
-  review the generated XML before the first manual Shoprite QA submission.
-- CLI-authenticated smoke for protected API endpoints is blocked by Entra
-  consent for Azure CLI against the API scope; browser sign-in remains the
-  correct operator path.
+- CLI-authenticated smoke for protected API endpoints remains blocked by Entra
+  consent for Azure CLI against the API scope; browser sign-in is the current
+  operator path.
 
 The local host still does not have the .NET SDK installed; backend verification uses the SDK container with Docker socket access.

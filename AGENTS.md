@@ -1,6 +1,8 @@
 # Agent Onboarding
 
-This repo is the PVM backend, integration, admin, and reporting platform for Acumatica Cloud ERP and trading-partner workflows. The active project is the Shoprite invoice-upload MVP.
+This repo is the PVM backend, integration, admin, and reporting platform for
+Acumatica Cloud ERP and trading-partner workflows. The Shoprite invoice-upload
+QA milestone is complete; the active project is production automation.
 
 ## Start Here
 
@@ -11,25 +13,32 @@ Before implementing or reviewing work, read these in order:
 3. `docs/handovers/2026-06-10-shoprite-project-handoff.md`
 4. `docs/spec-slices/shoprite-invoice-upload-mvp.md`
 5. `docs/spec-slices/shoprite-po-pivot-invoice-submission.md`
-6. `docs/runbooks/shoprite-qa-submission.md`
-7. `docs/runbooks/azure-qa-provisioning-playbook.md`
+6. `docs/implementation-plans/shoprite-production-automation-plan.md`
+7. `docs/implementation-plans/integration-admin-console-plan.md`
+8. `docs/runbooks/shoprite-qa-submission.md`
+9. `docs/runbooks/azure-qa-provisioning-playbook.md`
 
 Use `.agents/skills/overseer/SKILL.md` for status, planning, readiness, review, branch hygiene, and next-work decisions. Use `.agents/skills/handoff/SKILL.md` when preparing a future-session handoff.
 
 ## Current Ground Truth
 
-As of 2026-07-24:
+As of 2026-07-28:
 
 - Azure is locked in and the QA estate is provisioned or provisionable.
-- `developer@pvm.co.za` has subscription `Owner` on `PVM-01`.
+- The active QA estate is in CSP subscription `Azure subscription 1`
+  (`1d0e7292-24e5-425e-870b-c56904b70da6`).
 - Cost visibility and budget access are confirmed.
 - Required Azure resource providers are registered.
 - The QA workbench/API infrastructure exists in the CSP subscription.
 - Microsoft Entra workbench auth and app-managed users are implemented.
 - Real Shoprite QA `VendorOrder` refresh and `VendorInvoice` submission are implemented.
 - Real Acumatica QA finalized-invoice refresh is deployed.
-- Live invoice `INV158888` is matched to Shoprite PO `1212021109`; the
-  Admin-only item/GTIN and UOM mapping workflow is deployed.
+- Live invoice `INV158888` was matched to Shoprite PO `1212021109`, mapped,
+  submitted to Shoprite QA, and confirmed by Shoprite as structurally sound and
+  correct.
+- Production automation is planned but not implemented or enabled.
+- The production automation plan is approved. A functional Admin console is a
+  required release gate, with Admin retaining full controlled access.
 
 ## Important Design Decisions
 
@@ -44,13 +53,15 @@ As of 2026-07-24:
 
 ## Active Next Slice
 
-Complete the first real Acumatica-source Shoprite QA UAT:
+Read `docs/implementation-plans/shoprite-production-automation-plan.md`, then
+implement Slice 1:
 
-1. Resolve `INV158888` from its matched PO line using an Admin account.
-2. Select and verify the Shoprite UOM that represents Acumatica `BOX`.
-3. Confirm the candidate becomes `Ready` with no blocking issues.
-4. Review the generated XML.
-5. Submit manually and inspect the persisted attempt response.
+1. Add explicit EF migrations.
+2. Add a persisted submission-operation state machine.
+3. Freeze source/payload versions before sending.
+4. Make concurrent and redelivered commands produce at most one external POST.
+5. Treat stale in-flight sends as ambiguous.
+6. Keep manual submission on the shared command path.
 
 ## Verification
 
@@ -84,7 +95,7 @@ Useful checks:
 
 ```powershell
 az account show
-az role assignment list --scope /subscriptions/51497af4-8223-42c4-a2ef-f6f625094d2f --include-inherited --output table
+az role assignment list --scope /subscriptions/1d0e7292-24e5-425e-870b-c56904b70da6 --include-inherited --output table
 az resource list -g rg-pvm-integrations-qa --output table
 az consumption budget list --output table
 ```

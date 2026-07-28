@@ -17,7 +17,9 @@ Use this index to orient quickly.
 
 ## Implementation Plans
 
+- `docs/implementation-plans/integration-admin-console-plan.md`
 - `docs/implementation-plans/shoprite-invoice-upload-mvp-plan.md`
+- `docs/implementation-plans/shoprite-production-automation-plan.md`
 - `docs/implementation-plans/workbench-auth-and-roles-plan.md`
 
 ## Runbooks
@@ -34,7 +36,8 @@ Use this index to orient quickly.
 
 ## Current Priority
 
-The active UAT step is resolving live Acumatica candidate `INV158888` with the
-deployed item/GTIN and UOM mapping control, followed by generated XML review and
-the first manual Acumatica-source submission to Shoprite QA. Read
-`docs/status/current-project-status.md` before starting.
+Shoprite has confirmed that the real Acumatica-source QA invoice submission is
+structurally sound and correct. The active priority is production automation
+hardening, beginning with concurrency-safe submission state and explicit
+database migrations. Read `docs/status/current-project-status.md` and
+both production implementation plans before starting.
