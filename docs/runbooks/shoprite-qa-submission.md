@@ -1,6 +1,12 @@
 # Shoprite QA Invoice Submission Runbook
 
-This runbook covers the QA-only Shoprite invoice upload slice. The Shoprite `VendorOrder` PO inbox is implemented for QA credential-backed refresh, and the workbench can seed a deterministic QA invoice candidate from a selected loaded PO. This lets us test Shoprite QA `VendorInvoice` acceptance before Acumatica staging invoice extraction is wired. Do not treat invoice submission as production-ready until Acumatica staging extraction, payload storage, and production hardening are complete. The QA workbench/API must remain protected by Microsoft Entra authentication and app-managed roles before real invoice/customer data is connected.
+This runbook covers the QA-only Shoprite invoice upload slice. The Shoprite
+`VendorOrder` PO inbox, real Acumatica QA invoice source, mapping workflow, and
+real Shoprite QA `VendorInvoice` client are implemented. On 2026-07-27
+Shoprite confirmed that the submitted real Acumatica-source invoice was
+structurally sound, correct, and verified. Keep this runbook for QA regression
+and operator testing. Production automation is governed by
+`docs/implementation-plans/shoprite-production-automation-plan.md`.
 
 ## Scope
 
@@ -22,7 +28,7 @@ The QA run does not prove:
 
 ## Required Access
 
-Acumatica staging, required for the later ERP-source test:
+Acumatica QA, verified for the ERP-source test:
 
 - base URL for the staging/sandbox tenant
 - integration user credentials or OAuth client details
@@ -389,15 +395,22 @@ For MVP hardening, verify every attempt records:
 - responsible role
 - created timestamp
 
-## Known Gaps Before Real QA
+## Known Gaps Before Production Automation
 
-- Real Acumatica staging connector is not wired to refresh yet.
-- Real Shoprite QA client is enabled only when `Shoprite__InvoiceSubmissionMode=RealQa`.
-- Workbench authentication and roles are implemented for QA through Microsoft Entra sign-in and app-managed roles.
-- Mapping admin pages for GLN, GTIN, UOM, pack, tax, and connection settings are not implemented yet.
-- Blob payload archive is not implemented yet.
-- Manual ambiguous-resolution actions are not implemented yet.
-- Automatic finalization-triggered submission is excluded from MVP.
+- The real Shoprite QA client is selected with
+  `Shoprite__InvoiceSubmissionMode=RealQa`; there is no production mode yet.
+- Workbench authentication and roles are implemented for QA through Microsoft
+  Entra sign-in and app-managed roles.
+- Global mapping pages for GLN, GTIN, UOM, pack, tax, and connection settings
+  are incomplete.
+- Blob payload archive is not implemented.
+- Manual ambiguous-resolution actions are not implemented.
+- Service Bus queues and the worker runtime are not implemented.
+- Acumatica push-notification ingestion and incremental reconciliation are not
+  implemented.
+- The current submission check/send/record path is not concurrency-safe for
+  automated consumers.
+- Automatic finalization-triggered submission remains disabled.
 
 ## Pass Criteria
 
@@ -413,3 +426,7 @@ For a QA demo, all of these should pass:
 - manual submit records a submitted attempt
 - duplicate submit is blocked
 - ambiguous failure behavior is proven by test or controlled stub
+
+The real normal-order Acumatica-to-Shoprite QA path passed on 2026-07-27 and
+Shoprite confirmed the submitted structure and values. Continue to run these
+criteria as regression gates for automation changes.
