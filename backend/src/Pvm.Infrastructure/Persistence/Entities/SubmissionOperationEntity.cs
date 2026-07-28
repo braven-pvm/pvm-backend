@@ -13,8 +13,8 @@ public sealed class SubmissionOperationEntity
     public required string InitiationMode { get; set; }
     public required string SourceVersion { get; set; }
     public string? FrozenSourceJson { get; set; }
-    public required string FrozenCanonicalJson { get; set; }
-    public required string RequestPayload { get; set; }
+    public string? FrozenCanonicalJson { get; set; }
+    public string? RequestPayload { get; set; }
     public required string RequestPayloadHash { get; set; }
     public int? ResponseStatusCode { get; set; }
     public string? ResponsePayload { get; set; }
@@ -24,4 +24,5 @@ public sealed class SubmissionOperationEntity
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? SendingStartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
+    public ICollection<PayloadArchiveEntity> PayloadArchives { get; set; } = [];
 }

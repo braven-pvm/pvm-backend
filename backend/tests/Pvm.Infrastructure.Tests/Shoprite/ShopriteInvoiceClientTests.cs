@@ -48,7 +48,9 @@ public sealed class ShopriteInvoiceClientTests
     [Fact]
     public async Task SubmitAsync_TransportUncertaintyReturnsAmbiguousResponse()
     {
-        using var handler = new CaptureHandler(_ => throw new HttpRequestException("connection reset"));
+        using var handler = new CaptureHandler(
+            _ => throw new HttpRequestException(
+                "https://example.invalid/VendorInvoice?userName=not-archivable&password=not-archivable"));
         using var httpClient = new HttpClient(handler)
         {
             BaseAddress = new Uri("https://shoprite.example/B2BWebAPISupplierServices/api/")
@@ -60,7 +62,8 @@ public sealed class ShopriteInvoiceClientTests
         Assert.False(response.Success);
         Assert.Null(response.StatusCode);
         Assert.True(response.IsAmbiguous);
-        Assert.Equal("connection reset", response.Body);
+        Assert.Equal("Shoprite request failed after the send boundary.", response.Body);
+        Assert.DoesNotContain("not-archivable", response.Body);
     }
 
     [Fact]

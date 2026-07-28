@@ -43,12 +43,12 @@ public sealed class ShopriteInvoiceClient(
                 "Shoprite request timed out.",
                 IsAmbiguous: true);
         }
-        catch (HttpRequestException exception)
+        catch (HttpRequestException)
         {
             return new ShopriteInvoiceResponse(
                 false,
                 null,
-                exception.Message,
+                "Shoprite request failed after the send boundary.",
                 IsAmbiguous: true);
         }
     }
