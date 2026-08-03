@@ -2,12 +2,13 @@
 
 Backend, integration, and reporting platform for Acumatica Cloud ERP and trading-partner workflows.
 
-Current discovery focus:
+Current delivery focus:
 
 - Acumatica Cloud ERP 2025 R2 integration paths.
 - Shoprite REST Web Services V9.3 invoice upload.
-- Shoprite invoice-upload MVP scope.
-- Long-running integration service architecture and operations model.
+- Production-safe Shoprite invoice automation.
+- Service Bus worker, outbox, dead-letter, and operational read models.
+- Functional integration Admin console and controlled rollout.
 
 ## Local Quickstart
 
@@ -60,7 +61,8 @@ Open the workbench:
 http://localhost:3000/invoices
 ```
 
-For the current QA slice, use `POST /api/invoices/refresh` or the workbench refresh action to load the sanitized fixture invoice.
+For QA regression and operator testing, use the real Acumatica QA refresh or the
+explicit PO-seeded candidate action documented in the Shoprite QA runbook.
 
 ## Runbooks
 

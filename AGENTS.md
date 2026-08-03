@@ -22,7 +22,7 @@ Use `.agents/skills/overseer/SKILL.md` for status, planning, readiness, review, 
 
 ## Current Ground Truth
 
-As of 2026-07-28:
+As of 2026-08-03:
 
 - Azure is locked in and the QA estate is provisioned or provisionable.
 - The active QA estate is in CSP subscription `Azure subscription 1`
@@ -36,9 +36,17 @@ As of 2026-07-28:
 - Live invoice `INV158888` was matched to Shoprite PO `1212021109`, mapped,
   submitted to Shoprite QA, and confirmed by Shoprite as structurally sound and
   correct.
-- Production automation is planned but not implemented or enabled.
+- Production automation foundations are partially implemented but automatic
+  submission is not enabled.
 - The production automation plan is approved. A functional Admin console is a
   required release gate, with Admin retaining full controlled access.
+- Production automation Slices 1 and 2 are merged and deployed to QA.
+- Explicit migrations, the concurrency-safe submission-operation state machine,
+  immutable payload archiving, hash verification, and transition audit are
+  operational.
+- QA candidate `QA-INV-1212503708` completed the deployed archive path on
+  2026-08-03 with four verified payload blobs and a successful Shoprite QA
+  response.
 
 ## Important Design Decisions
 
@@ -54,14 +62,16 @@ As of 2026-07-28:
 ## Active Next Slice
 
 Read `docs/implementation-plans/shoprite-production-automation-plan.md`, then
-implement Slice 1:
+implement Slice 3:
 
-1. Add explicit EF migrations.
-2. Add a persisted submission-operation state machine.
-3. Freeze source/payload versions before sending.
-4. Make concurrent and redelivered commands produce at most one external POST.
-5. Treat stale in-flight sends as ambiguous.
-6. Keep manual submission on the shared command path.
+1. Add the Service Bus queues and managed-identity roles in Bicep.
+2. Add the worker project and container deployment.
+3. Add a transactional PostgreSQL outbox and dispatcher.
+4. Add discovery and submission consumers around the existing application
+   command paths.
+5. Persist delivery and dead-letter metadata for operational read views.
+6. Prove redelivery safety, worker restart recovery, and actionable poison-message
+   dead lettering without enabling production automation.
 
 ## Verification
 

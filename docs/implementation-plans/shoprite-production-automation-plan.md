@@ -40,9 +40,28 @@ The QA vertical slice has crossed its primary contract-validation gate:
   correct, and verified.
 
 This proves the source-to-payload mapping and Shoprite request contract for the
-tested scenario. It does not yet prove production concurrency safety,
-production credentials and connectivity, automatic retries, event delivery,
-backup recovery, or operational response.
+tested scenario. At the time of that initial evidence it did not prove
+production concurrency safety, production credentials and connectivity,
+automatic retries, event delivery, backup recovery, or operational response.
+
+## Implementation Progress
+
+As of 2026-08-03:
+
+- Slice 1 is complete and deployed: explicit EF migrations, persisted submission
+  operations, concurrency constraints, frozen source/payload versions, stale-send
+  ambiguity, and shared manual submission are operational.
+- Slice 2 is complete and deployed: Azure Blob payload archive, SHA-256
+  verification, raw-body removal from operational PostgreSQL rows, immutable
+  transition audit, and credential-content guards are operational.
+- Deployed QA candidate `QA-INV-1212503708` produced one submitted operation,
+  four independently hash-verified blobs, and the immutable transition sequence
+  `Pending -> Sending -> Submitted`.
+- The runtime verification used a deterministic PO-seeded candidate. The real
+  Acumatica-source path was previously verified with `INV158888`; a combined
+  post-archive real-Acumatica regression remains a pre-shadow gate.
+- Slice 3 is the active implementation slice. Production automation remains
+  disabled.
 
 ## Decisions
 
@@ -933,12 +952,12 @@ From PVM:
 
 ## Recommended Immediate Next Work
 
-Start with Slice 1: production persistence and concurrency-safe submission.
+Proceed with Slice 3: Service Bus and worker runtime.
 
-It is independent of production credentials, preserves the verified manual
-workflow, and closes the highest-risk defect before any scheduler or webhook can
-create concurrent sends. Build the worker and triggers only after this
-submission foundation is proven.
+Slices 1 and 2 have established the submission safety and immutable evidence
+boundary. Add durable transport, outbox dispatch, worker consumers, and
+dead-letter operational metadata next. Do not add schedules, webhook ingestion,
+or enable automatic submission in this slice.
 
 ## References
 

@@ -12,8 +12,9 @@ On 2026-07-27 Shoprite confirmed that the submitted invoice was structurally
 sound, correct, and verified.
 
 The QA payload-contract milestone is complete for the tested normal-order
-scenario. The project is ready to implement production automation hardening;
-it is not yet ready to enable automatic production submissions.
+scenario. Production automation Slices 1 and 2 are merged, deployed, and
+runtime-verified in QA. The project is ready for the Service Bus and worker
+runtime slice; it is not yet ready to enable automatic production submissions.
 
 ## Infrastructure Subscription (moved 2026-07-14)
 
@@ -28,25 +29,32 @@ so the workbench/API FQDNs and the workbench Entra redirect URI changed
 accordingly. GitHub `AZURE_SUBSCRIPTION_ID` and the deployer service principal's
 role assignments were repointed to the new subscription.
 
-Live estate check on 2026-07-27:
+Live estate check on 2026-08-03:
 
-- `main` and `origin/main` are `daab72a7a36d`.
-- QA deployment run `30093253715` completed successfully for that commit.
-- API revision `ca-pvm-api-qa--0000005` and workbench revision
-  `ca-pvm-workbench-qa--0000006` serve 100 percent of traffic.
-- Both images use tag `qa-daab72a7a36d`.
+- `origin/main` is merge commit `39f8bb2e3c0d` for payload archive PR #10.
+- QA deployment run `30366810266` completed successfully for that commit,
+  including 101 backend tests, frontend verification, database migrations,
+  Bicep deployment, and smoke checks.
+- API revision `ca-pvm-api-qa--0000007` serves 100 percent of traffic and uses
+  image tag `qa-39f8bb2e3c0d`.
 - API `/health` returns `200`; anonymous invoice API returns `401`; unauthenticated
   workbench `/invoices` redirects to sign-in.
 - The only PVM resource group is `rg-pvm-integrations-qa`; no production group
   has been provisioned.
 - Service Bus namespace `sb-pvm-integrations-qa` exists but contains no queues.
+- Blob versioning and seven-day blob/container soft deletion are enabled.
+- The API managed identity has `Storage Blob Data Contributor` on the archive
+  account.
+- Seeded candidate `QA-INV-1212503708` created four archive objects with one
+  current version each. Independent downloads matched every PostgreSQL SHA-256
+  hash and byte count.
 
 ## Active Priority
 
-Implement the production automation plan in
-`docs/implementation-plans/shoprite-production-automation-plan.md`, starting
-with explicit database migrations and a concurrency-safe submission-operation
-state machine.
+Implement Slice 3 of
+`docs/implementation-plans/shoprite-production-automation-plan.md`: Service Bus
+queues, worker runtime, transactional outbox, discovery/submission consumers,
+and dead-letter metadata/read views.
 
 ## Why This Is Next
 
@@ -112,17 +120,27 @@ Done:
 - Mapping audit events and immediate candidate revalidation.
 - Shared PO matching, mapping enrichment, and validation path for refresh and
   manual revalidation.
+- Explicit EF migration deployment with runtime schema creation removed.
+- Persisted submission-operation state machine and database concurrency guards.
+- Frozen source, canonical, request, and payload-hash versions per operation.
+- At-most-one external POST under concurrent/redelivered submission commands.
+- Stale in-flight sends become `Ambiguous` rather than being retried.
+- Azure Blob archive for source, canonical, request, and response payloads.
+- SHA-256 archive verification and write-once Blob behavior.
+- Immutable database transition audit with actor, mode, correlation, reason,
+  source version, payload hash, and timestamp.
+- Raw archived bodies removed from terminal PostgreSQL operation/attempt rows.
+- Deployed seeded QA candidate `QA-INV-1212503708` returned HTTP `200`, created
+  four verified blobs, and transitioned `Pending -> Sending -> Submitted`.
 
 Not done:
 
-- Concurrency-safe production submission-operation state machine.
 - Service Bus queues and worker runtime.
 - Acumatica push-notification webhook and incremental reconciliation.
 - Scheduled Shoprite PO refresh.
 - Automation modes, allowlists, shadow mode, and kill switch.
 - Full production admin control plane and operational read models.
 - Separate production infrastructure and release pipeline.
-- Blob payload archive.
 - Global mapping list/edit pages for GLN, GTIN, UOM, pack, tax, and connection
   settings. The MVP invoice-detail mapping action is implemented.
 - Manual ambiguous-resolution actions.
@@ -145,9 +163,9 @@ The approved architecture is:
 - Functional admin control plane for health, invoices, POs, exceptions, runs,
   mappings, automation, connections, audit, users, and emergency stop.
 
-The immediate implementation slice is submission concurrency/idempotency and
-explicit EF migrations. Do not build a scheduler that calls the current
-check-send-record path concurrently.
+The immediate implementation slice is Service Bus and worker runtime. Keep it
+transport-focused: no scheduler, webhook, automatic policy, or production send
+enablement belongs in Slice 3.
 
 The admin console is specified in
 `docs/implementation-plans/integration-admin-console-plan.md`. Its read-only
