@@ -37,7 +37,8 @@ Use this index to orient quickly.
 ## Current Priority
 
 Shoprite has confirmed that the real Acumatica-source QA invoice submission is
-structurally sound and correct. The active priority is production automation
-hardening, beginning with concurrency-safe submission state and explicit
-database migrations. Read `docs/status/current-project-status.md` and
-both production implementation plans before starting.
+structurally sound and correct. Production automation Slices 1 and 2 are merged,
+deployed, and runtime-verified in QA. The active priority is Slice 3: Service Bus
+queues, worker runtime, transactional outbox, consumers, and dead-letter
+metadata/read views. Read `docs/status/current-project-status.md` and both
+production implementation plans before starting.

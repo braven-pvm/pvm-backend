@@ -1,5 +1,10 @@
 # Shoprite Project Handoff
 
+> Historical handoff: this document captures the 2026-06-10 state. For current
+> implementation and deployment status, use
+> `docs/status/current-project-status.md` and
+> `docs/implementation-plans/shoprite-production-automation-plan.md`.
+
 Date: 2026-06-10  
 Repo: `F:\Repositories\backoffice.acumatica`  
 Branch observed: `main`

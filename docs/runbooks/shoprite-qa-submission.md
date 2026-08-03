@@ -372,12 +372,18 @@ Manual review checklist:
 
 ## Payloads and Audit
 
-The current vertical slice stores request and response payload bodies directly on submission attempts so the workbench can show attempt history. The target production design is:
+The deployed QA submission path now uses the production archive design:
 
-- PostgreSQL stores metadata, state, hashes, and payload locations
-- blob storage stores raw request and response payloads
+- PostgreSQL stores metadata, state, hashes, payload locations, and immutable
+  state transitions
+- blob storage stores Acumatica source, canonical invoice, Shoprite request, and
+  Shoprite response payloads
 - credentials and sensitive headers are never stored
 - audit events capture every automated and manual state transition
+
+The successful 2026-08-03 seeded QA submission produced four blobs whose bytes,
+sizes, metadata, and SHA-256 hashes matched PostgreSQL. Raw source, canonical,
+request, and response bodies were cleared from operational rows after archival.
 
 For MVP hardening, verify every attempt records:
 
@@ -403,13 +409,10 @@ For MVP hardening, verify every attempt records:
   Entra sign-in and app-managed roles.
 - Global mapping pages for GLN, GTIN, UOM, pack, tax, and connection settings
   are incomplete.
-- Blob payload archive is not implemented.
 - Manual ambiguous-resolution actions are not implemented.
 - Service Bus queues and the worker runtime are not implemented.
 - Acumatica push-notification ingestion and incremental reconciliation are not
   implemented.
-- The current submission check/send/record path is not concurrency-safe for
-  automated consumers.
 - Automatic finalization-triggered submission remains disabled.
 
 ## Pass Criteria
