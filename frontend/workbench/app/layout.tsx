@@ -29,6 +29,7 @@ export default async function RootLayout({
           <nav aria-label="Primary navigation">
             <Link href="/invoices">Invoices</Link>
             <Link href="/purchase-orders">PO Inbox</Link>
+            <Link href="/admin/messages">Messages</Link>
             <Link href="/admin/users">Users</Link>
           </nav>
           <div className="user-chip">
