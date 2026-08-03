@@ -4,6 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Pvm.Application.Submissions;
 using Pvm.Infrastructure.Persistence.Repositories;
 using Pvm.Infrastructure.Shoprite;
+using Pvm.Application.Messaging;
+using Pvm.Infrastructure.Messaging;
 
 namespace Pvm.Infrastructure.Persistence;
 
@@ -24,6 +26,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ShopriteSeedInvoiceCandidateService>();
         services.AddScoped<ShopriteInvoiceCandidateMatcher>();
         services.AddScoped<ShopriteInvoiceLineMappingService>();
+        services.AddScoped<IIntegrationCommandQueue, IntegrationCommandQueue>();
+        services.AddScoped<OutboxRepository>();
+        services.AddScoped<IntegrationDeliveryRepository>();
         return services;
     }
 }

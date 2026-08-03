@@ -163,6 +163,45 @@ export type PurchaseOrderRefreshResult = {
   refreshedAt: string;
 };
 
+export type IntegrationMessageView = {
+  summary: {
+    outboxTotal: number;
+    deliveryTotal: number;
+    pending: number;
+    published: number;
+    retrying: number;
+    deadLettered: number;
+  };
+  outbox: Array<{
+    id: string;
+    queueName: string;
+    messageType: string;
+    correlationId: string;
+    status: string;
+    publishAttempts: number;
+    lastErrorCode?: Nullable<string>;
+    lastErrorSummary?: Nullable<string>;
+    createdAt: string;
+    updatedAt: string;
+    publishedAt?: Nullable<string>;
+  }>;
+  deliveries: Array<{
+    id: string;
+    queueName: string;
+    messageId: string;
+    messageType: string;
+    correlationId: string;
+    status: string;
+    deliveryCount: number;
+    errorCode?: Nullable<string>;
+    errorSummary?: Nullable<string>;
+    deadLetterReason?: Nullable<string>;
+    enqueuedAt: string;
+    updatedAt: string;
+    completedAt?: Nullable<string>;
+  }>;
+};
+
 export async function getInvoiceCandidates(): Promise<
   InvoiceCandidateSummary[]
 > {
@@ -342,6 +381,36 @@ export async function seedInvoiceCandidateFromPurchaseOrder(
 
   if (!response.ok) {
     throw new Error(`Failed to seed invoice candidate: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getIntegrationMessages(): Promise<IntegrationMessageView> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(`${apiBaseUrl}/api/admin/integration-messages`, {
+    headers,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load integration messages: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function enqueueIntegrationCommand(
+  command: "acumatica-discovery" | "shoprite-po-refresh",
+): Promise<{ messageId: string }> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(
+    `${apiBaseUrl}/api/admin/integration-messages/${command}`,
+    { method: "POST", headers, cache: "no-store" },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to queue integration command: ${response.status}`);
   }
 
   return response.json();

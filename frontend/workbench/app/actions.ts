@@ -9,6 +9,7 @@ import {
   saveInvoiceLineMapping,
   seedInvoiceCandidateFromPurchaseOrder,
   submitInvoice,
+  enqueueIntegrationCommand,
 } from "../src/api/client";
 
 export async function refreshCandidatesAction() {
@@ -91,6 +92,17 @@ export async function updateUserStatusAction(formData: FormData) {
   await updateUserStatus(id, status);
   revalidatePath("/admin/users");
   redirect("/admin/users");
+}
+
+export async function enqueueIntegrationCommandAction(formData: FormData) {
+  const command = requiredString(formData, "command");
+  if (command !== "acumatica-discovery" && command !== "shoprite-po-refresh") {
+    throw new Error("Unsupported integration command.");
+  }
+
+  await enqueueIntegrationCommand(command);
+  revalidatePath("/admin/messages");
+  redirect("/admin/messages");
 }
 
 function requiredString(formData: FormData, key: string) {

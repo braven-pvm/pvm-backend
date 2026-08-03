@@ -7,6 +7,7 @@ param postgresAdminPassword string
 
 param apiImageTag string = 'qa-latest'
 param workbenchImageTag string = 'qa-latest'
+param workerImageTag string = 'qa-latest'
 param authMode string = 'Entra'
 param authTenantId string = ''
 param authApiClientId string = ''
@@ -59,6 +60,7 @@ var acrName = 'acrpvmintegrations${suffix}'
 var acrLocation = 'westeurope'
 var apiContainerAppName = 'ca-pvm-api-${suffix}'
 var workbenchContainerAppName = 'ca-pvm-workbench-${suffix}'
+var workerContainerAppName = 'ca-pvm-worker-${suffix}'
 var logName = 'log-pvm-integrations-${suffix}'
 var appInsightsName = 'appi-pvm-integrations-${suffix}'
 var containerAppsEnvironmentName = 'cae-pvm-integrations-${suffix}'
@@ -66,6 +68,9 @@ var identityName = 'id-pvm-integrations-${suffix}'
 var keyVaultName = 'kv-pvm-intg-${suffix}'
 var storageAccountName = 'stpvmintegrations${suffix}'
 var serviceBusNamespaceName = 'sb-pvm-integrations-${suffix}'
+var shopritePurchaseOrderRefreshQueueName = 'shoprite-po-refresh'
+var acumaticaInvoiceDiscoveryQueueName = 'acumatica-invoice-discovery'
+var shopriteInvoiceSubmitQueueName = 'shoprite-invoice-submit'
 var postgresServerName = 'psql-pvm-integrations-${suffix}'
 var postgresAdminUser = 'pvmadmin'
 var databaseName = 'pvm'
@@ -211,11 +216,23 @@ var apiEnvironment = concat([
     value: acumaticaInvoiceDateFrom
   }
 ], acumaticaCredentialEnvironment, acumaticaCustomerEnvironment, acumaticaParentCustomerEnvironment)
+var workerEnvironment = concat(apiEnvironment, [
+  {
+    name: 'ServiceBus__FullyQualifiedNamespace'
+    value: '${serviceBus.name}.servicebus.windows.net'
+  }
+  {
+    name: 'ServiceBus__MaxDeliveryCount'
+    value: '5'
+  }
+])
 
 var acrPullRoleDefinitionId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
 var keyVaultSecretsOfficerRoleDefinitionId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')
 var keyVaultSecretsUserRoleDefinitionId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
 var storageBlobDataContributorRoleDefinitionId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+var serviceBusDataSenderRoleDefinitionId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69a216fc-b8fb-44d8-bc22-1f3c2cd27a39')
+var serviceBusDataReceiverRoleDefinitionId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0')
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logName
@@ -347,6 +364,25 @@ resource serviceBus 'Microsoft.ServiceBus/namespaces@2024-01-01' = {
   }
 }
 
+resource serviceBusQueues 'Microsoft.ServiceBus/namespaces/queues@2024-01-01' = [for queueName in [
+  shopritePurchaseOrderRefreshQueueName
+  acumaticaInvoiceDiscoveryQueueName
+  shopriteInvoiceSubmitQueueName
+]: {
+  parent: serviceBus
+  name: queueName
+  properties: {
+    deadLetteringOnMessageExpiration: true
+    defaultMessageTimeToLive: 'P14D'
+    duplicateDetectionHistoryTimeWindow: 'P1D'
+    enableBatchedOperations: true
+    enablePartitioning: false
+    lockDuration: 'PT5M'
+    maxDeliveryCount: 5
+    requiresDuplicateDetection: true
+  }
+}]
+
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-preview' = {
   name: postgresServerName
   location: location
@@ -450,6 +486,26 @@ resource identityAcrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01
     principalId: identity.properties.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: acrPullRoleDefinitionId
+  }
+}
+
+resource identityServiceBusSenderRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(serviceBus.id, identity.id, 'service-bus-data-sender')
+  scope: serviceBus
+  properties: {
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: serviceBusDataSenderRoleDefinitionId
+  }
+}
+
+resource identityServiceBusReceiverRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(serviceBus.id, identity.id, 'service-bus-data-receiver')
+  scope: serviceBus
+  properties: {
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: serviceBusDataReceiverRoleDefinitionId
   }
 }
 
@@ -627,6 +683,72 @@ resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
   ]
 }
 
+resource workerContainerApp 'Microsoft.App/containerApps@2025-01-01' = {
+  name: workerContainerAppName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identity.id}': {}
+    }
+  }
+  properties: {
+    managedEnvironmentId: containerAppsEnvironment.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      registries: [
+        {
+          server: acr.properties.loginServer
+          identity: identity.id
+        }
+      ]
+      secrets: apiSecrets
+    }
+    template: {
+      scale: {
+        // Keep one worker alive so the database outbox drains even when all broker queues are empty.
+        minReplicas: 1
+        maxReplicas: 3
+        rules: [for queueName in [
+          shopritePurchaseOrderRefreshQueueName
+          acumaticaInvoiceDiscoveryQueueName
+          shopriteInvoiceSubmitQueueName
+        ]: {
+          name: replace(queueName, '-', '')
+          custom: {
+            type: 'azure-servicebus'
+            metadata: {
+              namespace: serviceBus.name
+              queueName: queueName
+              messageCount: '5'
+            }
+            auth: []
+            identity: identity.id
+          }
+        }]
+      }
+      containers: [
+        {
+          name: workerContainerAppName
+          image: '${acr.properties.loginServer}/pvm-worker:${workerImageTag}'
+          env: workerEnvironment
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    identityAcrPullRole
+    identityServiceBusSenderRole
+    identityServiceBusReceiverRole
+    serviceBusQueues
+  ]
+}
+
 output acrName string = acr.name
 output acrLoginServer string = acr.properties.loginServer
 output containerAppsEnvironmentName string = containerAppsEnvironment.name
@@ -640,3 +762,4 @@ output userAssignedIdentityId string = identity.id
 output userAssignedIdentityClientId string = identity.properties.clientId
 output apiUrl string = 'https://${apiContainerApp.properties.configuration.ingress.fqdn}'
 output workbenchUrl string = 'https://${workbenchContainerApp.properties.configuration.ingress.fqdn}'
+output workerContainerAppName string = workerContainerApp.name

@@ -28,6 +28,9 @@ param apiImageTag string = 'qa-latest'
 @description('Workbench container image tag to deploy.')
 param workbenchImageTag string = 'qa-latest'
 
+@description('Worker container image tag to deploy.')
+param workerImageTag string = 'qa-latest'
+
 @description('Authentication mode for deployed container apps.')
 param authMode string = 'Entra'
 
@@ -152,6 +155,7 @@ module platform 'modules/platform.bicep' = {
     postgresAdminPassword: postgresAdminPassword
     apiImageTag: apiImageTag
     workbenchImageTag: workbenchImageTag
+    workerImageTag: workerImageTag
     authMode: authMode
     authTenantId: authTenantId
     authApiClientId: authApiClientId
@@ -225,5 +229,6 @@ output postgresFullyQualifiedDomainName string = platform.outputs.postgresFullyQ
 output storageAccountName string = platform.outputs.storageAccountName
 output serviceBusNamespaceName string = platform.outputs.serviceBusNamespaceName
 output userAssignedIdentityId string = platform.outputs.userAssignedIdentityId
+output workerContainerAppName string = platform.outputs.workerContainerAppName
 output apiUrl string = platform.outputs.apiUrl
 output workbenchUrl string = platform.outputs.workbenchUrl

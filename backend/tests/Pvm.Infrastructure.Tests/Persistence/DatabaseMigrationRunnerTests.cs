@@ -23,11 +23,13 @@ public sealed class DatabaseMigrationRunnerTests : IAsyncLifetime
         await DatabaseMigrationRunner.MigrateAsync(db);
 
         var applied = await db.Database.GetAppliedMigrationsAsync();
-        Assert.Equal(3, applied.Count());
+        Assert.Equal(4, applied.Count());
         Assert.Contains(DatabaseMigrationRunner.LegacyBaselineMigration, applied);
         Assert.True(await TableExistsAsync(db, "submission_operations"));
         Assert.True(await TableExistsAsync(db, "payload_archives"));
         Assert.True(await TableExistsAsync(db, "submission_operation_transitions"));
+        Assert.True(await TableExistsAsync(db, "integration_outbox_messages"));
+        Assert.True(await TableExistsAsync(db, "integration_message_deliveries"));
     }
 
     [Fact]
@@ -49,7 +51,9 @@ public sealed class DatabaseMigrationRunnerTests : IAsyncLifetime
         Assert.True(await ColumnExistsAsync(db, "invoice_submission_attempts", "SubmissionOperationId"));
         Assert.True(await TableExistsAsync(db, "payload_archives"));
         Assert.True(await TableExistsAsync(db, "submission_operation_transitions"));
-        Assert.Equal(3, (await db.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.True(await TableExistsAsync(db, "integration_outbox_messages"));
+        Assert.True(await TableExistsAsync(db, "integration_message_deliveries"));
+        Assert.Equal(4, (await db.Database.GetAppliedMigrationsAsync()).Count());
     }
 
     private PvmDbContext CreateDbContext()

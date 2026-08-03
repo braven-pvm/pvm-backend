@@ -32,6 +32,10 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<AppUserAuditEventEntity> AppUserAuditEvents => Set<AppUserAuditEventEntity>();
 
+    public DbSet<IntegrationOutboxMessageEntity> IntegrationOutboxMessages => Set<IntegrationOutboxMessageEntity>();
+
+    public DbSet<IntegrationMessageDeliveryEntity> IntegrationMessageDeliveries => Set<IntegrationMessageDeliveryEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<InvoiceCandidateEntity>(entity =>
@@ -285,6 +289,40 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
                 .WithMany()
                 .HasForeignKey(audit => audit.TargetAppUserId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<IntegrationOutboxMessageEntity>(entity =>
+        {
+            entity.ToTable("integration_outbox_messages");
+            entity.HasKey(message => message.Id);
+            entity.HasIndex(message => new { message.Status, message.AvailableAt });
+            entity.HasIndex(message => message.CorrelationId);
+            entity.Property(message => message.QueueName).HasMaxLength(128);
+            entity.Property(message => message.MessageType).HasMaxLength(128);
+            entity.Property(message => message.PayloadJson).HasColumnType("jsonb");
+            entity.Property(message => message.CorrelationId).HasMaxLength(128);
+            entity.Property(message => message.CausationId).HasMaxLength(128);
+            entity.Property(message => message.Status).HasMaxLength(32);
+            entity.Property(message => message.LastErrorCode).HasMaxLength(128);
+            entity.Property(message => message.LastErrorSummary).HasMaxLength(1024);
+        });
+
+        modelBuilder.Entity<IntegrationMessageDeliveryEntity>(entity =>
+        {
+            entity.ToTable("integration_message_deliveries");
+            entity.HasKey(delivery => delivery.Id);
+            entity.HasIndex(delivery => new { delivery.QueueName, delivery.MessageId }).IsUnique();
+            entity.HasIndex(delivery => new { delivery.Status, delivery.UpdatedAt });
+            entity.HasIndex(delivery => delivery.CorrelationId);
+            entity.Property(delivery => delivery.QueueName).HasMaxLength(128);
+            entity.Property(delivery => delivery.MessageId).HasMaxLength(128);
+            entity.Property(delivery => delivery.MessageType).HasMaxLength(128);
+            entity.Property(delivery => delivery.CorrelationId).HasMaxLength(128);
+            entity.Property(delivery => delivery.CausationId).HasMaxLength(128);
+            entity.Property(delivery => delivery.Status).HasMaxLength(32);
+            entity.Property(delivery => delivery.ErrorCode).HasMaxLength(128);
+            entity.Property(delivery => delivery.ErrorSummary).HasMaxLength(1024);
+            entity.Property(delivery => delivery.DeadLetterReason).HasMaxLength(128);
         });
     }
 }
