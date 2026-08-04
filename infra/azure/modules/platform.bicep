@@ -1,6 +1,7 @@
 param location string
 param environmentName string
 param ownerObjectId string
+param alertEmail string
 
 @secure()
 param postgresAdminPassword string
@@ -61,6 +62,7 @@ var acrLocation = 'westeurope'
 var apiContainerAppName = 'ca-pvm-api-${suffix}'
 var workbenchContainerAppName = 'ca-pvm-workbench-${suffix}'
 var workerContainerAppName = 'ca-pvm-worker-${suffix}'
+var purchaseOrderRefreshJobName = 'job-pvm-po-refresh-${suffix}'
 var logName = 'log-pvm-integrations-${suffix}'
 var appInsightsName = 'appi-pvm-integrations-${suffix}'
 var containerAppsEnvironmentName = 'cae-pvm-integrations-${suffix}'
@@ -122,6 +124,22 @@ var apiEnvironment = concat([
   {
     name: 'ASPNETCORE_ENVIRONMENT'
     value: 'Production'
+  }
+  {
+    name: 'Pvm__EnvironmentName'
+    value: toUpper(environmentName)
+  }
+  {
+    name: 'ShopritePoRefresh__ScheduleIntervalMinutes'
+    value: '5'
+  }
+  {
+    name: 'ShopritePoRefresh__StaleAfterMinutes'
+    value: '15'
+  }
+  {
+    name: 'Automation__Mode'
+    value: 'Disabled'
   }
   {
     name: 'ConnectionStrings__Pvm'
@@ -669,6 +687,10 @@ resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
               name: 'NEXT_PUBLIC_API_BASE_URL'
               value: 'https://${apiContainerApp.properties.configuration.ingress.fqdn}'
             }
+            {
+              name: 'NEXT_PUBLIC_PVM_ENVIRONMENT_NAME'
+              value: toUpper(environmentName)
+            }
           ]
           resources: {
             cpu: json('0.25')
@@ -749,6 +771,136 @@ resource workerContainerApp 'Microsoft.App/containerApps@2025-01-01' = {
   ]
 }
 
+resource purchaseOrderRefreshJob 'Microsoft.App/jobs@2025-01-01' = {
+  name: purchaseOrderRefreshJobName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identity.id}': {}
+    }
+  }
+  properties: {
+    environmentId: containerAppsEnvironment.id
+    configuration: {
+      triggerType: 'Schedule'
+      replicaTimeout: 300
+      replicaRetryLimit: 1
+      scheduleTriggerConfig: {
+        cronExpression: '*/5 * * * *'
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      registries: [
+        {
+          server: acr.properties.loginServer
+          identity: identity.id
+        }
+      ]
+      secrets: [
+        {
+          name: 'connectionstrings-pvm'
+          value: pvmConnectionString
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: purchaseOrderRefreshJobName
+          image: '${acr.properties.loginServer}/pvm-worker:${workerImageTag}'
+          args: [
+            '--enqueue-shoprite-po-refresh'
+          ]
+          env: [
+            {
+              name: 'ConnectionStrings__Pvm'
+              secretRef: 'connectionstrings-pvm'
+            }
+            {
+              name: 'Pvm__EnvironmentName'
+              value: toUpper(environmentName)
+            }
+            {
+              name: 'ShopritePoRefresh__ScheduleIntervalMinutes'
+              value: '5'
+            }
+          ]
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    identityAcrPullRole
+  ]
+}
+
+resource operationsActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
+  name: 'ag-pvm-integrations-${suffix}'
+  location: 'global'
+  tags: tags
+  properties: {
+    groupShortName: 'PVM Intg'
+    enabled: true
+    emailReceivers: [
+      {
+        name: 'PVM integration operator'
+        emailAddress: alertEmail
+        useCommonAlertSchema: true
+      }
+    ]
+  }
+}
+
+resource stalePurchaseOrderRefreshAlert 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
+  name: 'alert-pvm-po-refresh-stale-${suffix}'
+  location: location
+  tags: tags
+  kind: 'LogAlert'
+  properties: {
+    displayName: 'PVM Shoprite PO refresh is stale (${toUpper(environmentName)})'
+    description: 'No successful Shoprite purchase-order refresh completed in the last 15 minutes.'
+    enabled: true
+    severity: 2
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT15M'
+    scopes: [
+      logAnalytics.id
+    ]
+    autoMitigate: true
+    skipQueryValidation: false
+    criteria: {
+      allOf: [
+        {
+          query: '''
+            ContainerAppConsoleLogs_CL
+            | where ContainerAppName_s == "${workerContainerAppName}"
+            | where Log_s contains "integration.run.completed"
+            | where Log_s contains "RunType=shoprite-po-refresh"
+          '''
+          timeAggregation: 'Count'
+          operator: 'LessThan'
+          threshold: 1
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    actions: {
+      actionGroups: [
+        operationsActionGroup.id
+      ]
+    }
+  }
+}
+
 output acrName string = acr.name
 output acrLoginServer string = acr.properties.loginServer
 output containerAppsEnvironmentName string = containerAppsEnvironment.name
@@ -763,3 +915,4 @@ output userAssignedIdentityClientId string = identity.properties.clientId
 output apiUrl string = 'https://${apiContainerApp.properties.configuration.ingress.fqdn}'
 output workbenchUrl string = 'https://${workbenchContainerApp.properties.configuration.ingress.fqdn}'
 output workerContainerAppName string = workerContainerApp.name
+output purchaseOrderRefreshJobName string = purchaseOrderRefreshJob.name

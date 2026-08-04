@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Pvm.Api.Auth;
 using Pvm.Application.Messaging;
+using Pvm.Infrastructure.Operations;
 using Pvm.Infrastructure.Persistence;
 
 namespace Pvm.Api.Features.IntegrationOperations;
@@ -102,16 +103,20 @@ public static class IntegrationOperationEndpoints
             new DiscoverAcumaticaInvoicesMessage(CurrentUser(currentUser)),
             cancellationToken);
 
-    private static Task<IResult> EnqueueShopriteRefreshAsync(
-        IIntegrationCommandQueue queue,
+    private static async Task<IResult> EnqueueShopriteRefreshAsync(
+        ShopritePurchaseOrderRefreshRunQueue runQueue,
         CurrentAppUserAccessor currentUser,
         CancellationToken cancellationToken)
-        => EnqueueAsync(
-            queue,
-            IntegrationQueues.ShopritePurchaseOrderRefresh,
-            IntegrationMessageTypes.ShopritePurchaseOrderRefreshV1,
-            new RefreshShopritePurchaseOrdersMessage(CurrentUser(currentUser)),
+    {
+        var queued = await runQueue.EnqueueAsync(
+            IntegrationRunTriggers.Manual,
+            CurrentUser(currentUser),
+            scheduleKey: null,
             cancellationToken);
+        return Results.Accepted(
+            $"/api/integration-runs/{queued.RunId:D}",
+            new { queued.RunId, queued.MessageId, queued.Created });
+    }
 
     private static async Task<IResult> EnqueueAsync<T>(
         IIntegrationCommandQueue queue,

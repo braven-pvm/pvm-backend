@@ -1,6 +1,6 @@
 # Shoprite Production Invoice Automation Plan
 
-Last updated: 2026-07-28
+Last updated: 2026-08-04
 
 Status: Approved for implementation on 2026-07-28
 
@@ -46,7 +46,7 @@ automatic retries, event delivery, backup recovery, or operational response.
 
 ## Implementation Progress
 
-As of 2026-08-03:
+As of 2026-08-04:
 
 - Slice 1 is complete and deployed: explicit EF migrations, persisted submission
   operations, concurrency constraints, frozen source/payload versions, stale-send
@@ -60,8 +60,14 @@ As of 2026-08-03:
 - The runtime verification used a deterministic PO-seeded candidate. The real
   Acumatica-source path was previously verified with `INV158888`; a combined
   post-archive real-Acumatica regression remains a pre-shadow gate.
-- Slice 3 is the active implementation slice. Production automation remains
-  disabled.
+- Slice 3 is complete, deployed, and runtime-verified in QA: Service Bus queues,
+  transactional outbox dispatch, worker consumers, redelivery handling, and
+  dead-letter metadata/read views are operational.
+- Slice 4 is implemented on `feature/scheduled-po-refresh-runs` and awaiting PR
+  review and QA deployment. It adds scheduled PO refresh commands, persisted
+  run records, unchanged-payload handling, changed-PO candidate revalidation,
+  freshness visibility, and a stale-refresh alert.
+- Automatic invoice submission remains disabled.
 
 ## Decisions
 
@@ -952,12 +958,10 @@ From PVM:
 
 ## Recommended Immediate Next Work
 
-Proceed with Slice 3: Service Bus and worker runtime.
-
-Slices 1 and 2 have established the submission safety and immutable evidence
-boundary. Add durable transport, outbox dispatch, worker consumers, and
-dead-letter operational metadata next. Do not add schedules, webhook ingestion,
-or enable automatic submission in this slice.
+Complete Slice 4 review and QA runtime verification using
+`docs/runbooks/shoprite-po-refresh-scheduler-qa.md`. After that gate, proceed to
+Slice 5: incremental Acumatica reconciliation. Do not enable automatic invoice
+submission during either verification step.
 
 ## References
 

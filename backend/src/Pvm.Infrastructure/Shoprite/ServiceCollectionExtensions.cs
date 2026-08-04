@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Pvm.Application.Shoprite;
 using Pvm.Application.Submissions;
+using Pvm.Infrastructure.Operations;
 
 namespace Pvm.Infrastructure.Shoprite;
 
@@ -45,6 +46,15 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(300);
         });
         services.AddScoped<ShopritePurchaseOrderRefreshService>();
+        services.AddScoped<ShopriteInvoiceCandidateRevalidationService>();
+        services.AddScoped<ShopritePurchaseOrderRefreshMessageHandler>();
+        services.AddOptions<ShopritePurchaseOrderRefreshOptions>()
+            .Bind(configuration.GetSection(ShopritePurchaseOrderRefreshOptions.SectionName))
+            .Validate(options => options.ScheduleIntervalMinutes >= 1,
+                "ShopritePoRefresh:ScheduleIntervalMinutes must be positive.")
+            .Validate(options => options.StaleAfterMinutes >= options.ScheduleIntervalMinutes,
+                "ShopritePoRefresh:StaleAfterMinutes must be at least the schedule interval.")
+            .ValidateOnStart();
 
         return services;
     }

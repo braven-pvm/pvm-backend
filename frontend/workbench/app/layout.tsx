@@ -6,8 +6,8 @@ import { isDevelopmentBypass } from "../src/auth/config";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PVM Invoice Workbench",
-  description: "Shoprite invoice submission workbench",
+  title: "PVM Integration Workbench",
+  description: "PVM integration operations workbench",
 };
 
 export default async function RootLayout({
@@ -27,12 +27,17 @@ export default async function RootLayout({
             PVM Workbench
           </Link>
           <nav aria-label="Primary navigation">
+            <Link href="/">Control Room</Link>
             <Link href="/invoices">Invoices</Link>
             <Link href="/purchase-orders">PO Inbox</Link>
+            <Link href="/runs">Runs</Link>
             <Link href="/admin/messages">Messages</Link>
             <Link href="/admin/users">Users</Link>
           </nav>
           <div className="user-chip">
+            <span className="environment-badge">
+              {process.env.NEXT_PUBLIC_PVM_ENVIRONMENT_NAME ?? "Development"}
+            </span>
             {session?.user?.email ? (
               <>
                 <span>{session.user.email}</span>

@@ -6,6 +6,7 @@ using Pvm.Infrastructure.Persistence.Repositories;
 using Pvm.Infrastructure.Shoprite;
 using Pvm.Application.Messaging;
 using Pvm.Infrastructure.Messaging;
+using Pvm.Infrastructure.Operations;
 
 namespace Pvm.Infrastructure.Persistence;
 
@@ -29,6 +30,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IIntegrationCommandQueue, IntegrationCommandQueue>();
         services.AddScoped<OutboxRepository>();
         services.AddScoped<IntegrationDeliveryRepository>();
+        services.AddScoped<IntegrationRunService>();
+        services.AddScoped<ShopritePurchaseOrderRefreshRunQueue>();
+        services.AddScoped<ShopritePurchaseOrderFreshnessService>();
         return services;
     }
 }

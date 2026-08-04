@@ -36,6 +36,8 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<IntegrationMessageDeliveryEntity> IntegrationMessageDeliveries => Set<IntegrationMessageDeliveryEntity>();
 
+    public DbSet<IntegrationRunEntity> IntegrationRuns => Set<IntegrationRunEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<InvoiceCandidateEntity>(entity =>
@@ -323,6 +325,26 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(delivery => delivery.ErrorCode).HasMaxLength(128);
             entity.Property(delivery => delivery.ErrorSummary).HasMaxLength(1024);
             entity.Property(delivery => delivery.DeadLetterReason).HasMaxLength(128);
+        });
+
+        modelBuilder.Entity<IntegrationRunEntity>(entity =>
+        {
+            entity.ToTable("integration_runs");
+            entity.HasKey(run => run.Id);
+            entity.HasIndex(run => run.ScheduleKey)
+                .IsUnique()
+                .HasFilter("\"ScheduleKey\" IS NOT NULL");
+            entity.HasIndex(run => new { run.RunType, run.Status, run.UpdatedAt });
+            entity.HasIndex(run => run.CorrelationId);
+            entity.Property(run => run.RunType).HasMaxLength(128);
+            entity.Property(run => run.Trigger).HasMaxLength(64);
+            entity.Property(run => run.InitiatedBy).HasMaxLength(320);
+            entity.Property(run => run.EnvironmentName).HasMaxLength(32);
+            entity.Property(run => run.CorrelationId).HasMaxLength(128);
+            entity.Property(run => run.ScheduleKey).HasMaxLength(128);
+            entity.Property(run => run.Status).HasMaxLength(32);
+            entity.Property(run => run.ErrorCode).HasMaxLength(128);
+            entity.Property(run => run.ErrorSummary).HasMaxLength(1024);
         });
     }
 }

@@ -1,6 +1,6 @@
 # Current Project Status
 
-Last updated: 2026-07-28
+Last updated: 2026-08-04
 
 ## Overall Status
 
@@ -12,9 +12,10 @@ On 2026-07-27 Shoprite confirmed that the submitted invoice was structurally
 sound, correct, and verified.
 
 The QA payload-contract milestone is complete for the tested normal-order
-scenario. Production automation Slices 1 and 2 are merged, deployed, and
-runtime-verified in QA. The project is ready for the Service Bus and worker
-runtime slice; it is not yet ready to enable automatic production submissions.
+scenario. Production automation Slices 1 through 3 are merged, deployed, and
+runtime-verified in QA. Slice 4 is implemented on its feature branch and awaits
+review and QA deployment. The project is not ready to enable automatic
+production submissions.
 
 ## Infrastructure Subscription (moved 2026-07-14)
 
@@ -51,10 +52,10 @@ Live estate check on 2026-08-03:
 
 ## Active Priority
 
-Implement Slice 3 of
-`docs/implementation-plans/shoprite-production-automation-plan.md`: Service Bus
-queues, worker runtime, transactional outbox, discovery/submission consumers,
-and dead-letter metadata/read views.
+Review, merge, and runtime-verify Slice 4 of
+`docs/implementation-plans/shoprite-production-automation-plan.md`: scheduled
+Shoprite PO refresh, persisted execution runs, changed-PO revalidation, and
+freshness monitoring. Then begin Slice 5, incremental Acumatica reconciliation.
 
 ## Why This Is Next
 
@@ -67,6 +68,9 @@ The current design says the Shoprite PO is the pivot between Acumatica and Shopr
 ## Current Implementation State
 
 Done:
+
+- Service Bus queues, transactional outbox dispatcher, worker consumers, and
+  dead-letter operational views deployed and verified in QA.
 
 - Shoprite `VendorOrder` HTTP client.
 - Shoprite VendorOrder JSON parser for PO headers, delivery location, and lines.
@@ -118,6 +122,7 @@ Done:
 - Admin-only invoice-line mapping action using an explicitly selected Shoprite
   PO line and Shoprite UOM.
 - Mapping audit events and immediate candidate revalidation.
+
 - Shared PO matching, mapping enrichment, and validation path for refresh and
   manual revalidation.
 - Explicit EF migration deployment with runtime schema creation removed.
@@ -133,13 +138,23 @@ Done:
 - Deployed seeded QA candidate `QA-INV-1212503708` returned HTTP `200`, created
   four verified blobs, and transitioned `Pending -> Sending -> Submitted`.
 
+Implemented, pending merge and QA deployment:
+
+- Five-minute Azure Container Apps scheduled job that writes a durable PO
+  refresh command through the shared outbox path.
+- Persisted integration-run lifecycle and counts for manual and scheduled PO
+  refreshes.
+- Idempotent scheduled windows and unchanged-payload handling without line-row
+  churn or duplication.
+- Changed-PO candidate revalidation.
+- Control Room, run history/detail, and PO freshness views.
+- Fifteen-minute stale threshold and Azure Monitor alert.
+
 Not done:
 
-- Service Bus queues and worker runtime.
 - Acumatica push-notification webhook and incremental reconciliation.
-- Scheduled Shoprite PO refresh.
 - Automation modes, allowlists, shadow mode, and kill switch.
-- Full production admin control plane and operational read models.
+- Remaining production admin controls beyond the Control Room/run visibility.
 - Separate production infrastructure and release pipeline.
 - Global mapping list/edit pages for GLN, GTIN, UOM, pack, tax, and connection
   settings. The MVP invoice-detail mapping action is implemented.
@@ -163,9 +178,9 @@ The approved architecture is:
 - Functional admin control plane for health, invoices, POs, exceptions, runs,
   mappings, automation, connections, audit, users, and emergency stop.
 
-The immediate implementation slice is Service Bus and worker runtime. Keep it
-transport-focused: no scheduler, webhook, automatic policy, or production send
-enablement belongs in Slice 3.
+The immediate gate is Slice 4 review and QA runtime verification. The next
+implementation slice is incremental Acumatica reconciliation. Automatic policy
+and production sending remain disabled.
 
 The admin console is specified in
 `docs/implementation-plans/integration-admin-console-plan.md`. Its read-only
@@ -181,6 +196,17 @@ Read:
 - `AGENTS.md`
 
 ## Verification Snapshot
+
+Slice 4 branch verification on 2026-08-04:
+
+- Backend: 111 tests passed (12 domain, 20 application, 74 infrastructure,
+  5 API), including explicit Azurite and Testcontainers-backed checks.
+- Workbench lint, 2 tests, and production build passed.
+- `az bicep build --file infra/azure/main.bicep` passed.
+- The production worker image built successfully; its one-shot scheduler command
+  queued a persisted run/outbox message and exited cleanly without the previous
+  `libgssapi` warning.
+- QA deployment and runtime scheduler/alert evidence remain pending.
 
 Mapping slice verification on 2026-07-24:
 

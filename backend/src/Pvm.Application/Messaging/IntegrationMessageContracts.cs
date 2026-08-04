@@ -24,7 +24,10 @@ public sealed record IntegrationMessageEnvelope(
     DateTimeOffset CreatedAt,
     JsonElement Data);
 
-public sealed record RefreshShopritePurchaseOrdersMessage(string RequestedBy);
+public sealed record RefreshShopritePurchaseOrdersMessage(
+    string RequestedBy,
+    Guid? RunId = null,
+    string Trigger = IntegrationRunTriggers.Manual);
 
 public sealed record DiscoverAcumaticaInvoicesMessage(string RequestedBy);
 
@@ -44,4 +47,23 @@ public interface IIntegrationCommandQueue
         string? causationId = null,
         Guid? messageId = null,
         CancellationToken cancellationToken = default);
+}
+
+public static class IntegrationRunTypes
+{
+    public const string ShopritePurchaseOrderRefresh = "shoprite-po-refresh";
+}
+
+public static class IntegrationRunTriggers
+{
+    public const string Manual = "manual";
+    public const string Scheduled = "scheduled";
+}
+
+public static class IntegrationRunStatuses
+{
+    public const string Accepted = "Accepted";
+    public const string Running = "Running";
+    public const string Succeeded = "Succeeded";
+    public const string Failed = "Failed";
 }

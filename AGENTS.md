@@ -22,7 +22,7 @@ Use `.agents/skills/overseer/SKILL.md` for status, planning, readiness, review, 
 
 ## Current Ground Truth
 
-As of 2026-08-03:
+As of 2026-08-04:
 
 - Azure is locked in and the QA estate is provisioned or provisionable.
 - The active QA estate is in CSP subscription `Azure subscription 1`
@@ -40,7 +40,8 @@ As of 2026-08-03:
   submission is not enabled.
 - The production automation plan is approved. A functional Admin console is a
   required release gate, with Admin retaining full controlled access.
-- Production automation Slices 1 and 2 are merged and deployed to QA.
+- Production automation Slices 1 through 3 are merged, deployed, and
+  runtime-verified in QA.
 - Explicit migrations, the concurrency-safe submission-operation state machine,
   immutable payload archiving, hash verification, and transition audit are
   operational.
@@ -61,17 +62,12 @@ As of 2026-08-03:
 
 ## Active Next Slice
 
-Read `docs/implementation-plans/shoprite-production-automation-plan.md`, then
-implement Slice 3:
-
-1. Add the Service Bus queues and managed-identity roles in Bicep.
-2. Add the worker project and container deployment.
-3. Add a transactional PostgreSQL outbox and dispatcher.
-4. Add discovery and submission consumers around the existing application
-   command paths.
-5. Persist delivery and dead-letter metadata for operational read views.
-6. Prove redelivery safety, worker restart recovery, and actionable poison-message
-   dead lettering without enabling production automation.
+Slice 4, scheduled Shoprite PO refresh and persisted run visibility, is
+implemented on `feature/scheduled-po-refresh-runs`. Review it, merge it only
+after approval, and verify it in QA with
+`docs/runbooks/shoprite-po-refresh-scheduler-qa.md`. Then implement Slice 5,
+incremental Acumatica reconciliation. Automatic invoice submission remains
+disabled.
 
 ## Verification
 

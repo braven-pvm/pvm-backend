@@ -51,9 +51,10 @@ export async function saveInvoiceLineMappingAction(formData: FormData) {
 }
 
 export async function refreshPurchaseOrdersAction() {
-  await refreshPurchaseOrders();
+  const run = await refreshPurchaseOrders();
   revalidatePath("/purchase-orders");
-  redirect("/purchase-orders");
+  revalidatePath("/runs");
+  redirect(`/runs/${run.runId}`);
 }
 
 export async function seedInvoiceFromPurchaseOrderAction(formData: FormData) {

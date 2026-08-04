@@ -1,9 +1,8 @@
 using System.Text.Json;
 using Pvm.Application.Messaging;
-using Pvm.Application.Shoprite;
 using Pvm.Application.Submissions;
 using Pvm.Infrastructure.Acumatica;
-using Pvm.Infrastructure.Shoprite;
+using Pvm.Infrastructure.Operations;
 
 namespace Pvm.Infrastructure.Messaging;
 
@@ -21,8 +20,7 @@ public sealed record MessageProcessingResult(
 
 public sealed class IntegrationMessageProcessor(
     IntegrationDeliveryRepository deliveryRepository,
-    IShopritePurchaseOrderClient purchaseOrderClient,
-    ShopritePurchaseOrderRefreshService purchaseOrderRefreshService,
+    ShopritePurchaseOrderRefreshMessageHandler purchaseOrderRefreshHandler,
     AcumaticaInvoiceCandidateRefreshService acumaticaRefreshService,
     SubmitShopriteInvoiceHandler submitHandler)
 {
@@ -131,10 +129,9 @@ public sealed class IntegrationMessageProcessor(
         switch (envelope.MessageType)
         {
             case IntegrationMessageTypes.ShopritePurchaseOrderRefreshV1:
-                _ = envelope.Data.Deserialize<RefreshShopritePurchaseOrdersMessage>(SerializerOptions)
+                var refreshCommand = envelope.Data.Deserialize<RefreshShopritePurchaseOrdersMessage>(SerializerOptions)
                     ?? throw new JsonException("Shoprite refresh data is required.");
-                var batch = await purchaseOrderClient.FetchAsync(cancellationToken);
-                await purchaseOrderRefreshService.RefreshAsync(batch, DateTimeOffset.UtcNow, cancellationToken);
+                await purchaseOrderRefreshHandler.HandleAsync(envelope, refreshCommand, cancellationToken);
                 return null;
 
             case IntegrationMessageTypes.AcumaticaInvoiceDiscoveryV1:

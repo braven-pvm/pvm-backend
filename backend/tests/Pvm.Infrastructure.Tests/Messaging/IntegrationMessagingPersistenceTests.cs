@@ -102,7 +102,6 @@ public sealed class IntegrationMessagingPersistenceTests : IAsyncLifetime
             new IntegrationDeliveryRepository(db),
             null!,
             null!,
-            null!,
             null!);
 
         var result = await processor.ProcessAsync(
