@@ -7,7 +7,8 @@ Current delivery focus:
 - Acumatica Cloud ERP 2025 R2 integration paths.
 - Shoprite REST Web Services V9.3 invoice upload.
 - Production-safe Shoprite invoice automation.
-- Service Bus worker, outbox, dead-letter, and operational read models.
+- Scheduled PO refresh, Service Bus worker, outbox, dead-letter, and operational
+  read models.
 - Functional integration Admin console and controlled rollout.
 
 ## Local Quickstart

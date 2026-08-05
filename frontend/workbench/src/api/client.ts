@@ -155,12 +155,60 @@ export type PurchaseOrderDetail = PurchaseOrderSummary & {
   rawOrderJson?: Nullable<string>;
 };
 
-export type PurchaseOrderRefreshResult = {
-  received: number;
-  created: number;
-  updated: number;
-  skipped: number;
-  refreshedAt: string;
+export type QueuedIntegrationRun = {
+  runId: string;
+  messageId: string;
+  created: boolean;
+  statusUrl?: string;
+};
+
+export type ShopritePurchaseOrderFreshness = {
+  status: "Healthy" | "Stale" | "Unknown";
+  lastSuccessfulRefreshAt?: Nullable<string>;
+  ageMinutes?: Nullable<number>;
+  staleAfterMinutes: number;
+  allowsAutomaticProcessing: boolean;
+};
+
+export type IntegrationRun = {
+  id: string;
+  runType: string;
+  trigger: string;
+  initiatedBy: string;
+  environmentName: string;
+  correlationId: string;
+  messageId?: Nullable<string>;
+  status: string;
+  attemptCount: number;
+  receivedCount: number;
+  createdCount: number;
+  updatedCount: number;
+  unchangedCount: number;
+  skippedCount: number;
+  revalidatedCount: number;
+  failedCount: number;
+  errorCode?: Nullable<string>;
+  errorSummary?: Nullable<string>;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: Nullable<string>;
+  completedAt?: Nullable<string>;
+};
+
+export type OperationsSummary = {
+  environmentName: string;
+  automationMode: string;
+  generatedAt: string;
+  purchaseOrderFreshness: ShopritePurchaseOrderFreshness;
+  summary: {
+    activeRuns: number;
+    failedRuns: number;
+    pendingMessages: number;
+    deadLetters: number;
+    candidateInvoices: number;
+    needsReview: number;
+  };
+  latestRuns: IntegrationRun[];
 };
 
 export type IntegrationMessageView = {
@@ -351,7 +399,7 @@ export async function getPurchaseOrder(id: string): Promise<PurchaseOrderDetail>
   return response.json();
 }
 
-export async function refreshPurchaseOrders(): Promise<PurchaseOrderRefreshResult> {
+export async function refreshPurchaseOrders(): Promise<QueuedIntegrationRun> {
   const headers = await getApiAuthHeaders();
   const response = await fetch(`${apiBaseUrl}/api/shoprite/purchase-orders/refresh`, {
     method: "POST",
@@ -361,6 +409,62 @@ export async function refreshPurchaseOrders(): Promise<PurchaseOrderRefreshResul
 
   if (!response.ok) {
     throw new Error(`Failed to refresh Shoprite purchase orders: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getPurchaseOrderFreshness(): Promise<ShopritePurchaseOrderFreshness> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(
+    `${apiBaseUrl}/api/shoprite/purchase-orders/freshness`,
+    { headers, cache: "no-store" },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to load PO freshness: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getIntegrationRuns(): Promise<IntegrationRun[]> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(`${apiBaseUrl}/api/integration-runs`, {
+    headers,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load integration runs: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getIntegrationRun(id: string): Promise<IntegrationRun> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(`${apiBaseUrl}/api/integration-runs/${id}`, {
+    headers,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load integration run: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getOperationsSummary(): Promise<OperationsSummary> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(`${apiBaseUrl}/api/operations/summary`, {
+    headers,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load operations summary: ${response.status}`);
   }
 
   return response.json();

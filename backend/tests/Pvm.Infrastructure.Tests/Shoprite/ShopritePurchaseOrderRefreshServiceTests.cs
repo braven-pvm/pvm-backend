@@ -49,6 +49,7 @@ public sealed class ShopritePurchaseOrderRefreshServiceTests : IAsyncLifetime
         Assert.Equal(1, result.Received);
         Assert.Equal(0, result.Created);
         Assert.Equal(1, result.Updated);
+        Assert.Equal(0, result.Unchanged);
         Assert.Equal(0, result.Skipped);
 
         await using var assertionDb = CreateDbContext();
@@ -60,6 +61,31 @@ public sealed class ShopritePurchaseOrderRefreshServiceTests : IAsyncLifetime
             .OrderBy(line => line.LineNumber)
             .Select(line => line.Gtin ?? string.Empty)
             .ToArray());
+    }
+
+    [Fact]
+    public async Task RefreshAsync_IdenticalPayloadKeepsExistingLinesAndReportsUnchanged()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        var service = new ShopritePurchaseOrderRefreshService(db);
+        var batch = NewBatch("1210297232");
+
+        var first = await service.RefreshAsync(
+            batch,
+            new DateTimeOffset(2026, 8, 4, 8, 0, 0, TimeSpan.Zero),
+            CancellationToken.None);
+        var secondSeenAt = new DateTimeOffset(2026, 8, 4, 8, 5, 0, TimeSpan.Zero);
+        var second = await service.RefreshAsync(batch, secondSeenAt, CancellationToken.None);
+
+        Assert.Equal(1, first.Created);
+        Assert.Equal(0, second.Created);
+        Assert.Equal(0, second.Updated);
+        Assert.Equal(1, second.Unchanged);
+        Assert.Empty(second.ChangedPurchaseOrderNumbers);
+        Assert.Equal(1, await db.ShopritePurchaseOrders.CountAsync());
+        Assert.Equal(2, await db.ShopritePurchaseOrderLines.CountAsync());
+        Assert.Equal(secondSeenAt, (await db.ShopritePurchaseOrders.SingleAsync()).LastSeenAt);
     }
 
     private PvmDbContext CreateDbContext()

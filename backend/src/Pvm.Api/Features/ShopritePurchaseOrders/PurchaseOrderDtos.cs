@@ -1,11 +1,10 @@
 namespace Pvm.Api.Features.ShopritePurchaseOrders;
 
 public sealed record PurchaseOrderRefreshResponse(
-    int Received,
-    int Created,
-    int Updated,
-    int Skipped,
-    DateTimeOffset RefreshedAt);
+    Guid RunId,
+    Guid MessageId,
+    bool Created,
+    string StatusUrl);
 
 public sealed record PurchaseOrderSummaryResponse(
     Guid Id,

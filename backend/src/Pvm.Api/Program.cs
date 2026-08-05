@@ -4,6 +4,7 @@ using Pvm.Api.Features.Admin;
 using Pvm.Api.Features.Auth;
 using Pvm.Api.Features.Invoices;
 using Pvm.Api.Features.IntegrationOperations;
+using Pvm.Api.Features.Operations;
 using Pvm.Api.Features.ShopritePurchaseOrders;
 using Pvm.Api.Features.Submissions;
 using Pvm.Application.Submissions;
@@ -48,6 +49,7 @@ app.MapPurchaseOrderEndpoints();
 app.MapAdminUserEndpoints();
 app.MapAuthEndpoints();
 app.MapIntegrationOperationEndpoints();
+app.MapIntegrationRunEndpoints();
 
 app.Run();
 

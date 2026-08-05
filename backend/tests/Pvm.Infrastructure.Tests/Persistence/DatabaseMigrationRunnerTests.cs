@@ -23,13 +23,14 @@ public sealed class DatabaseMigrationRunnerTests : IAsyncLifetime
         await DatabaseMigrationRunner.MigrateAsync(db);
 
         var applied = await db.Database.GetAppliedMigrationsAsync();
-        Assert.Equal(4, applied.Count());
+        Assert.Equal(5, applied.Count());
         Assert.Contains(DatabaseMigrationRunner.LegacyBaselineMigration, applied);
         Assert.True(await TableExistsAsync(db, "submission_operations"));
         Assert.True(await TableExistsAsync(db, "payload_archives"));
         Assert.True(await TableExistsAsync(db, "submission_operation_transitions"));
         Assert.True(await TableExistsAsync(db, "integration_outbox_messages"));
         Assert.True(await TableExistsAsync(db, "integration_message_deliveries"));
+        Assert.True(await TableExistsAsync(db, "integration_runs"));
     }
 
     [Fact]
@@ -53,7 +54,8 @@ public sealed class DatabaseMigrationRunnerTests : IAsyncLifetime
         Assert.True(await TableExistsAsync(db, "submission_operation_transitions"));
         Assert.True(await TableExistsAsync(db, "integration_outbox_messages"));
         Assert.True(await TableExistsAsync(db, "integration_message_deliveries"));
-        Assert.Equal(4, (await db.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.True(await TableExistsAsync(db, "integration_runs"));
+        Assert.Equal(5, (await db.Database.GetAppliedMigrationsAsync()).Count());
     }
 
     private PvmDbContext CreateDbContext()

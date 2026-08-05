@@ -1,8 +1,10 @@
 using System.Text.Json;
 using Pvm.Api.Features.Invoices.Models;
 using Microsoft.EntityFrameworkCore;
-using Pvm.Application.Shoprite;
+using Pvm.Api.Auth;
+using Pvm.Application.Messaging;
 using Pvm.Domain.Validation;
+using Pvm.Infrastructure.Operations;
 using Pvm.Infrastructure.Persistence;
 using Pvm.Infrastructure.Persistence.Entities;
 using Pvm.Infrastructure.Shoprite;
@@ -20,6 +22,8 @@ public static class PurchaseOrderEndpoints
         group.MapGet("/", ListPurchaseOrdersAsync)
             .RequireAuthorization("Invoices.Read");
         group.MapGet("/{id:guid}", GetPurchaseOrderAsync)
+            .RequireAuthorization("Invoices.Read");
+        group.MapGet("/freshness", GetFreshnessAsync)
             .RequireAuthorization("Invoices.Read");
         group.MapPost("/refresh", RefreshPurchaseOrdersAsync)
             .RequireAuthorization("Invoices.Write");
@@ -67,37 +71,29 @@ public static class PurchaseOrderEndpoints
     }
 
     private static async Task<IResult> RefreshPurchaseOrdersAsync(
-        IShopritePurchaseOrderClient purchaseOrderClient,
-        ShopritePurchaseOrderRefreshService purchaseOrderRefreshService,
-        PvmDbContext dbContext,
+        ShopritePurchaseOrderRefreshRunQueue runQueue,
+        CurrentAppUserAccessor currentUser,
         CancellationToken cancellationToken)
     {
-        ShopritePurchaseOrderBatch batch;
-        try
-        {
-            batch = await purchaseOrderClient.FetchAsync(cancellationToken);
-        }
-        catch (InvalidOperationException exception)
-        {
-            return Results.Problem(exception.Message, statusCode: StatusCodes.Status502BadGateway);
-        }
-        catch (HttpRequestException)
-        {
-            return Results.Problem("Shoprite VendorOrder request failed.", statusCode: StatusCodes.Status502BadGateway);
-        }
-
-        var result = await purchaseOrderRefreshService.RefreshAsync(
-            batch,
-            DateTimeOffset.UtcNow,
+        var queued = await runQueue.EnqueueAsync(
+            IntegrationRunTriggers.Manual,
+            currentUser.User?.Email ?? "unknown",
+            scheduleKey: null,
             cancellationToken);
-
-        return Results.Ok(new PurchaseOrderRefreshResponse(
-            result.Received,
-            result.Created,
-            result.Updated,
-            result.Skipped,
-            result.RefreshedAt));
+        var statusUrl = $"/api/integration-runs/{queued.RunId:D}";
+        return Results.Accepted(
+            statusUrl,
+            new PurchaseOrderRefreshResponse(
+                queued.RunId,
+                queued.MessageId,
+                queued.Created,
+                statusUrl));
     }
+
+    private static async Task<IResult> GetFreshnessAsync(
+        ShopritePurchaseOrderFreshnessService freshnessService,
+        CancellationToken cancellationToken)
+        => Results.Ok(await freshnessService.GetAsync(DateTimeOffset.UtcNow, cancellationToken));
 
     private static async Task<IResult> SeedTestInvoiceAsync(
         Guid id,

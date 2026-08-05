@@ -1,13 +1,16 @@
 import Link from "next/link";
 import { refreshPurchaseOrdersAction } from "../actions";
-import { getPurchaseOrders } from "../../src/api/client";
+import { getPurchaseOrderFreshness, getPurchaseOrders } from "../../src/api/client";
 import { hasAnyRole, requireWorkbenchUser } from "../../src/auth/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function PurchaseOrdersPage() {
   const user = await requireWorkbenchUser("/purchase-orders");
-  const purchaseOrders = await getPurchaseOrders();
+  const [purchaseOrders, freshness] = await Promise.all([
+    getPurchaseOrders(),
+    getPurchaseOrderFreshness(),
+  ]);
   const canWrite = hasAnyRole(user, ["Admin", "Operator"]);
   const normalCount = purchaseOrders.filter((order) => order.orderTypeCode === "220").length;
   const allocationCount = purchaseOrders.filter((order) => order.orderTypeCode === "258").length;
@@ -45,9 +48,20 @@ export default async function PurchaseOrdersPage() {
           <strong>{normalCount}</strong>
         </div>
         <div>
-          <span>Allocation orders</span>
-          <strong>{allocationCount}</strong>
+          <span>PO data freshness</span>
+          <strong className="metric-text">{freshness.status}</strong>
+          <small>
+            {freshness.lastSuccessfulRefreshAt
+              ? new Date(freshness.lastSuccessfulRefreshAt).toLocaleString()
+              : "No successful refresh"}
+          </small>
         </div>
+      </section>
+
+      <section className="compact-stats" aria-label="Purchase order type counts">
+        <span>Normal: <strong>{normalCount}</strong></span>
+        <span>Allocation: <strong>{allocationCount}</strong></span>
+        <span>Stale threshold: <strong>{freshness.staleAfterMinutes} min</strong></span>
       </section>
 
       <section className="table-panel" aria-label="Shoprite purchase orders">

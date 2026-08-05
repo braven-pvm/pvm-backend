@@ -24,28 +24,23 @@ public sealed class ShopritePurchaseOrderRefreshService(PvmDbContext dbContext)
             .Where(order => orderNumbers.Contains(order.PurchaseOrderNumber))
             .ToDictionaryAsync(order => order.PurchaseOrderNumber, StringComparer.OrdinalIgnoreCase, cancellationToken);
 
-        var existingOrderIds = existing.Values
-            .Select(order => order.Id)
-            .ToArray();
-        if (existingOrderIds.Length > 0)
-        {
-            await dbContext.ShopritePurchaseOrderLines
-                .Where(line => existingOrderIds.Contains(line.ShopritePurchaseOrderId))
-                .ExecuteDeleteAsync(cancellationToken);
-        }
-
         var created = 0;
         var updated = 0;
+        var unchanged = 0;
         var skipped = 0;
+        var changedPurchaseOrderNumbers = new List<string>();
+        var processedOrderNumbers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var sourceOrder in batch.Orders)
         {
-            if (string.IsNullOrWhiteSpace(sourceOrder.PurchaseOrderNumber))
+            if (string.IsNullOrWhiteSpace(sourceOrder.PurchaseOrderNumber)
+                || !processedOrderNumbers.Add(sourceOrder.PurchaseOrderNumber))
             {
                 skipped++;
                 continue;
             }
 
+            var payloadHash = Sha256(sourceOrder.RawOrderJson);
             if (!existing.TryGetValue(sourceOrder.PurchaseOrderNumber, out var entity))
             {
                 entity = new ShopritePurchaseOrderEntity
@@ -60,13 +55,24 @@ public sealed class ShopritePurchaseOrderRefreshService(PvmDbContext dbContext)
                 dbContext.ShopritePurchaseOrders.Add(entity);
                 existing[sourceOrder.PurchaseOrderNumber] = entity;
                 created++;
+                changedPurchaseOrderNumbers.Add(sourceOrder.PurchaseOrderNumber);
+            }
+            else if (string.Equals(entity.PayloadHash, payloadHash, StringComparison.OrdinalIgnoreCase))
+            {
+                entity.LastSeenAt = seenAt;
+                unchanged++;
+                continue;
             }
             else
             {
+                await dbContext.ShopritePurchaseOrderLines
+                    .Where(line => line.ShopritePurchaseOrderId == entity.Id)
+                    .ExecuteDeleteAsync(cancellationToken);
                 updated++;
+                changedPurchaseOrderNumbers.Add(sourceOrder.PurchaseOrderNumber);
             }
 
-            Apply(sourceOrder, entity, seenAt);
+            Apply(sourceOrder, entity, seenAt, payloadHash);
             AddLines(sourceOrder, entity.Id);
         }
 
@@ -76,14 +82,17 @@ public sealed class ShopritePurchaseOrderRefreshService(PvmDbContext dbContext)
             Received: batch.Orders.Count,
             Created: created,
             Updated: updated,
+            Unchanged: unchanged,
             Skipped: skipped,
-            RefreshedAt: seenAt);
+            RefreshedAt: seenAt,
+            ChangedPurchaseOrderNumbers: changedPurchaseOrderNumbers);
     }
 
     private static void Apply(
         ShopritePurchaseOrder source,
         ShopritePurchaseOrderEntity entity,
-        DateTimeOffset seenAt)
+        DateTimeOffset seenAt,
+        string payloadHash)
     {
         entity.OrderHeaderId = source.OrderHeaderId;
         entity.OrderTypeCode = source.OrderTypeCode;
@@ -98,7 +107,7 @@ public sealed class ShopritePurchaseOrderRefreshService(PvmDbContext dbContext)
         entity.TotalExcludingTax = source.TotalExcludingTax;
         entity.TotalIncludingTax = source.TotalIncludingTax;
         entity.TotalTax = source.TotalTax;
-        entity.PayloadHash = Sha256(source.RawOrderJson);
+        entity.PayloadHash = payloadHash;
         entity.RawOrderJson = source.RawOrderJson;
         entity.ShopriteCreatedAt = source.CreatedAt;
         entity.ShopriteLastUpdatedAt = source.LastUpdatedAt;
@@ -140,5 +149,7 @@ public sealed record ShopritePurchaseOrderRefreshResult(
     int Received,
     int Created,
     int Updated,
+    int Unchanged,
     int Skipped,
-    DateTimeOffset RefreshedAt);
+    DateTimeOffset RefreshedAt,
+    IReadOnlyList<string> ChangedPurchaseOrderNumbers);

@@ -152,6 +152,7 @@ module platform 'modules/platform.bicep' = {
     location: location
     environmentName: environmentName
     ownerObjectId: ownerObjectId
+    alertEmail: alertEmail
     postgresAdminPassword: postgresAdminPassword
     apiImageTag: apiImageTag
     workbenchImageTag: workbenchImageTag
@@ -230,5 +231,6 @@ output storageAccountName string = platform.outputs.storageAccountName
 output serviceBusNamespaceName string = platform.outputs.serviceBusNamespaceName
 output userAssignedIdentityId string = platform.outputs.userAssignedIdentityId
 output workerContainerAppName string = platform.outputs.workerContainerAppName
+output purchaseOrderRefreshJobName string = platform.outputs.purchaseOrderRefreshJobName
 output apiUrl string = platform.outputs.apiUrl
 output workbenchUrl string = platform.outputs.workbenchUrl
