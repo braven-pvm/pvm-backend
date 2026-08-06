@@ -56,8 +56,15 @@ Confirm that:
 - automatic processing remains disallowed while stale; and
 - the Azure Monitor alert reaches the configured operations email.
 
+The alert evaluates every five minutes. It searches the previous day for the
+most recent successful PO refresh and fires when that timestamp is more than 15
+minutes old. Allow up to one evaluation interval plus normal Azure Monitor log
+ingestion latency after crossing the 15-minute boundary.
+
 Restore the valid configuration, run a manual refresh, and confirm freshness
-returns to `Healthy` and the alert resolves.
+returns to `Healthy`. The stateful alert resolves after three healthy five-minute
+evaluations; this is Azure Monitor's resolution period for a five-minute log
+alert.
 
 ## Evidence to Retain
 
