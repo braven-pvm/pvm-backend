@@ -877,7 +877,7 @@ resource stalePurchaseOrderRefreshAlert 'Microsoft.Insights/scheduledQueryRules@
     criteria: {
       allOf: [
         {
-          query: 'ContainerAppConsoleLogs_CL | where ContainerAppName_s == \'${workerContainerAppName}\' | where Log_s contains "integration.run.completed" | where Log_s contains "RunType=shoprite-po-refresh" | summarize SuccessfulRefreshes = count() | where SuccessfulRefreshes == 0'
+          query: 'let SuccessfulRefreshes = toscalar(ContainerAppConsoleLogs_CL | where TimeGenerated > ago(15m) | where ContainerAppName_s == \'${workerContainerAppName}\' | where Log_s contains "integration.run.completed" | where Log_s contains "RunType=shoprite-po-refresh" | summarize count()); print TimeGenerated=now(), SuccessfulRefreshes=SuccessfulRefreshes | where SuccessfulRefreshes == 0'
           timeAggregation: 'Count'
           operator: 'GreaterThan'
           threshold: 0
