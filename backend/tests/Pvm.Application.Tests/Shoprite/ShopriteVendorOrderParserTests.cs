@@ -1,9 +1,31 @@
+using System.Text.Json;
 using Pvm.Application.Shoprite;
 
 namespace Pvm.Application.Tests.Shoprite;
 
 public sealed class ShopriteVendorOrderParserTests
 {
+    [Fact]
+    public void Parse_TreatsNoDownloadableOrdersMessageAsEmptyBatch()
+    {
+        const string payload = "\"No downloadable Orders for Current User: PVMQA\"";
+
+        var batch = ShopriteVendorOrderParser.Parse(payload);
+
+        Assert.Empty(batch.Orders);
+        Assert.Equal(payload, batch.RawPayload);
+    }
+
+    [Fact]
+    public void Parse_RejectsUnexpectedStringPayload()
+    {
+        const string payload = "\"Unexpected Shoprite response\"";
+
+        var exception = Assert.Throws<JsonException>(() => ShopriteVendorOrderParser.Parse(payload));
+
+        Assert.Equal("Shoprite VendorOrder returned an unexpected string payload.", exception.Message);
+    }
+
     [Fact]
     public void Parse_ExtractsPurchaseOrderHeaderDeliveryLocationAndLines()
     {

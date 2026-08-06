@@ -10,6 +10,19 @@ public static class ShopriteVendorOrderParser
         using var document = JsonDocument.Parse(rawPayload);
         var root = document.RootElement;
 
+        if (root.ValueKind == JsonValueKind.String)
+        {
+            var message = root.GetString();
+            if (message?.StartsWith(
+                    "No downloadable Orders for Current User",
+                    StringComparison.OrdinalIgnoreCase) == true)
+            {
+                return new ShopritePurchaseOrderBatch(rawPayload, []);
+            }
+
+            throw new JsonException("Shoprite VendorOrder returned an unexpected string payload.");
+        }
+
         if (!root.TryGetProperty("orderField", out var orderField))
         {
             return new ShopritePurchaseOrderBatch(rawPayload, []);
