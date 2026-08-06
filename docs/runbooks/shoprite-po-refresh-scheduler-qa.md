@@ -57,9 +57,11 @@ Confirm that:
 - the Azure Monitor alert reaches the configured operations email.
 
 The alert evaluates every five minutes. It searches the previous day for the
-most recent successful PO refresh and fires when that timestamp is more than 15
-minutes old. Allow up to one evaluation interval plus normal Azure Monitor log
-ingestion latency after crossing the 15-minute boundary.
+most recent successful PO refresh and emits a numeric stale signal on every
+evaluation: `0` while healthy and `1` when the timestamp is more than 15 minutes
+old or no success exists in the lookback. The explicit healthy signal is needed
+for reliable stateful alert resolution. Allow up to one evaluation interval
+plus normal Azure Monitor log ingestion latency after crossing the boundary.
 
 Restore the valid configuration, run a manual refresh, and confirm freshness
 returns to `Healthy`. The stateful alert resolves after three healthy five-minute
