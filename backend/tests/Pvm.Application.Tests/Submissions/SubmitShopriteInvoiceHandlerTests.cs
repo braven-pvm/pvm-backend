@@ -225,6 +225,28 @@ public sealed class SubmitShopriteInvoiceHandlerTests
     }
 
     [Fact]
+    public async Task Archive_race_returns_the_winning_operation_state_instead_of_failure()
+    {
+        var repository = new FakeInvoiceCandidateRepository
+        {
+            Invoice = ValidInvoice(),
+            ValidationResult = new ValidationResult([]),
+            HasMatchedPurchaseOrder = true,
+            SimulateArchiveRace = true
+        };
+        var shopriteClient = new FakeShopriteInvoiceClient();
+        var handler = new SubmitShopriteInvoiceHandler(
+            repository,
+            shopriteClient,
+            new FakePayloadArchive());
+
+        var result = await handler.HandleAsync(Command, CancellationToken.None);
+
+        Assert.Equal(SubmitShopriteInvoiceStatus.InProgress, result.Status);
+        Assert.Equal(0, shopriteClient.SubmitCallCount);
+    }
+
+    [Fact]
     public async Task Response_archive_failure_after_send_is_marked_ambiguous()
     {
         var repository = new FakeInvoiceCandidateRepository
@@ -296,6 +318,7 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         public bool PreparedPayloadsRecordedBeforeStart { get; private set; }
         public bool StartWasCalled { get; private set; }
         public bool ArchiveFailureWasMarkedAmbiguous { get; private set; }
+        public bool SimulateArchiveRace { get; init; }
 
         public Task<InvoiceSubmissionSnapshot?> GetSubmissionSnapshotAsync(
             Guid invoiceCandidateId,
@@ -364,6 +387,14 @@ public sealed class SubmitShopriteInvoiceHandlerTests
             lock (_sync)
             {
                 var item = _operations.Single(pair => pair.Value.Operation.Id == submissionOperationId);
+                if (SimulateArchiveRace)
+                {
+                    _operations[item.Key] = (
+                        item.Value.Request,
+                        item.Value.Operation with { State = SubmissionOperationState.Sending });
+                    throw new InvalidOperationException("The winning command already started sending.");
+                }
+
                 _operations[item.Key] = (
                     item.Value.Request,
                     item.Value.Operation with { PayloadArchives = payloads.ToArray() });
