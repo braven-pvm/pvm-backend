@@ -196,8 +196,36 @@ public sealed class AcumaticaInvoiceCandidateRefreshServiceTests : IAsyncLifetim
         var second = await service.RefreshAsync(CancellationToken.None);
 
         Assert.Equal(0, second.Created);
-        Assert.Equal(1, second.Updated);
+        Assert.Equal(0, second.Updated);
+        Assert.Equal(1, second.Unchanged);
         Assert.Equal(1, await db.InvoiceCandidates.CountAsync());
+    }
+
+    [Fact]
+    public async Task RefreshAsync_LaterSourceVersionUpdatesExistingCandidateWithoutDuplicate()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        db.ShopritePurchaseOrders.Add(NewPurchaseOrder());
+        await db.SaveChangesAsync();
+        var original = NewInvoice();
+        var matcher = new ShopriteInvoiceCandidateMatcher(db);
+        await new AcumaticaInvoiceCandidateRefreshService(
+            new StubInvoiceClient([original]),
+            db,
+            matcher).RefreshAsync(CancellationToken.None);
+        var changedAt = original.LastModifiedAt!.Value.AddMinutes(1);
+
+        var result = await new AcumaticaInvoiceCandidateRefreshService(
+            new StubInvoiceClient([original with { LastModifiedAt = changedAt }]),
+            db,
+            matcher).RefreshAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.Created);
+        Assert.Equal(1, result.Updated);
+        Assert.Equal(0, result.Unchanged);
+        var candidate = await db.InvoiceCandidates.SingleAsync();
+        Assert.Equal(changedAt, candidate.SourceLastModifiedAt);
     }
 
     private PvmDbContext CreateDbContext()
@@ -238,7 +266,8 @@ public sealed class AcumaticaInvoiceCandidateRefreshServiceTests : IAsyncLifetim
                     TaxCategoryCode: "STANDARD",
                     TaxPercentage: 15m,
                     IsCatchWeight: false)
-            ]);
+            ],
+            LastModifiedAt: new DateTimeOffset(2026, 7, 24, 14, 48, 44, TimeSpan.FromHours(2)));
 
     private static ShopritePurchaseOrderEntity NewPurchaseOrder()
     {
@@ -276,7 +305,13 @@ public sealed class AcumaticaInvoiceCandidateRefreshServiceTests : IAsyncLifetim
         : IAcumaticaInvoiceClient
     {
         public Task<IReadOnlyList<AcumaticaInvoiceDto>> FetchFinalizedInvoicesAsync(
+            AcumaticaInvoiceQuery? query,
             CancellationToken cancellationToken)
             => Task.FromResult(invoices);
+
+        public Task<AcumaticaInvoiceDto?> FetchFinalizedInvoiceAsync(
+            string invoiceId,
+            CancellationToken cancellationToken)
+            => Task.FromResult(invoices.SingleOrDefault(invoice => invoice.Id == invoiceId));
     }
 }

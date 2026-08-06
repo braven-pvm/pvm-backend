@@ -52,10 +52,14 @@ public static class IntegrationRunEndpoints
     private static async Task<IResult> GetSummaryAsync(
         PvmDbContext dbContext,
         ShopritePurchaseOrderFreshnessService freshnessService,
+        AcumaticaInvoiceReconciliationFreshnessService reconciliationFreshnessService,
         IConfiguration configuration,
         CancellationToken cancellationToken)
     {
         var freshness = await freshnessService.GetAsync(DateTimeOffset.UtcNow, cancellationToken);
+        var reconciliationFreshness = await reconciliationFreshnessService.GetAsync(
+            DateTimeOffset.UtcNow,
+            cancellationToken);
         var failedSince = DateTimeOffset.UtcNow.AddHours(-24);
         var activeRuns = await dbContext.IntegrationRuns.CountAsync(
             run => run.Status == IntegrationRunStatuses.Accepted
@@ -86,6 +90,7 @@ public static class IntegrationRunEndpoints
             automationMode = configuration["Automation:Mode"] ?? "Disabled",
             generatedAt = DateTimeOffset.UtcNow,
             purchaseOrderFreshness = freshness,
+            acumaticaReconciliationFreshness = reconciliationFreshness,
             summary = new
             {
                 activeRuns,
@@ -120,6 +125,10 @@ public static class IntegrationRunEndpoints
             run.FailedCount,
             run.ErrorCode,
             run.ErrorSummary,
+            run.CursorBefore,
+            run.QueryFrom,
+            run.QueryTo,
+            run.CursorAfter,
             run.CreatedAt,
             run.UpdatedAt,
             run.StartedAt,

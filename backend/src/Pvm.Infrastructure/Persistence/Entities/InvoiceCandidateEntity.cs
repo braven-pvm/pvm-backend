@@ -14,6 +14,7 @@ public sealed class InvoiceCandidateEntity
     public required string IdempotencyKey { get; set; }
     public required string Status { get; set; }
     public string? SourceJson { get; set; }
+    public DateTimeOffset? SourceLastModifiedAt { get; set; }
     public string? CanonicalJson { get; set; }
     public string? ValidationJson { get; set; }
     public DateTimeOffset CreatedAt { get; set; }

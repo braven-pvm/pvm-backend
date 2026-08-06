@@ -189,6 +189,10 @@ export type IntegrationRun = {
   failedCount: number;
   errorCode?: Nullable<string>;
   errorSummary?: Nullable<string>;
+  cursorBefore?: Nullable<string>;
+  queryFrom?: Nullable<string>;
+  queryTo?: Nullable<string>;
+  cursorAfter?: Nullable<string>;
   createdAt: string;
   updatedAt: string;
   startedAt?: Nullable<string>;
@@ -200,6 +204,13 @@ export type OperationsSummary = {
   automationMode: string;
   generatedAt: string;
   purchaseOrderFreshness: ShopritePurchaseOrderFreshness;
+  acumaticaReconciliationFreshness: {
+    status: "Healthy" | "Stale" | "Unknown";
+    lastSuccessfulReconciliationAt?: Nullable<string>;
+    cursorAfter?: Nullable<string>;
+    ageMinutes?: Nullable<number>;
+    staleAfterMinutes: number;
+  };
   summary: {
     activeRuns: number;
     failedRuns: number;

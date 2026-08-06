@@ -91,6 +91,35 @@ public sealed class SubmitShopriteInvoiceHandlerTests
     }
 
     [Fact]
+    public async Task Automatic_submission_with_changed_source_is_not_sent_to_shoprite()
+    {
+        var repository = new FakeInvoiceCandidateRepository
+        {
+            Invoice = ValidInvoice(),
+            ValidationResult = new ValidationResult([]),
+            HasMatchedPurchaseOrder = true
+        };
+        var shopriteClient = new FakeShopriteInvoiceClient();
+        var verifier = new FakeSourceVersionVerifier(
+            new InvoiceSourceVersionVerification(
+                false,
+                "The Acumatica invoice changed after preparation and must be reconciled again."));
+        var handler = new SubmitShopriteInvoiceHandler(
+            repository,
+            shopriteClient,
+            new FakePayloadArchive(),
+            verifier);
+        var command = Command with { InitiationMode = "automatic" };
+
+        var result = await handler.HandleAsync(command, CancellationToken.None);
+
+        Assert.Equal(SubmitShopriteInvoiceStatus.ManualReviewRequired, result.Status);
+        Assert.Equal(1, verifier.CallCount);
+        Assert.Equal(0, shopriteClient.SubmitCallCount);
+        Assert.Empty(repository.Attempts);
+    }
+
+    [Fact]
     public async Task Timeout_or_unknown_outcome_returns_ambiguous_and_records_attempt()
     {
         var repository = new FakeInvoiceCandidateRepository
@@ -549,6 +578,20 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         {
             var stored = _payloads.Values.Single(item => item.Record.Location == payload.Location);
             return Task.FromResult(stored.Content);
+        }
+    }
+
+    private sealed class FakeSourceVersionVerifier(InvoiceSourceVersionVerification result)
+        : IInvoiceSourceVersionVerifier
+    {
+        public int CallCount { get; private set; }
+
+        public Task<InvoiceSourceVersionVerification> VerifyAsync(
+            string? sourceJson,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(result);
         }
     }
 

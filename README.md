@@ -9,6 +9,8 @@ Current delivery focus:
 - Production-safe Shoprite invoice automation.
 - Scheduled PO refresh, Service Bus worker, outbox, dead-letter, and operational
   read models.
+- Incremental Acumatica invoice reconciliation with persisted cursors, overlap,
+  daily lookback, and source-version verification.
 - Functional integration Admin console and controlled rollout.
 
 ## Local Quickstart
@@ -71,6 +73,8 @@ explicit PO-seeded candidate action documented in the Shoprite QA runbook.
 - [Documentation Index](docs/README.md)
 - [Current Shoprite Project Handoff](docs/handovers/2026-06-10-shoprite-project-handoff.md)
 - [Shoprite QA Invoice Submission Runbook](docs/runbooks/shoprite-qa-submission.md)
+- [Shoprite PO Refresh Scheduler QA](docs/runbooks/shoprite-po-refresh-scheduler-qa.md)
+- [Acumatica Invoice Reconciliation QA](docs/runbooks/acumatica-invoice-reconciliation-qa.md)
 - [Azure Container Apps Deployment Notes](deploy/azure-container-apps-notes.md)
 - [Azure QA Infrastructure Provisioning Playbook](docs/runbooks/azure-qa-provisioning-playbook.md)
 

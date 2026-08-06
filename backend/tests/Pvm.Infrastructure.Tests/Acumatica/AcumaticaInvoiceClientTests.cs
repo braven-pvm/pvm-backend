@@ -54,6 +54,7 @@ public sealed class AcumaticaInvoiceClientTests
               "CustomerOrder": { "value": "1210297232" },
               "Currency": { "value": "ZAR" },
               "Date": { "value": "2026-07-14T00:00:00+02:00" },
+              "LastModifiedDateTime": { "value": "2026-07-24T14:48:44.207+02:00" },
               "Amount": { "value": 171.76 },
               "DetailTotal": { "value": 165.96 },
               "DiscountTotal": { "value": 16.60 },
@@ -102,6 +103,9 @@ public sealed class AcumaticaInvoiceClientTests
         Assert.Equal(149.36m, invoice.TotalExcludingTax);
         Assert.Equal(171.76m, invoice.TotalIncludingTax);
         Assert.Equal(22.40m, invoice.TotalTax);
+        Assert.Equal(
+            new DateTimeOffset(2026, 7, 24, 14, 48, 44, 207, TimeSpan.FromHours(2)),
+            invoice.LastModifiedAt);
 
         var line = Assert.Single(invoice.Lines);
         Assert.Equal(1, line.LineNumber);
@@ -192,6 +196,74 @@ public sealed class AcumaticaInvoiceClientTests
         Assert.Contains("Date ge datetimeoffset'2026-07-01T00:00:00+00:00'", query);
         Assert.Contains("$top=75", query);
         Assert.Contains("$skip=0", query);
+    }
+
+    [Fact]
+    public async Task FetchFinalizedInvoicesAsync_AppliesBoundedLastModifiedWindowAndStableOrdering()
+    {
+        using var handler = new SequenceHandler(
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent),
+            _ => JsonResponse("[]"),
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent));
+        using var httpClient = new HttpClient(handler);
+        var client = new AcumaticaInvoiceClient(httpClient, Options.Create(DefaultOptions()));
+        var queryWindow = new Pvm.Application.Acumatica.AcumaticaInvoiceQuery(
+            new DateTimeOffset(2026, 8, 6, 11, 45, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 8, 6, 12, 0, 0, TimeSpan.Zero));
+
+        await client.FetchFinalizedInvoicesAsync(queryWindow, CancellationToken.None);
+
+        var request = Assert.Single(
+            handler.Requests,
+            item => item.Uri.AbsolutePath.EndsWith("/SalesInvoice", StringComparison.Ordinal));
+        var query = Uri.UnescapeDataString(request.Uri.Query);
+        Assert.Contains(
+            "LastModifiedDateTime ge datetimeoffset'2026-08-06T11:45:00.000+00:00'",
+            query);
+        Assert.Contains(
+            "LastModifiedDateTime lt datetimeoffset'2026-08-06T12:00:00.000+00:00'",
+            query);
+        Assert.Contains("$orderby=LastModifiedDateTime asc,ReferenceNbr asc", query);
+    }
+
+    [Fact]
+    public async Task FetchFinalizedInvoiceAsync_LoadsOneCurrentFinalizedSourceVersion()
+    {
+        const string invoiceJson = """
+            {
+              "id":"invoice-current",
+              "ReferenceNbr":{"value":"INV-CURRENT"},
+              "Type":{"value":"Invoice"},
+              "Status":{"value":"Open"},
+              "CustomerID":{"value":"SHOPRITE"},
+              "CustomerOrder":{"value":"PO-CURRENT"},
+              "Currency":{"value":"ZAR"},
+              "Date":{"value":"2026-08-01T00:00:00+02:00"},
+              "LastModifiedDateTime":{"value":"2026-08-06T15:01:02.123+02:00"},
+              "Amount":{"value":0},
+              "TaxTotal":{"value":0},
+              "Details":[],
+              "TaxDetails":[]
+            }
+            """;
+        using var handler = new SequenceHandler(
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent),
+            _ => JsonResponse(invoiceJson),
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent));
+        using var httpClient = new HttpClient(handler);
+        var client = new AcumaticaInvoiceClient(httpClient, Options.Create(DefaultOptions()));
+
+        var invoice = await client.FetchFinalizedInvoiceAsync("invoice-current", CancellationToken.None);
+
+        Assert.NotNull(invoice);
+        Assert.Equal("invoice-current", invoice.Id);
+        Assert.Equal(
+            new DateTimeOffset(2026, 8, 6, 15, 1, 2, 123, TimeSpan.FromHours(2)),
+            invoice.LastModifiedAt);
+        var detailRequest = Assert.Single(
+            handler.Requests,
+            item => item.Uri.AbsolutePath.Contains("/SalesInvoice/invoice-current", StringComparison.Ordinal));
+        Assert.Contains("$expand=Details,TaxDetails", Uri.UnescapeDataString(detailRequest.Uri.Query));
     }
 
     [Fact]

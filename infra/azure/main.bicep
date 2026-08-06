@@ -125,6 +125,26 @@ param acumaticaInvoiceDateFrom string = ''
 @description('Acumatica contract REST page size.')
 param acumaticaPageSize int = 100
 
+@minValue(1)
+@maxValue(60)
+@description('Frequency in minutes for incremental Acumatica invoice reconciliation.')
+param acumaticaReconciliationIntervalMinutes int = 10
+
+@minValue(1)
+@maxValue(1440)
+@description('Overlap in minutes applied before the last successful Acumatica cursor.')
+param acumaticaReconciliationOverlapMinutes int = 15
+
+@minValue(1)
+@maxValue(30)
+@description('Daily Acumatica invoice lookback depth in days.')
+param acumaticaDailyLookbackDays int = 7
+
+@minValue(1)
+@maxValue(1440)
+@description('Age in minutes after which Acumatica invoice reconciliation is stale.')
+param acumaticaReconciliationStaleAfterMinutes int = 30
+
 @minValue(0)
 @maxValue(2)
 @description('Minimum replicas for QA Container Apps. Use 1 during UAT to avoid cold-start smoke failures.')
@@ -183,6 +203,10 @@ module platform 'modules/platform.bicep' = {
     acumaticaParentCustomerAccounts: acumaticaParentCustomerAccounts
     acumaticaInvoiceDateFrom: acumaticaInvoiceDateFrom
     acumaticaPageSize: acumaticaPageSize
+    acumaticaReconciliationIntervalMinutes: acumaticaReconciliationIntervalMinutes
+    acumaticaReconciliationOverlapMinutes: acumaticaReconciliationOverlapMinutes
+    acumaticaDailyLookbackDays: acumaticaDailyLookbackDays
+    acumaticaReconciliationStaleAfterMinutes: acumaticaReconciliationStaleAfterMinutes
     containerAppMinReplicas: containerAppMinReplicas
     tags: tags
   }
@@ -232,5 +256,7 @@ output serviceBusNamespaceName string = platform.outputs.serviceBusNamespaceName
 output userAssignedIdentityId string = platform.outputs.userAssignedIdentityId
 output workerContainerAppName string = platform.outputs.workerContainerAppName
 output purchaseOrderRefreshJobName string = platform.outputs.purchaseOrderRefreshJobName
+output acumaticaInvoiceReconciliationJobName string = platform.outputs.invoiceReconciliationJobName
+output acumaticaInvoiceLookbackJobName string = platform.outputs.invoiceLookbackJobName
 output apiUrl string = platform.outputs.apiUrl
 output workbenchUrl string = platform.outputs.workbenchUrl

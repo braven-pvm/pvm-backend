@@ -32,6 +32,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IntegrationDeliveryRepository>();
         services.AddScoped<IntegrationRunService>();
         services.AddScoped<ShopritePurchaseOrderRefreshRunQueue>();
+        services.AddScoped<AcumaticaInvoiceReconciliationRunQueue>();
+        services.AddScoped<AcumaticaInvoiceReconciliationFreshnessService>();
         services.AddScoped<ShopritePurchaseOrderFreshnessService>();
         return services;
     }

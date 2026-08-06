@@ -335,6 +335,7 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
                 .IsUnique()
                 .HasFilter("\"ScheduleKey\" IS NOT NULL");
             entity.HasIndex(run => new { run.RunType, run.Status, run.UpdatedAt });
+            entity.HasIndex(run => new { run.RunType, run.CursorAfter });
             entity.HasIndex(run => run.CorrelationId);
             entity.Property(run => run.RunType).HasMaxLength(128);
             entity.Property(run => run.Trigger).HasMaxLength(64);

@@ -92,16 +92,22 @@ public static class IntegrationOperationEndpoints
         });
     }
 
-    private static Task<IResult> EnqueueAcumaticaDiscoveryAsync(
-        IIntegrationCommandQueue queue,
+    private static async Task<IResult> EnqueueAcumaticaDiscoveryAsync(
+        AcumaticaInvoiceReconciliationRunQueue runQueue,
         CurrentAppUserAccessor currentUser,
         CancellationToken cancellationToken)
-        => EnqueueAsync(
-            queue,
-            IntegrationQueues.AcumaticaInvoiceDiscovery,
-            IntegrationMessageTypes.AcumaticaInvoiceDiscoveryV1,
-            new DiscoverAcumaticaInvoicesMessage(CurrentUser(currentUser)),
+    {
+        var queued = await runQueue.EnqueueAsync(
+            IntegrationRunTriggers.Manual,
+            CurrentUser(currentUser),
+            scheduleKey: null,
+            DateTimeOffset.UtcNow,
+            lookbackDays: null,
             cancellationToken);
+        return Results.Accepted(
+            $"/api/integration-runs/{queued.RunId:D}",
+            new { queued.RunId, queued.MessageId, queued.Created });
+    }
 
     private static async Task<IResult> EnqueueShopriteRefreshAsync(
         ShopritePurchaseOrderRefreshRunQueue runQueue,
@@ -116,24 +122,6 @@ public static class IntegrationOperationEndpoints
         return Results.Accepted(
             $"/api/integration-runs/{queued.RunId:D}",
             new { queued.RunId, queued.MessageId, queued.Created });
-    }
-
-    private static async Task<IResult> EnqueueAsync<T>(
-        IIntegrationCommandQueue queue,
-        string queueName,
-        string messageType,
-        T data,
-        CancellationToken cancellationToken)
-    {
-        var messageId = Guid.NewGuid();
-        await queue.EnqueueAsync(
-            queueName,
-            messageType,
-            data,
-            messageId.ToString("D"),
-            messageId: messageId,
-            cancellationToken: cancellationToken);
-        return Results.Accepted($"/api/admin/integration-messages", new { messageId });
     }
 
     private static string CurrentUser(CurrentAppUserAccessor currentUser)

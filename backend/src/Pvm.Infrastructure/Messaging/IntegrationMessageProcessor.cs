@@ -21,6 +21,7 @@ public sealed record MessageProcessingResult(
 public sealed class IntegrationMessageProcessor(
     IntegrationDeliveryRepository deliveryRepository,
     ShopritePurchaseOrderRefreshMessageHandler purchaseOrderRefreshHandler,
+    AcumaticaInvoiceReconciliationMessageHandler acumaticaReconciliationHandler,
     AcumaticaInvoiceCandidateRefreshService acumaticaRefreshService,
     SubmitShopriteInvoiceHandler submitHandler)
 {
@@ -140,6 +141,15 @@ public sealed class IntegrationMessageProcessor(
                 await acumaticaRefreshService.RefreshAsync(cancellationToken);
                 return null;
 
+            case IntegrationMessageTypes.AcumaticaInvoiceReconciliationV1:
+                var reconciliationCommand = envelope.Data.Deserialize<ReconcileAcumaticaInvoicesMessage>(SerializerOptions)
+                    ?? throw new JsonException("Acumatica reconciliation data is required.");
+                await acumaticaReconciliationHandler.HandleAsync(
+                    envelope,
+                    reconciliationCommand,
+                    cancellationToken);
+                return null;
+
             case IntegrationMessageTypes.ShopriteInvoiceSubmitV1:
                 var command = envelope.Data.Deserialize<SubmitShopriteInvoiceMessage>(SerializerOptions)
                     ?? throw new JsonException("Shoprite submission data is required.");
@@ -195,6 +205,7 @@ public sealed class IntegrationMessageProcessor(
     {
         (IntegrationQueues.ShopritePurchaseOrderRefresh, IntegrationMessageTypes.ShopritePurchaseOrderRefreshV1) => true,
         (IntegrationQueues.AcumaticaInvoiceDiscovery, IntegrationMessageTypes.AcumaticaInvoiceDiscoveryV1) => true,
+        (IntegrationQueues.AcumaticaInvoiceDiscovery, IntegrationMessageTypes.AcumaticaInvoiceReconciliationV1) => true,
         (IntegrationQueues.ShopriteInvoiceSubmit, IntegrationMessageTypes.ShopriteInvoiceSubmitV1) => true,
         _ => false
     };

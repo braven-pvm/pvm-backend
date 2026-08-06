@@ -15,36 +15,74 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddPvmPersistence(builder.Configuration);
 
-if (args.Contains("--enqueue-shoprite-po-refresh", StringComparer.OrdinalIgnoreCase))
+var enqueueShopriteRefresh = args.Contains("--enqueue-shoprite-po-refresh", StringComparer.OrdinalIgnoreCase);
+var enqueueAcumaticaReconciliation = args.Contains(
+    "--enqueue-acumatica-invoice-reconciliation",
+    StringComparer.OrdinalIgnoreCase);
+var enqueueAcumaticaLookback = args.Contains(
+    "--enqueue-acumatica-invoice-lookback",
+    StringComparer.OrdinalIgnoreCase);
+
+if (enqueueShopriteRefresh || enqueueAcumaticaReconciliation || enqueueAcumaticaLookback)
 {
     using var schedulerHost = builder.Build();
     await using var scope = schedulerHost.Services.CreateAsyncScope();
-    var runQueue = scope.ServiceProvider.GetRequiredService<ShopritePurchaseOrderRefreshRunQueue>();
-    var logger = scope.ServiceProvider
-        .GetRequiredService<ILoggerFactory>()
-        .CreateLogger("ShopritePurchaseOrderRefreshScheduler");
-    var intervalMinutes = Math.Max(
-        1,
-        builder.Configuration.GetValue<int?>(
-            $"{ShopritePurchaseOrderRefreshOptions.SectionName}:ScheduleIntervalMinutes") ?? 5);
-    var now = DateTimeOffset.UtcNow;
-    var intervalTicks = TimeSpan.FromMinutes(intervalMinutes).Ticks;
-    var window = new DateTimeOffset(
-        now.Ticks - (now.Ticks % intervalTicks),
-        TimeSpan.Zero);
-    var scheduleKey = $"shoprite-po-refresh:{window:yyyyMMddHHmm}";
-    var queued = await runQueue.EnqueueAsync(
-        IntegrationRunTriggers.Scheduled,
-        "system:scheduler",
-        scheduleKey,
-        CancellationToken.None);
-    logger.LogInformation(
-        "integration.run.queued RunType={RunType} RunId={RunId} MessageId={MessageId} Created={Created} ScheduleKey={ScheduleKey}",
-        IntegrationRunTypes.ShopritePurchaseOrderRefresh,
-        queued.RunId,
-        queued.MessageId,
-        queued.Created,
-        scheduleKey);
+    var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+
+    if (enqueueShopriteRefresh)
+    {
+        var runQueue = scope.ServiceProvider.GetRequiredService<ShopritePurchaseOrderRefreshRunQueue>();
+        var intervalMinutes = Math.Max(
+            1,
+            builder.Configuration.GetValue<int?>(
+                $"{ShopritePurchaseOrderRefreshOptions.SectionName}:ScheduleIntervalMinutes") ?? 5);
+        var window = ScheduleWindow(DateTimeOffset.UtcNow, intervalMinutes);
+        var scheduleKey = $"shoprite-po-refresh:{window:yyyyMMddHHmm}";
+        var queued = await runQueue.EnqueueAsync(
+            IntegrationRunTriggers.Scheduled,
+            "system:scheduler",
+            scheduleKey,
+            CancellationToken.None);
+        LogQueued(
+            loggerFactory.CreateLogger("ShopritePurchaseOrderRefreshScheduler"),
+            IntegrationRunTypes.ShopritePurchaseOrderRefresh,
+            queued,
+            scheduleKey);
+    }
+    else
+    {
+        var runQueue = scope.ServiceProvider.GetRequiredService<AcumaticaInvoiceReconciliationRunQueue>();
+        var intervalMinutes = Math.Max(
+            1,
+            builder.Configuration.GetValue<int?>(
+                $"{AcumaticaReconciliationOptions.SectionName}:ScheduleIntervalMinutes") ?? 10);
+        var lookbackDays = Math.Max(
+            1,
+            builder.Configuration.GetValue<int?>(
+                $"{AcumaticaReconciliationOptions.SectionName}:DailyLookbackDays") ?? 7);
+        var window = enqueueAcumaticaLookback
+            ? new DateTimeOffset(DateTimeOffset.UtcNow.UtcDateTime.Date, TimeSpan.Zero)
+            : ScheduleWindow(DateTimeOffset.UtcNow, intervalMinutes);
+        var trigger = enqueueAcumaticaLookback
+            ? IntegrationRunTriggers.DailyLookback
+            : IntegrationRunTriggers.Scheduled;
+        var scheduleKey = enqueueAcumaticaLookback
+            ? $"acumatica-invoice-lookback:{window:yyyyMMdd}"
+            : $"acumatica-invoice-reconciliation:{window:yyyyMMddHHmm}";
+        var queued = await runQueue.EnqueueAsync(
+            trigger,
+            "system:scheduler",
+            scheduleKey,
+            window,
+            enqueueAcumaticaLookback ? lookbackDays : null,
+            CancellationToken.None);
+        LogQueued(
+            loggerFactory.CreateLogger("AcumaticaInvoiceReconciliationScheduler"),
+            IntegrationRunTypes.AcumaticaInvoiceReconciliation,
+            queued,
+            scheduleKey);
+    }
+
     return;
 }
 
@@ -74,3 +112,22 @@ builder.Services.AddHostedService<OutboxDispatcherService>();
 builder.Services.AddHostedService<ServiceBusConsumerService>();
 
 await builder.Build().RunAsync();
+
+static DateTimeOffset ScheduleWindow(DateTimeOffset now, int intervalMinutes)
+{
+    var intervalTicks = TimeSpan.FromMinutes(intervalMinutes).Ticks;
+    return new DateTimeOffset(now.UtcTicks - (now.UtcTicks % intervalTicks), TimeSpan.Zero);
+}
+
+static void LogQueued(
+    ILogger logger,
+    string runType,
+    QueuedIntegrationRun queued,
+    string scheduleKey)
+    => logger.LogInformation(
+        "integration.run.queued RunType={RunType} RunId={RunId} MessageId={MessageId} Created={Created} ScheduleKey={ScheduleKey}",
+        runType,
+        queued.RunId,
+        queued.MessageId,
+        queued.Created,
+        scheduleKey);

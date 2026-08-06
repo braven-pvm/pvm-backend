@@ -51,6 +51,16 @@ export default async function IntegrationRunPage({
       </section>
 
       <section className="detail-panel detail-section">
+        <h2>Reconciliation window</h2>
+        <dl>
+          <div><dt>Cursor before</dt><dd>{formatDate(run.cursorBefore)}</dd></div>
+          <div><dt>Query from</dt><dd>{formatDate(run.queryFrom)}</dd></div>
+          <div><dt>Query to</dt><dd>{formatDate(run.queryTo)}</dd></div>
+          <div><dt>Cursor after</dt><dd>{formatDate(run.cursorAfter)}</dd></div>
+        </dl>
+      </section>
+
+      <section className="detail-panel detail-section">
         <h2>Diagnostics</h2>
         <dl>
           <div><dt>Correlation ID</dt><dd>{run.correlationId}</dd></div>

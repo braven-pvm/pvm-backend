@@ -15,39 +15,22 @@ public sealed class AcumaticaInvoiceClient(
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly AcumaticaOptions _options = options.Value;
 
+    public Task<IReadOnlyList<AcumaticaInvoiceDto>> FetchFinalizedInvoicesAsync(
+        CancellationToken cancellationToken)
+        => FetchFinalizedInvoicesAsync(query: null, cancellationToken);
+
     public async Task<IReadOnlyList<AcumaticaInvoiceDto>> FetchFinalizedInvoicesAsync(
+        AcumaticaInvoiceQuery? query,
         CancellationToken cancellationToken)
     {
         ValidateOptions(_options);
-        var loginSucceeded = false;
-        string? sessionCookie = null;
-
-        try
+        if (query is not null && query.ModifiedFromInclusive >= query.ModifiedToExclusive)
         {
-            var login = new Dictionary<string, string>
-            {
-                ["name"] = _options.Username!,
-                ["password"] = _options.Password!
-            };
-            if (!string.IsNullOrWhiteSpace(_options.Company))
-            {
-                login["company"] = _options.Company;
-            }
+            throw new ArgumentException("The Acumatica modification window must have a positive duration.", nameof(query));
+        }
 
-            if (!string.IsNullOrWhiteSpace(_options.Branch))
-            {
-                login["branch"] = _options.Branch;
-            }
-
-            using var loginResponse = await httpClient.PostAsJsonAsync(
-                BuildUri("entity/auth/login"),
-                login,
-                SerializerOptions,
-                cancellationToken);
-            EnsureSuccess(loginResponse, "sign-in");
-            loginSucceeded = true;
-            sessionCookie = ReadSessionCookie(loginResponse);
-
+        return await WithSessionAsync(async sessionCookie =>
+        {
             var customerAccounts = await ResolveCustomerAccountsAsync(
                 sessionCookie,
                 cancellationToken);
@@ -60,7 +43,7 @@ public sealed class AcumaticaInvoiceClient(
                 {
                     using var invoiceRequest = CreateSessionRequest(
                         HttpMethod.Get,
-                        BuildInvoicePageUri(accountChunk, skip),
+                        BuildInvoicePageUri(accountChunk, skip, query),
                         sessionCookie);
                     using var invoiceResponse = await httpClient.SendAsync(
                         invoiceRequest,
@@ -94,20 +77,76 @@ public sealed class AcumaticaInvoiceClient(
             }
 
             return invoices;
+        }, cancellationToken);
+    }
+
+    public async Task<AcumaticaInvoiceDto?> FetchFinalizedInvoiceAsync(
+        string invoiceId,
+        CancellationToken cancellationToken)
+    {
+        ValidateOptions(_options);
+        if (string.IsNullOrWhiteSpace(invoiceId))
+        {
+            throw new ArgumentException("Acumatica invoice ID is required.", nameof(invoiceId));
+        }
+
+        return await WithSessionAsync(async sessionCookie =>
+        {
+            using var request = CreateSessionRequest(
+                HttpMethod.Get,
+                BuildInvoiceDetailUri(invoiceId),
+                sessionCookie);
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                return null;
+            }
+
+            EnsureSuccess(response, "sales invoice detail retrieval");
+            var detail = await ReadObjectAsync(response, "sales invoice detail retrieval", cancellationToken);
+            return IsFinalizedInvoice(detail) ? MapInvoice(detail) : null;
+        }, cancellationToken);
+    }
+
+    private async Task<T> WithSessionAsync<T>(
+        Func<string?, Task<T>> operation,
+        CancellationToken cancellationToken)
+    {
+        var login = new Dictionary<string, string>
+        {
+            ["name"] = _options.Username!,
+            ["password"] = _options.Password!
+        };
+        if (!string.IsNullOrWhiteSpace(_options.Company))
+        {
+            login["company"] = _options.Company;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_options.Branch))
+        {
+            login["branch"] = _options.Branch;
+        }
+
+        using var loginResponse = await httpClient.PostAsJsonAsync(
+            BuildUri("entity/auth/login"),
+            login,
+            SerializerOptions,
+            cancellationToken);
+        EnsureSuccess(loginResponse, "sign-in");
+        var sessionCookie = ReadSessionCookie(loginResponse);
+
+        try
+        {
+            return await operation(sessionCookie);
         }
         finally
         {
-            if (loginSucceeded)
-            {
-                using var logoutRequest = CreateSessionRequest(
-                    HttpMethod.Post,
-                    BuildUri("entity/auth/logout"),
-                    sessionCookie);
-                using var logoutResponse = await httpClient.SendAsync(
-                    logoutRequest,
-                    cancellationToken);
-                EnsureSuccess(logoutResponse, "sign-out");
-            }
+            using var logoutRequest = CreateSessionRequest(
+                HttpMethod.Post,
+                BuildUri("entity/auth/logout"),
+                sessionCookie);
+            using var logoutResponse = await httpClient.SendAsync(logoutRequest, CancellationToken.None);
+            EnsureSuccess(logoutResponse, "sign-out");
         }
     }
 
@@ -201,7 +240,10 @@ public sealed class AcumaticaInvoiceClient(
         return BuildUri(endpoint + query);
     }
 
-    private Uri BuildInvoicePageUri(IReadOnlyCollection<string> customerAccounts, int skip)
+    private Uri BuildInvoicePageUri(
+        IReadOnlyCollection<string> customerAccounts,
+        int skip,
+        AcumaticaInvoiceQuery? queryWindow)
     {
         var statusFilter = "(Status eq 'Open' or Status eq 'Closed')";
         var customerFilter = string.Join(
@@ -211,10 +253,18 @@ public sealed class AcumaticaInvoiceClient(
         var dateFrom = _options.InvoiceDateFrom!.Value.ToString(
             "yyyy-MM-dd'T'HH:mm:sszzz",
             CultureInfo.InvariantCulture);
-        var filter = $"Type eq 'Invoice' and {statusFilter} and Date ge datetimeoffset'{dateFrom}' and ({customerFilter})";
-        var query = $"?$filter={Uri.EscapeDataString(filter)}&$top={_options.PageSize}&$skip={skip}";
+        var modifiedFilter = queryWindow is null
+            ? string.Empty
+            : $" and LastModifiedDateTime ge datetimeoffset'{FormatDateTime(queryWindow.ModifiedFromInclusive)}'" +
+              $" and LastModifiedDateTime lt datetimeoffset'{FormatDateTime(queryWindow.ModifiedToExclusive)}'";
+        var filter = $"Type eq 'Invoice' and {statusFilter} and Date ge datetimeoffset'{dateFrom}'{modifiedFilter} and ({customerFilter})";
+        var orderBy = Uri.EscapeDataString("LastModifiedDateTime asc,ReferenceNbr asc");
+        var query = $"?$filter={Uri.EscapeDataString(filter)}&$orderby={orderBy}&$top={_options.PageSize}&$skip={skip}";
         return BuildUri(BuildEntityEndpoint("SalesInvoice") + query);
     }
+
+    private static string FormatDateTime(DateTimeOffset value)
+        => value.ToString("yyyy-MM-dd'T'HH:mm:ss.fffzzz", CultureInfo.InvariantCulture);
 
     private Uri BuildInvoiceDetailUri(string id)
     {
@@ -274,7 +324,8 @@ public sealed class AcumaticaInvoiceClient(
             TotalExcludingTax: totalExcludingTax,
             TotalIncludingTax: totalIncludingTax,
             TotalTax: totalTax,
-            Lines: lines);
+            Lines: lines,
+            LastModifiedAt: DateTimeOffsetValue(source, "LastModifiedDateTime", "LastModifiedDate"));
     }
 
     private static AcumaticaInvoiceLineDto MapLine(
@@ -464,11 +515,11 @@ public sealed class AcumaticaInvoiceClient(
 
     private static DateTimeOffset RequiredDateTimeOffset(JsonElement source, params string[] names)
     {
-        var value = String(source, names);
-        return DateTimeOffset.TryParse(value, out var result)
-            ? result
-            : throw MissingField(names);
+        return DateTimeOffsetValue(source, names) ?? throw MissingField(names);
     }
+
+    private static DateTimeOffset? DateTimeOffsetValue(JsonElement source, params string[] names)
+        => DateTimeOffset.TryParse(String(source, names), out var result) ? result : null;
 
     private static JsonElement? Value(JsonElement source, params string[] names)
     {
