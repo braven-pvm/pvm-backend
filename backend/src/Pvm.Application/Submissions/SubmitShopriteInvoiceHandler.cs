@@ -67,6 +67,14 @@ public sealed class SubmitShopriteInvoiceHandler(
         }
         catch (Exception)
         {
+            var concurrentResult = await ResolveConcurrentArchiveResultAsync(
+                operation.Id,
+                cancellationToken);
+            if (concurrentResult is not null)
+            {
+                return concurrentResult;
+            }
+
             return new SubmitShopriteInvoiceResult(
                 SubmitShopriteInvoiceStatus.Failed,
                 "Submission evidence could not be archived. Nothing was sent to Shoprite.",
@@ -171,6 +179,32 @@ public sealed class SubmitShopriteInvoiceHandler(
                 operation.Id),
             _ => throw new ArgumentOutOfRangeException(nameof(operation))
         };
+
+    private async Task<SubmitShopriteInvoiceResult?> ResolveConcurrentArchiveResultAsync(
+        Guid operationId,
+        CancellationToken cancellationToken)
+    {
+        SubmissionOperation? current;
+        try
+        {
+            current = await repository.GetSubmissionOperationAsync(operationId, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+
+        var requestWasArchived = current?.PayloadArchives.Any(
+            payload => payload.Kind == PayloadArchiveKind.ShopriteRequest) == true;
+        return current is not null
+            && (current.State != SubmissionOperationState.Pending || requestWasArchived)
+                ? ExistingOperationResult(current)
+                : null;
+    }
 
     private async Task<string> EnsurePreparedPayloadsArchivedAsync(
         SubmissionOperation operation,
