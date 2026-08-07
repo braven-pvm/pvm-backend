@@ -145,6 +145,19 @@ param acumaticaDailyLookbackDays int = 7
 @description('Age in minutes after which Acumatica invoice reconciliation is stale.')
 param acumaticaReconciliationStaleAfterMinutes int = 30
 
+@secure()
+@description('Shared secret sent by Acumatica in the configured push-notification header.')
+param acumaticaWebhookSecret string = ''
+
+@description('Header name used to authenticate Acumatica push notifications.')
+param acumaticaWebhookHeaderName string = 'X-PVM-Acumatica-Webhook-Secret'
+
+@description('Acumatica company IDs allowed to send invoice push notifications.')
+param acumaticaWebhookAllowedCompanies array = []
+
+@description('Acumatica Generic Inquiry names allowed to send invoice push notifications.')
+param acumaticaWebhookAllowedQueries array = []
+
 @minValue(0)
 @maxValue(2)
 @description('Minimum replicas for QA Container Apps. Use 1 during UAT to avoid cold-start smoke failures.')
@@ -207,6 +220,10 @@ module platform 'modules/platform.bicep' = {
     acumaticaReconciliationOverlapMinutes: acumaticaReconciliationOverlapMinutes
     acumaticaDailyLookbackDays: acumaticaDailyLookbackDays
     acumaticaReconciliationStaleAfterMinutes: acumaticaReconciliationStaleAfterMinutes
+    acumaticaWebhookSecret: acumaticaWebhookSecret
+    acumaticaWebhookHeaderName: acumaticaWebhookHeaderName
+    acumaticaWebhookAllowedCompanies: acumaticaWebhookAllowedCompanies
+    acumaticaWebhookAllowedQueries: acumaticaWebhookAllowedQueries
     containerAppMinReplicas: containerAppMinReplicas
     tags: tags
   }

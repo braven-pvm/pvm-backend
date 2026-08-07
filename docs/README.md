@@ -27,6 +27,7 @@ Use this index to orient quickly.
 - `docs/runbooks/shoprite-qa-submission.md`
 - `docs/runbooks/shoprite-po-refresh-scheduler-qa.md`
 - `docs/runbooks/acumatica-invoice-reconciliation-qa.md`
+- `docs/runbooks/acumatica-push-notifications-qa.md`
 - `docs/runbooks/azure-qa-provisioning-playbook.md`
 - `docs/runbooks/azure-provider-meeting-prep.md`
 - `docs/runbooks/github-azure-oidc-qa.md`
@@ -42,7 +43,8 @@ Shoprite has confirmed that the real Acumatica-source QA invoice submission is
 structurally sound and correct. Production automation Slices 1 through 3 are
 merged, deployed, and runtime-verified in QA. Slice 4, scheduled Shoprite PO
 refresh and persisted run visibility, is runtime-verified. Slice 5, incremental
-Acumatica reconciliation, is implemented and awaiting review and QA deployment.
-Automatic invoice submission remains disabled. Read
+Acumatica reconciliation, is also deployed and runtime-verified. Slice 6,
+authenticated Acumatica push-notification ingestion, is implemented and awaits
+review and QA deployment. Automatic invoice submission remains disabled. Read
 `docs/status/current-project-status.md` and both production implementation plans
 before starting.

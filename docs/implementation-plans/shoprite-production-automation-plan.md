@@ -1,6 +1,6 @@
 # Shoprite Production Invoice Automation Plan
 
-Last updated: 2026-08-06
+Last updated: 2026-08-07
 
 Status: Approved for implementation on 2026-07-28
 
@@ -46,7 +46,7 @@ automatic retries, event delivery, backup recovery, or operational response.
 
 ## Implementation Progress
 
-As of 2026-08-06:
+As of 2026-08-07:
 
 - Slice 1 is complete and deployed: explicit EF migrations, persisted submission
   operations, concurrency constraints, frozen source/payload versions, stale-send
@@ -66,10 +66,15 @@ As of 2026-08-06:
 - Slice 4 is merged, deployed, and runtime-verified in QA. Its controlled fault
   test proved stale detection, policy blocking, action-group delivery, recovery,
   and alert resolution.
-- Slice 5 is implemented on `feature/incremental-acumatica-reconciliation` and
-  awaits review and QA deployment. It adds bounded last-modified polling,
-  persisted high-water marks, overlap, daily lookback, per-invoice source-version
-  checks, reconciliation freshness, and Admin cursor visibility.
+- Slice 5 is merged, deployed, and runtime-verified in QA. Bootstrap, daily
+  lookback, and consecutive incremental windows advanced the persisted cursor
+  without duplicate candidates or submission operations; the stale alert fired
+  before recovery and resolved after healthy reconciliation.
+- Slice 6 is implemented on `feature/acumatica-push-notification-ingestion` and
+  awaits review and QA deployment. It adds authenticated bounded webhook receipt,
+  a transactional event inbox/outbox, transaction-ID deduplication,
+  authoritative per-invoice retrieval, Admin event visibility, and a QA setup
+  and recovery runbook.
 - Automatic invoice submission remains disabled.
 
 ## Decisions
@@ -961,10 +966,11 @@ From PVM:
 
 ## Recommended Immediate Next Work
 
-Complete Slice 5 review and QA runtime verification using
-`docs/runbooks/acumatica-invoice-reconciliation-qa.md`. After that gate, proceed
-to Slice 6: Acumatica push-notification ingestion. Do not enable automatic
-invoice submission during either verification step.
+Complete Slice 6 review and QA runtime verification using
+`docs/runbooks/acumatica-push-notifications-qa.md`. First prove the deployed
+endpoint with synthetic notifications, then activate the Acumatica QA
+destination for a controlled real-origin event and recovery check. Do not enable
+automatic invoice submission during this verification.
 
 ## References
 

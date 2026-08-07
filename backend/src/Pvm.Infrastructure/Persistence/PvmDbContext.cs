@@ -38,6 +38,8 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<IntegrationRunEntity> IntegrationRuns => Set<IntegrationRunEntity>();
 
+    public DbSet<IntegrationEventInboxEntity> IntegrationEventInbox => Set<IntegrationEventInboxEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<InvoiceCandidateEntity>(entity =>
@@ -346,6 +348,25 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(run => run.Status).HasMaxLength(32);
             entity.Property(run => run.ErrorCode).HasMaxLength(128);
             entity.Property(run => run.ErrorSummary).HasMaxLength(1024);
+        });
+
+        modelBuilder.Entity<IntegrationEventInboxEntity>(entity =>
+        {
+            entity.ToTable("integration_event_inbox");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new
+            {
+                item.SourceEnvironment,
+                item.CompanyId,
+                item.QueryName,
+                item.TransactionId
+            }).IsUnique();
+            entity.HasIndex(item => item.ReceivedAt);
+            entity.Property(item => item.SourceEnvironment).HasMaxLength(32);
+            entity.Property(item => item.CompanyId).HasMaxLength(128);
+            entity.Property(item => item.QueryName).HasMaxLength(256);
+            entity.Property(item => item.PayloadJson).HasColumnType("jsonb");
+            entity.Property(item => item.PayloadHash).HasMaxLength(64);
         });
     }
 }

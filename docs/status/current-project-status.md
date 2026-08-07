@@ -1,6 +1,6 @@
 # Current Project Status
 
-Last updated: 2026-08-06
+Last updated: 2026-08-07
 
 ## Overall Status
 
@@ -12,10 +12,10 @@ On 2026-07-27 Shoprite confirmed that the submitted invoice was structurally
 sound, correct, and verified.
 
 The QA payload-contract milestone is complete for the tested normal-order
-scenario. Production automation Slices 1 through 3 are merged, deployed, and
-runtime-verified in QA. Slice 4 is merged, deployed, and runtime-verified in QA.
-Slice 5 is implemented on its feature branch and awaits review and QA
-deployment. The project is not ready to enable automatic production submissions.
+scenario. Production automation Slices 1 through 5 are merged, deployed, and
+runtime-verified in QA. Slice 6 is implemented on its feature branch and awaits
+review and QA deployment. The project is not ready to enable automatic
+production submissions.
 
 ## Infrastructure Subscription (moved 2026-07-14)
 
@@ -30,15 +30,12 @@ so the workbench/API FQDNs and the workbench Entra redirect URI changed
 accordingly. GitHub `AZURE_SUBSCRIPTION_ID` and the deployer service principal's
 role assignments were repointed to the new subscription.
 
-Live estate check on 2026-08-06:
+Live estate check on 2026-08-07:
 
-- `origin/main` is merge commit `30d4e836` for the corrected stale-alert PR #18.
-- QA deployment run `31101622980` completed successfully, including backend and
+- `origin/main` is merge commit `676a75cf` for incremental reconciliation PR #19.
+- QA deployment run `31154922607` completed successfully, including backend and
   frontend verification, migrations, image publication, Bicep deployment, and
-  smoke checks.
-- API revision `ca-pvm-api-qa--0000013` serves 100 percent of traffic with image
-  tag `qa-30d4e8361d5d`; workbench revision `ca-pvm-workbench-qa--0000014` serves
-  100 percent with the matching tag.
+  smoke checks using image tag `qa-676a75cfb471`.
 - API `/health` returns `200`; anonymous invoice API returns `401`; unauthenticated
   workbench `/invoices` redirects to sign-in.
 - The only PVM resource group is `rg-pvm-integrations-qa`; no production group
@@ -54,10 +51,10 @@ Live estate check on 2026-08-06:
 
 ## Active Priority
 
-Review, merge, deploy, and runtime-verify Slice 5 of
-`docs/implementation-plans/shoprite-production-automation-plan.md`: incremental
-Acumatica invoice reconciliation with persisted cursors, overlap, daily
-lookback, current-source verification, and admin visibility.
+Review, merge, deploy, and runtime-verify Slice 6 of
+`docs/implementation-plans/shoprite-production-automation-plan.md`: authenticated
+Acumatica invoice push notifications with durable deduplication, authoritative
+per-invoice retrieval, Admin event visibility, and failed-delivery recovery.
 
 ## Why This Is Next
 
@@ -152,25 +149,32 @@ Done:
   blocking, alert firing and action-group delivery, recovery, alert resolution,
   and empty active/dead-letter queues. PO refresh recovered with 186 POs and two
   matched candidates.
+- Incremental Acumatica reconciliation with persisted cursors, overlap, daily
+  lookback, current-source verification, Admin visibility, and a 30-minute stale
+  alert.
+- Slice 5 runtime verification completed a bootstrap run, daily lookback, and two
+  consecutive scheduled incremental windows. Each durable command published and
+  completed once, candidate identity remained stable, submission operations did
+  not increase, Service Bus active/dead-letter counts returned to zero, and the
+  stale alert fired before bootstrap then resolved after recovery.
 
 Implemented, pending merge and QA deployment:
 
-- Ten-minute Acumatica last-modified reconciliation job and daily seven-day
-  lookback job.
-- Persisted query windows, cursor-before/cursor-after values, and successful-run
-  high-water marks.
-- Fifteen-minute overlap with cursor advancement only after a complete
-  successful run.
-- Stable bounded `LastModifiedDateTime` queries and per-invoice current-source
-  fetch.
-- Automatic-send source-version verification; changed or unverifiable source is
-  routed to manual review before any Shoprite POST.
-- Reconciliation freshness, cursor details, manual command, run history, and a
-  30-minute stale alert in the Admin workbench.
+- Bounded authenticated Acumatica webhook endpoint with company/query allowlists,
+  a 64 KiB body limit, and per-source rate limiting.
+- PostgreSQL event inbox and transactional outbox deduplicated by environment,
+  company, query, and Acumatica transaction ID.
+- One per-invoice discovery command per unique event row, followed by an
+  authoritative Contract REST fetch and normal candidate validation path.
+- Blocking treatment when an existing candidate is no longer finalized.
+- Admin Control Room health plus an Admin-only webhook event inbox view that
+  exposes metadata and hashes but not raw payloads or secrets.
+- Bicep, Key Vault deployment wiring, CI smoke check, and the Acumatica Generic
+  Inquiry/push destination/recovery runbook.
 
 Not done:
 
-- Acumatica push-notification webhook.
+- QA deployment and controlled Acumatica-originated verification of Slice 6.
 - Automation modes, allowlists, shadow mode, and kill switch.
 - Remaining production admin controls beyond the Control Room/run visibility.
 - Separate production infrastructure and release pipeline.
@@ -196,8 +200,8 @@ The approved architecture is:
 - Functional admin control plane for health, invoices, POs, exceptions, runs,
   mappings, automation, connections, audit, users, and emergency stop.
 
-The immediate gate is Slice 5 review and QA runtime verification using
-`docs/runbooks/acumatica-invoice-reconciliation-qa.md`. Automatic policy and
+The immediate gate is Slice 6 review and QA runtime verification using
+`docs/runbooks/acumatica-push-notifications-qa.md`. Automatic policy and
 production sending remain disabled.
 
 The admin console is specified in
@@ -215,7 +219,27 @@ Read:
 
 ## Verification Snapshot
 
-Slice 5 branch verification on 2026-08-06:
+Slice 6 branch verification on 2026-08-07:
+
+- 127 non-Azurite backend tests passed: 12 domain, 24 application, 81
+  infrastructure, and 10 API. This includes notification parsing, concurrent
+  inbox deduplication, migration, authoritative per-invoice refresh, and
+  non-finalized blocking tests.
+- The seven pre-existing Blob archive tests remain unavailable in the nested SDK
+  container because Azurite returns HTTP 400; Slice 6 does not change the payload
+  archive.
+- A local compiled-container HTTP test returned `200` health, `401` for a missing
+  secret, `202` for first receipt and exact redelivery, `400` for invalid source
+  and malformed JSON, and `413` for an oversized body. PostgreSQL recorded one
+  event, one duplicate, and one queued command.
+- Workbench lint, 2 tests, and production build passed.
+- `az bicep build --file infra/azure/main.bicep` passed.
+- QA Key Vault secret `acumatica--webhooksecret` is provisioned and enabled;
+  its value was not printed or stored in the repository. The Acumatica push
+  destination remains inactive.
+- QA deployment and Acumatica-originated runtime evidence remain pending merge.
+
+Slice 5 verification completed on 2026-08-07:
 
 - Backend release build passed with zero warnings.
 - 118 non-Azurite backend tests passed: 12 domain, 24 application, 77
@@ -226,7 +250,13 @@ Slice 5 branch verification on 2026-08-06:
   in this slice.
 - Workbench lint, 2 tests, and production build passed.
 - `az bicep build --file infra/azure/main.bicep` passed.
-- QA deployment and runtime reconciliation evidence remain pending merge.
+- QA deployment run `31154922607` passed. Bootstrap run
+  `b8fb85ca-8115-4c45-bff1-45dd03156356`, daily lookback run
+  `99211d11-96e7-49d2-91de-aebbbb43fd15`, and incremental runs
+  `ae363c8d-4753-40eb-90be-281ee6f06e6b` and
+  `d9b22141-bf4b-4e1d-be42-ef1b7797c570` succeeded. Alert incident
+  `1ffa7fce-c8ae-d80b-a8d9-400a4b77002f` fired while stale and resolved after
+  recovery; automatic submission remained disabled.
 
 Slice 4 branch verification on 2026-08-04:
 

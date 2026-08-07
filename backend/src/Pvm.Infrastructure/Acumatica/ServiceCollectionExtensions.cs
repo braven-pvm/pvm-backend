@@ -29,6 +29,15 @@ public static class ServiceCollectionExtensions
                 options => options.StaleAfterMinutes is >= 1 and <= 1440,
                 "Acumatica reconciliation stale threshold must be between 1 and 1440 minutes.")
             .ValidateOnStart();
+        services.AddOptions<AcumaticaPushNotificationOptions>()
+            .Bind(configuration.GetSection(AcumaticaPushNotificationOptions.SectionName))
+            .Validate(
+                options => options.MaxBodyBytes is >= 1024 and <= 1_048_576,
+                "Acumatica push notification body limit must be between 1 KiB and 1 MiB.")
+            .Validate(
+                options => options.RateLimitPerMinute is >= 1 and <= 10_000,
+                "Acumatica push notification rate limit must be between 1 and 10000 requests per minute.")
+            .ValidateOnStart();
         services.AddHttpClient<IAcumaticaInvoiceClient, AcumaticaInvoiceClient>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(300);

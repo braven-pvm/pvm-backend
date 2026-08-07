@@ -9,6 +9,7 @@ export default async function HomePage() {
   const view = await getOperationsSummary();
   const freshness = view.purchaseOrderFreshness;
   const reconciliation = view.acumaticaReconciliationFreshness;
+  const webhook = view.acumaticaPushNotificationHealth;
 
   return (
     <main className="page-shell">
@@ -40,8 +41,15 @@ export default async function HomePage() {
               : "Never"}
           </strong>
         </div>
+        <div>
+          <span>Acumatica webhook</span>
+          <strong className="metric-date">
+            {webhook.status} - {webhook.lastReceivedAt
+              ? new Date(webhook.lastReceivedAt).toLocaleString()
+              : "No events"}
+          </strong>
+        </div>
         <div><span>Active runs</span><strong>{view.summary.activeRuns}</strong></div>
-        <div><span>Failed runs (24h)</span><strong>{view.summary.failedRuns}</strong></div>
       </section>
 
       <section className="metric-strip four-up" aria-label="Workload summary">
@@ -50,6 +58,15 @@ export default async function HomePage() {
         <div><span>Pending messages</span><strong>{view.summary.pendingMessages}</strong></div>
         <div><span>Dead letters</span><strong>{view.summary.deadLetters}</strong></div>
       </section>
+
+      <p className="compact-stats">
+        <span><strong>{view.summary.failedRuns}</strong> failed runs in 24 hours</span>
+        <span><strong>{webhook.eventCount}</strong> webhook events</span>
+        <span><strong>{webhook.duplicateCount}</strong> duplicate deliveries</span>
+        <span><strong>{webhook.lastEventLagSeconds === null || webhook.lastEventLagSeconds === undefined
+          ? "-"
+          : `${Math.round(webhook.lastEventLagSeconds)}s`}</strong> latest webhook lag</span>
+      </p>
 
       <section className="table-panel" aria-label="Latest integration runs">
         <div className="table-toolbar">

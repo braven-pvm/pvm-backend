@@ -7,6 +7,7 @@ using Pvm.Infrastructure.Shoprite;
 using Pvm.Application.Messaging;
 using Pvm.Infrastructure.Messaging;
 using Pvm.Infrastructure.Operations;
+using Pvm.Infrastructure.Acumatica;
 
 namespace Pvm.Infrastructure.Persistence;
 
@@ -34,6 +35,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ShopritePurchaseOrderRefreshRunQueue>();
         services.AddScoped<AcumaticaInvoiceReconciliationRunQueue>();
         services.AddScoped<AcumaticaInvoiceReconciliationFreshnessService>();
+        services.AddScoped<AcumaticaPushNotificationInbox>();
+        services.AddScoped<AcumaticaPushNotificationHealthService>();
         services.AddScoped<ShopritePurchaseOrderFreshnessService>();
         return services;
     }

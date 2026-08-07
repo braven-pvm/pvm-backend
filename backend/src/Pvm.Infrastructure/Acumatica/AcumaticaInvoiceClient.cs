@@ -92,6 +92,9 @@ public sealed class AcumaticaInvoiceClient(
 
         return await WithSessionAsync(async sessionCookie =>
         {
+            var customerAccounts = await ResolveCustomerAccountsAsync(
+                sessionCookie,
+                cancellationToken);
             using var request = CreateSessionRequest(
                 HttpMethod.Get,
                 BuildInvoiceDetailUri(invoiceId),
@@ -104,7 +107,15 @@ public sealed class AcumaticaInvoiceClient(
 
             EnsureSuccess(response, "sales invoice detail retrieval");
             var detail = await ReadObjectAsync(response, "sales invoice detail retrieval", cancellationToken);
-            return IsFinalizedInvoice(detail) ? MapInvoice(detail) : null;
+            if (!IsFinalizedInvoice(detail))
+            {
+                return null;
+            }
+
+            var invoice = MapInvoice(detail);
+            return customerAccounts.Contains(invoice.CustomerAccount, StringComparer.OrdinalIgnoreCase)
+                ? invoice
+                : null;
         }, cancellationToken);
     }
 

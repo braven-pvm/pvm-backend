@@ -24,6 +24,55 @@ public sealed class AcumaticaInvoiceCandidateRefreshService(
         CancellationToken cancellationToken)
     {
         var invoices = await invoiceClient.FetchFinalizedInvoicesAsync(query, cancellationToken);
+        return await PersistAsync(invoices, cancellationToken);
+    }
+
+    public async Task<AcumaticaInvoiceRefreshResult> RefreshInvoiceAsync(
+        string invoiceId,
+        CancellationToken cancellationToken)
+    {
+        var invoice = await invoiceClient.FetchFinalizedInvoiceAsync(invoiceId, cancellationToken);
+        if (invoice is not null)
+        {
+            return await PersistAsync([invoice], cancellationToken);
+        }
+
+        var candidate = await dbContext.InvoiceCandidates.SingleOrDefaultAsync(
+            item => item.AcumaticaInvoiceId == invoiceId,
+            cancellationToken);
+        if (candidate is null)
+        {
+            return new AcumaticaInvoiceRefreshResult(0, 0, 0, 0);
+        }
+
+        var validation = new ValidationResult([
+            new ValidationIssue(
+                "acumatica-invoice-not-finalized",
+                "The invoice is no longer available as a finalized Acumatica invoice.",
+                ValidationSeverity.Blocking,
+                "acumatica")
+        ]);
+        var validationJson = JsonSerializer.Serialize(validation, SerializerOptions);
+        if (candidate.Status == "NeedsReview" && candidate.ValidationJson == validationJson)
+        {
+            return new AcumaticaInvoiceRefreshResult(0, 0, 0, 1);
+        }
+
+        if (candidate.Status is not ("Submitted" or "Rejected" or "Ambiguous"))
+        {
+            candidate.Status = "NeedsReview";
+        }
+
+        candidate.ValidationJson = validationJson;
+        candidate.UpdatedAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return new AcumaticaInvoiceRefreshResult(0, 0, 1, 0);
+    }
+
+    private async Task<AcumaticaInvoiceRefreshResult> PersistAsync(
+        IReadOnlyList<AcumaticaInvoiceDto> invoices,
+        CancellationToken cancellationToken)
+    {
         var created = 0;
         var updated = 0;
         var unchanged = 0;

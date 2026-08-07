@@ -228,6 +228,47 @@ public sealed class AcumaticaInvoiceCandidateRefreshServiceTests : IAsyncLifetim
         Assert.Equal(changedAt, candidate.SourceLastModifiedAt);
     }
 
+    [Fact]
+    public async Task RefreshInvoiceAsync_FetchesOnlyTheAuthoritativeChangedInvoice()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        db.ShopritePurchaseOrders.Add(NewPurchaseOrder());
+        await db.SaveChangesAsync();
+        var invoice = NewInvoice();
+        var service = new AcumaticaInvoiceCandidateRefreshService(
+            new StubInvoiceClient([invoice]),
+            db,
+            new ShopriteInvoiceCandidateMatcher(db));
+
+        var result = await service.RefreshInvoiceAsync(invoice.Id, default);
+
+        Assert.Equal(1, result.Received);
+        Assert.Equal(1, result.Created);
+        Assert.Equal(invoice.Id, (await db.InvoiceCandidates.SingleAsync()).AcumaticaInvoiceId);
+    }
+
+    [Fact]
+    public async Task RefreshInvoiceAsync_NoLongerFinalized_BlocksExistingCandidate()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        db.ShopritePurchaseOrders.Add(NewPurchaseOrder());
+        await db.SaveChangesAsync();
+        var invoice = NewInvoice();
+        var matcher = new ShopriteInvoiceCandidateMatcher(db);
+        await new AcumaticaInvoiceCandidateRefreshService(
+            new StubInvoiceClient([invoice]), db, matcher).RefreshAsync(default);
+
+        var result = await new AcumaticaInvoiceCandidateRefreshService(
+            new StubInvoiceClient([]), db, matcher).RefreshInvoiceAsync(invoice.Id, default);
+
+        Assert.Equal(1, result.Updated);
+        var candidate = await db.InvoiceCandidates.SingleAsync();
+        Assert.Equal("NeedsReview", candidate.Status);
+        Assert.Contains("acumatica-invoice-not-finalized", candidate.ValidationJson);
+    }
+
     private PvmDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<PvmDbContext>()

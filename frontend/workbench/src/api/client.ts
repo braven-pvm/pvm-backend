@@ -211,6 +211,7 @@ export type OperationsSummary = {
     ageMinutes?: Nullable<number>;
     staleAfterMinutes: number;
   };
+  acumaticaPushNotificationHealth: AcumaticaPushNotificationHealth;
   summary: {
     activeRuns: number;
     failedRuns: number;
@@ -220,6 +221,36 @@ export type OperationsSummary = {
     needsReview: number;
   };
   latestRuns: IntegrationRun[];
+};
+
+export type AcumaticaPushNotificationHealth = {
+  status: "NotConfigured" | "Waiting" | "Healthy";
+  configured: boolean;
+  lastReceivedAt?: Nullable<string>;
+  ageMinutes?: Nullable<number>;
+  sourceOccurredAt?: Nullable<string>;
+  lastEventLagSeconds?: Nullable<number>;
+  eventCount: number;
+  duplicateCount: number;
+};
+
+export type AcumaticaPushNotificationEventView = {
+  health: AcumaticaPushNotificationHealth;
+  events: Array<{
+    id: string;
+    sourceEnvironment: string;
+    companyId: string;
+    queryName: string;
+    transactionId: string;
+    notificationTimestamp: number;
+    payloadHash: string;
+    insertedCount: number;
+    deletedCount: number;
+    enqueuedCount: number;
+    duplicateCount: number;
+    receivedAt: string;
+    lastReceivedAt: string;
+  }>;
 };
 
 export type IntegrationMessageView = {
@@ -476,6 +507,20 @@ export async function getOperationsSummary(): Promise<OperationsSummary> {
 
   if (!response.ok) {
     throw new Error(`Failed to load operations summary: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getAcumaticaPushNotificationEvents(): Promise<AcumaticaPushNotificationEventView> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(`${apiBaseUrl}/api/admin/acumatica-events`, {
+    headers,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load Acumatica webhook events: ${response.status}`);
   }
 
   return response.json();

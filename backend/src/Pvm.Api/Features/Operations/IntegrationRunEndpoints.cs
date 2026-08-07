@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Pvm.Application.Messaging;
+using Pvm.Infrastructure.Acumatica;
 using Pvm.Infrastructure.Operations;
 using Pvm.Infrastructure.Persistence;
 using Pvm.Infrastructure.Persistence.Entities;
@@ -53,11 +54,15 @@ public static class IntegrationRunEndpoints
         PvmDbContext dbContext,
         ShopritePurchaseOrderFreshnessService freshnessService,
         AcumaticaInvoiceReconciliationFreshnessService reconciliationFreshnessService,
+        AcumaticaPushNotificationHealthService pushNotificationHealthService,
         IConfiguration configuration,
         CancellationToken cancellationToken)
     {
         var freshness = await freshnessService.GetAsync(DateTimeOffset.UtcNow, cancellationToken);
         var reconciliationFreshness = await reconciliationFreshnessService.GetAsync(
+            DateTimeOffset.UtcNow,
+            cancellationToken);
+        var pushNotificationHealth = await pushNotificationHealthService.GetAsync(
             DateTimeOffset.UtcNow,
             cancellationToken);
         var failedSince = DateTimeOffset.UtcNow.AddHours(-24);
@@ -91,6 +96,7 @@ public static class IntegrationRunEndpoints
             generatedAt = DateTimeOffset.UtcNow,
             purchaseOrderFreshness = freshness,
             acumaticaReconciliationFreshness = reconciliationFreshness,
+            acumaticaPushNotificationHealth = pushNotificationHealth,
             summary = new
             {
                 activeRuns,
