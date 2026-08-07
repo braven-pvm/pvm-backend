@@ -23,7 +23,7 @@ public sealed class DatabaseMigrationRunnerTests : IAsyncLifetime
         await DatabaseMigrationRunner.MigrateAsync(db);
 
         var applied = await db.Database.GetAppliedMigrationsAsync();
-        Assert.Equal(5, applied.Count());
+        Assert.Equal(6, applied.Count());
         Assert.Contains(DatabaseMigrationRunner.LegacyBaselineMigration, applied);
         Assert.True(await TableExistsAsync(db, "submission_operations"));
         Assert.True(await TableExistsAsync(db, "payload_archives"));
@@ -31,6 +31,8 @@ public sealed class DatabaseMigrationRunnerTests : IAsyncLifetime
         Assert.True(await TableExistsAsync(db, "integration_outbox_messages"));
         Assert.True(await TableExistsAsync(db, "integration_message_deliveries"));
         Assert.True(await TableExistsAsync(db, "integration_runs"));
+        Assert.True(await ColumnExistsAsync(db, "invoice_candidates", "SourceLastModifiedAt"));
+        Assert.True(await ColumnExistsAsync(db, "integration_runs", "CursorAfter"));
     }
 
     [Fact]
@@ -41,8 +43,16 @@ public sealed class DatabaseMigrationRunnerTests : IAsyncLifetime
         await migrator.MigrateAsync(DatabaseMigrationRunner.LegacyBaselineMigration);
 
         var candidate = NewCandidate();
-        db.InvoiceCandidates.Add(candidate);
-        await db.SaveChangesAsync();
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            insert into invoice_candidates
+                ("Id", "AcumaticaInvoiceId", "InvoiceNumber", "CustomerAccount",
+                 "IdempotencyKey", "Status", "CreatedAt", "UpdatedAt")
+            values
+                ({candidate.Id}, {candidate.AcumaticaInvoiceId}, {candidate.InvoiceNumber},
+                 {candidate.CustomerAccount}, {candidate.IdempotencyKey}, {candidate.Status},
+                 {candidate.CreatedAt}, {candidate.UpdatedAt})
+            """);
         await db.Database.ExecuteSqlRawAsync("""drop table "__EFMigrationsHistory";""");
 
         await DatabaseMigrationRunner.MigrateAsync(db);
@@ -55,7 +65,9 @@ public sealed class DatabaseMigrationRunnerTests : IAsyncLifetime
         Assert.True(await TableExistsAsync(db, "integration_outbox_messages"));
         Assert.True(await TableExistsAsync(db, "integration_message_deliveries"));
         Assert.True(await TableExistsAsync(db, "integration_runs"));
-        Assert.Equal(5, (await db.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.True(await ColumnExistsAsync(db, "invoice_candidates", "SourceLastModifiedAt"));
+        Assert.True(await ColumnExistsAsync(db, "integration_runs", "CursorAfter"));
+        Assert.Equal(6, (await db.Database.GetAppliedMigrationsAsync()).Count());
     }
 
     private PvmDbContext CreateDbContext()

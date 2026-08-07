@@ -8,6 +8,7 @@ export default async function HomePage() {
   await requireWorkbenchUser("/");
   const view = await getOperationsSummary();
   const freshness = view.purchaseOrderFreshness;
+  const reconciliation = view.acumaticaReconciliationFreshness;
 
   return (
     <main className="page-shell">
@@ -23,24 +24,31 @@ export default async function HomePage() {
       </section>
 
       <section className="metric-strip four-up" aria-label="Operational summary">
-        <div><span>PO data</span><strong className="metric-text">{freshness.status}</strong></div>
+        <div>
+          <span>PO data</span>
+          <strong className="metric-date">
+            {freshness.status} - {freshness.lastSuccessfulRefreshAt
+              ? new Date(freshness.lastSuccessfulRefreshAt).toLocaleString()
+              : "Never"}
+          </strong>
+        </div>
+        <div>
+          <span>Invoice sync</span>
+          <strong className="metric-date">
+            {reconciliation.status} - {reconciliation.lastSuccessfulReconciliationAt
+              ? new Date(reconciliation.lastSuccessfulReconciliationAt).toLocaleString()
+              : "Never"}
+          </strong>
+        </div>
         <div><span>Active runs</span><strong>{view.summary.activeRuns}</strong></div>
         <div><span>Failed runs (24h)</span><strong>{view.summary.failedRuns}</strong></div>
-        <div><span>Dead letters</span><strong>{view.summary.deadLetters}</strong></div>
       </section>
 
       <section className="metric-strip four-up" aria-label="Workload summary">
         <div><span>Candidate invoices</span><strong>{view.summary.candidateInvoices}</strong></div>
         <div><span>Needs review</span><strong>{view.summary.needsReview}</strong></div>
         <div><span>Pending messages</span><strong>{view.summary.pendingMessages}</strong></div>
-        <div>
-          <span>Last PO refresh</span>
-          <strong className="metric-date">
-            {freshness.lastSuccessfulRefreshAt
-              ? new Date(freshness.lastSuccessfulRefreshAt).toLocaleString()
-              : "Never"}
-          </strong>
-        </div>
+        <div><span>Dead letters</span><strong>{view.summary.deadLetters}</strong></div>
       </section>
 
       <section className="table-panel" aria-label="Latest integration runs">

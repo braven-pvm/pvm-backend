@@ -33,7 +33,7 @@ export default async function IntegrationMessagesPage() {
           </form>
           <form action={enqueueIntegrationCommandAction}>
             <input type="hidden" name="command" value="acumatica-discovery" />
-            <button className="button" type="submit">Queue invoice discovery</button>
+            <button className="button" type="submit">Queue invoice reconciliation</button>
           </form>
         </div>
       </section>

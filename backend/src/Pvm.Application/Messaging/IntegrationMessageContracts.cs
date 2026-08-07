@@ -13,6 +13,7 @@ public static class IntegrationMessageTypes
 {
     public const string ShopritePurchaseOrderRefreshV1 = "shoprite.po-refresh.v1";
     public const string AcumaticaInvoiceDiscoveryV1 = "acumatica.invoice-discovery.v1";
+    public const string AcumaticaInvoiceReconciliationV1 = "acumatica.invoice-reconciliation.v1";
     public const string ShopriteInvoiceSubmitV1 = "shoprite.invoice-submit.v1";
 }
 
@@ -30,6 +31,13 @@ public sealed record RefreshShopritePurchaseOrdersMessage(
     string Trigger = IntegrationRunTriggers.Manual);
 
 public sealed record DiscoverAcumaticaInvoicesMessage(string RequestedBy);
+
+public sealed record ReconcileAcumaticaInvoicesMessage(
+    string RequestedBy,
+    Guid RunId,
+    string Trigger,
+    DateTimeOffset QueryTo,
+    int? LookbackDays = null);
 
 public sealed record SubmitShopriteInvoiceMessage(
     Guid CandidateId,
@@ -52,12 +60,14 @@ public interface IIntegrationCommandQueue
 public static class IntegrationRunTypes
 {
     public const string ShopritePurchaseOrderRefresh = "shoprite-po-refresh";
+    public const string AcumaticaInvoiceReconciliation = "acumatica-invoice-reconciliation";
 }
 
 public static class IntegrationRunTriggers
 {
     public const string Manual = "manual";
     public const string Scheduled = "scheduled";
+    public const string DailyLookback = "daily-lookback";
 }
 
 public static class IntegrationRunStatuses

@@ -13,7 +13,8 @@ public sealed record AcumaticaInvoiceDto(
     decimal TotalExcludingTax,
     decimal TotalIncludingTax,
     decimal TotalTax,
-    IReadOnlyList<AcumaticaInvoiceLineDto> Lines);
+    IReadOnlyList<AcumaticaInvoiceLineDto> Lines,
+    DateTimeOffset? LastModifiedAt = null);
 
 public sealed record AcumaticaInvoiceLineDto(
     int LineNumber,

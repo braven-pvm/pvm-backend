@@ -22,7 +22,7 @@ Use `.agents/skills/overseer/SKILL.md` for status, planning, readiness, review, 
 
 ## Current Ground Truth
 
-As of 2026-08-04:
+As of 2026-08-06:
 
 - Azure is locked in and the QA estate is provisioned or provisionable.
 - The active QA estate is in CSP subscription `Azure subscription 1`
@@ -42,6 +42,11 @@ As of 2026-08-04:
   required release gate, with Admin retaining full controlled access.
 - Production automation Slices 1 through 3 are merged, deployed, and
   runtime-verified in QA.
+- Slice 4 scheduled Shoprite PO refresh is merged, deployed, and runtime-verified,
+  including its controlled freshness-alert fault test.
+- Slice 5 incremental Acumatica reconciliation is implemented on
+  `feature/incremental-acumatica-reconciliation` and awaits review and QA
+  deployment.
 - Explicit migrations, the concurrency-safe submission-operation state machine,
   immutable payload archiving, hash verification, and transition audit are
   operational.
@@ -62,11 +67,10 @@ As of 2026-08-04:
 
 ## Active Next Slice
 
-Slice 4, scheduled Shoprite PO refresh and persisted run visibility, is
-implemented on `feature/scheduled-po-refresh-runs`. Review it, merge it only
-after approval, and verify it in QA with
-`docs/runbooks/shoprite-po-refresh-scheduler-qa.md`. Then implement Slice 5,
-incremental Acumatica reconciliation. Automatic invoice submission remains
+Review Slice 5, incremental Acumatica reconciliation, merge it only after
+approval, and verify it in QA with
+`docs/runbooks/acumatica-invoice-reconciliation-qa.md`. Then implement Slice 6,
+Acumatica push-notification ingestion. Automatic invoice submission remains
 disabled.
 
 ## Verification

@@ -1,6 +1,6 @@
 # Shoprite Production Invoice Automation Plan
 
-Last updated: 2026-08-04
+Last updated: 2026-08-06
 
 Status: Approved for implementation on 2026-07-28
 
@@ -46,7 +46,7 @@ automatic retries, event delivery, backup recovery, or operational response.
 
 ## Implementation Progress
 
-As of 2026-08-04:
+As of 2026-08-06:
 
 - Slice 1 is complete and deployed: explicit EF migrations, persisted submission
   operations, concurrency constraints, frozen source/payload versions, stale-send
@@ -63,10 +63,13 @@ As of 2026-08-04:
 - Slice 3 is complete, deployed, and runtime-verified in QA: Service Bus queues,
   transactional outbox dispatch, worker consumers, redelivery handling, and
   dead-letter metadata/read views are operational.
-- Slice 4 is implemented on `feature/scheduled-po-refresh-runs` and awaiting PR
-  review and QA deployment. It adds scheduled PO refresh commands, persisted
-  run records, unchanged-payload handling, changed-PO candidate revalidation,
-  freshness visibility, and a stale-refresh alert.
+- Slice 4 is merged, deployed, and runtime-verified in QA. Its controlled fault
+  test proved stale detection, policy blocking, action-group delivery, recovery,
+  and alert resolution.
+- Slice 5 is implemented on `feature/incremental-acumatica-reconciliation` and
+  awaits review and QA deployment. It adds bounded last-modified polling,
+  persisted high-water marks, overlap, daily lookback, per-invoice source-version
+  checks, reconciliation freshness, and Admin cursor visibility.
 - Automatic invoice submission remains disabled.
 
 ## Decisions
@@ -958,10 +961,10 @@ From PVM:
 
 ## Recommended Immediate Next Work
 
-Complete Slice 4 review and QA runtime verification using
-`docs/runbooks/shoprite-po-refresh-scheduler-qa.md`. After that gate, proceed to
-Slice 5: incremental Acumatica reconciliation. Do not enable automatic invoice
-submission during either verification step.
+Complete Slice 5 review and QA runtime verification using
+`docs/runbooks/acumatica-invoice-reconciliation-qa.md`. After that gate, proceed
+to Slice 6: Acumatica push-notification ingestion. Do not enable automatic
+invoice submission during either verification step.
 
 ## References
 

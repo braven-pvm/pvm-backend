@@ -21,6 +21,10 @@ public sealed class IntegrationRunEntity
     public int FailedCount { get; set; }
     public string? ErrorCode { get; set; }
     public string? ErrorSummary { get; set; }
+    public DateTimeOffset? CursorBefore { get; set; }
+    public DateTimeOffset? QueryFrom { get; set; }
+    public DateTimeOffset? QueryTo { get; set; }
+    public DateTimeOffset? CursorAfter { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? StartedAt { get; set; }

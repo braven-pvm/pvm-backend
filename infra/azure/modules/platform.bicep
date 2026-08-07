@@ -52,6 +52,10 @@ param acumaticaCustomerAccounts array = []
 param acumaticaParentCustomerAccounts array = []
 param acumaticaInvoiceDateFrom string = ''
 param acumaticaPageSize int = 100
+param acumaticaReconciliationIntervalMinutes int = 10
+param acumaticaReconciliationOverlapMinutes int = 15
+param acumaticaDailyLookbackDays int = 7
+param acumaticaReconciliationStaleAfterMinutes int = 30
 param containerAppMinReplicas int = 1
 
 param tags object
@@ -63,6 +67,8 @@ var apiContainerAppName = 'ca-pvm-api-${suffix}'
 var workbenchContainerAppName = 'ca-pvm-workbench-${suffix}'
 var workerContainerAppName = 'ca-pvm-worker-${suffix}'
 var purchaseOrderRefreshJobName = 'job-pvm-po-refresh-${suffix}'
+var acumaticaInvoiceReconciliationJobName = 'job-pvm-invoice-reconcile-${suffix}'
+var acumaticaInvoiceLookbackJobName = 'job-pvm-invoice-lookback-${suffix}'
 var logName = 'log-pvm-integrations-${suffix}'
 var appInsightsName = 'appi-pvm-integrations-${suffix}'
 var containerAppsEnvironmentName = 'cae-pvm-integrations-${suffix}'
@@ -232,6 +238,22 @@ var apiEnvironment = concat([
   {
     name: 'Acumatica__InvoiceDateFrom'
     value: acumaticaInvoiceDateFrom
+  }
+  {
+    name: 'AcumaticaReconciliation__ScheduleIntervalMinutes'
+    value: string(acumaticaReconciliationIntervalMinutes)
+  }
+  {
+    name: 'AcumaticaReconciliation__OverlapMinutes'
+    value: string(acumaticaReconciliationOverlapMinutes)
+  }
+  {
+    name: 'AcumaticaReconciliation__DailyLookbackDays'
+    value: string(acumaticaDailyLookbackDays)
+  }
+  {
+    name: 'AcumaticaReconciliation__StaleAfterMinutes'
+    value: string(acumaticaReconciliationStaleAfterMinutes)
   }
 ], acumaticaCredentialEnvironment, acumaticaCustomerEnvironment, acumaticaParentCustomerEnvironment)
 var workerEnvironment = concat(apiEnvironment, [
@@ -840,6 +862,92 @@ resource purchaseOrderRefreshJob 'Microsoft.App/jobs@2025-01-01' = {
   ]
 }
 
+var acumaticaScheduleJobs = [
+  {
+    name: acumaticaInvoiceReconciliationJobName
+    cron: '*/${acumaticaReconciliationIntervalMinutes} * * * *'
+    argument: '--enqueue-acumatica-invoice-reconciliation'
+  }
+  {
+    name: acumaticaInvoiceLookbackJobName
+    cron: '15 0 * * *'
+    argument: '--enqueue-acumatica-invoice-lookback'
+  }
+]
+
+resource acumaticaScheduleJob 'Microsoft.App/jobs@2025-01-01' = [for job in acumaticaScheduleJobs: {
+  name: job.name
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identity.id}': {}
+    }
+  }
+  properties: {
+    environmentId: containerAppsEnvironment.id
+    configuration: {
+      triggerType: 'Schedule'
+      replicaTimeout: 300
+      replicaRetryLimit: 1
+      scheduleTriggerConfig: {
+        cronExpression: job.cron
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      registries: [
+        {
+          server: acr.properties.loginServer
+          identity: identity.id
+        }
+      ]
+      secrets: [
+        {
+          name: 'connectionstrings-pvm'
+          value: pvmConnectionString
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: job.name
+          image: '${acr.properties.loginServer}/pvm-worker:${workerImageTag}'
+          args: [
+            job.argument
+          ]
+          env: [
+            {
+              name: 'ConnectionStrings__Pvm'
+              secretRef: 'connectionstrings-pvm'
+            }
+            {
+              name: 'Pvm__EnvironmentName'
+              value: toUpper(environmentName)
+            }
+            {
+              name: 'AcumaticaReconciliation__ScheduleIntervalMinutes'
+              value: string(acumaticaReconciliationIntervalMinutes)
+            }
+            {
+              name: 'AcumaticaReconciliation__DailyLookbackDays'
+              value: string(acumaticaDailyLookbackDays)
+            }
+          ]
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    identityAcrPullRole
+  ]
+}]
+
 resource operationsActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   name: 'ag-pvm-integrations-${suffix}'
   location: 'global'
@@ -897,6 +1005,46 @@ resource stalePurchaseOrderRefreshAlert 'Microsoft.Insights/scheduledQueryRules@
   }
 }
 
+resource staleAcumaticaReconciliationAlert 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
+  name: 'alert-pvm-invoice-reconciliation-stale-${suffix}'
+  location: location
+  tags: tags
+  kind: 'LogAlert'
+  properties: {
+    displayName: 'PVM Acumatica invoice reconciliation is stale (${toUpper(environmentName)})'
+    description: 'No successful Acumatica invoice reconciliation completed in the last ${acumaticaReconciliationStaleAfterMinutes} minutes.'
+    enabled: true
+    severity: 2
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT5M'
+    overrideQueryTimeRange: 'P1D'
+    scopes: [
+      logAnalytics.id
+    ]
+    autoMitigate: true
+    skipQueryValidation: false
+    criteria: {
+      allOf: [
+        {
+          query: 'ContainerAppConsoleLogs_CL | where TimeGenerated > ago(1d) | where ContainerAppName_s == \'${workerContainerAppName}\' | where Log_s contains "integration.run.completed" | where Log_s contains "RunType=acumatica-invoice-reconciliation" | summarize LastSuccessfulReconciliation = max(TimeGenerated) | where isnull(LastSuccessfulReconciliation) or LastSuccessfulReconciliation < ago(${acumaticaReconciliationStaleAfterMinutes}m) | project LastSuccessfulReconciliation'
+          timeAggregation: 'Count'
+          operator: 'GreaterThan'
+          threshold: 0
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    actions: {
+      actionGroups: [
+        operationsActionGroup.id
+      ]
+    }
+  }
+}
+
 output acrName string = acr.name
 output acrLoginServer string = acr.properties.loginServer
 output containerAppsEnvironmentName string = containerAppsEnvironment.name
@@ -912,3 +1060,5 @@ output apiUrl string = 'https://${apiContainerApp.properties.configuration.ingre
 output workbenchUrl string = 'https://${workbenchContainerApp.properties.configuration.ingress.fqdn}'
 output workerContainerAppName string = workerContainerApp.name
 output purchaseOrderRefreshJobName string = purchaseOrderRefreshJob.name
+output invoiceReconciliationJobName string = acumaticaInvoiceReconciliationJobName
+output invoiceLookbackJobName string = acumaticaInvoiceLookbackJobName

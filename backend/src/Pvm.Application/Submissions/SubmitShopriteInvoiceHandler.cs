@@ -5,7 +5,8 @@ namespace Pvm.Application.Submissions;
 public sealed class SubmitShopriteInvoiceHandler(
     IInvoiceCandidateRepository repository,
     IShopriteInvoiceClient shopriteClient,
-    IPayloadArchive payloadArchive)
+    IPayloadArchive payloadArchive,
+    IInvoiceSourceVersionVerifier? sourceVersionVerifier = null)
 {
     private static readonly TimeSpan SendingRecoveryThreshold = TimeSpan.FromMinutes(15);
 
@@ -35,6 +36,20 @@ public sealed class SubmitShopriteInvoiceHandler(
             return new SubmitShopriteInvoiceResult(
                 SubmitShopriteInvoiceStatus.ValidationBlocked,
                 "Invoice must match one loaded Shoprite PO before submission.");
+        }
+
+        if (string.Equals(command.InitiationMode, "automatic", StringComparison.OrdinalIgnoreCase)
+            && sourceVersionVerifier is not null)
+        {
+            var verification = await sourceVersionVerifier.VerifyAsync(
+                snapshot.SourceJson,
+                cancellationToken);
+            if (!verification.IsCurrent)
+            {
+                return new SubmitShopriteInvoiceResult(
+                    SubmitShopriteInvoiceStatus.ManualReviewRequired,
+                    verification.Message);
+            }
         }
 
         var xml = ShopriteInvoiceXmlGenerator.Generate(snapshot.Invoice);

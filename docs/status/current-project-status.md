@@ -1,6 +1,6 @@
 # Current Project Status
 
-Last updated: 2026-08-04
+Last updated: 2026-08-06
 
 ## Overall Status
 
@@ -13,9 +13,9 @@ sound, correct, and verified.
 
 The QA payload-contract milestone is complete for the tested normal-order
 scenario. Production automation Slices 1 through 3 are merged, deployed, and
-runtime-verified in QA. Slice 4 is implemented on its feature branch and awaits
-review and QA deployment. The project is not ready to enable automatic
-production submissions.
+runtime-verified in QA. Slice 4 is merged, deployed, and runtime-verified in QA.
+Slice 5 is implemented on its feature branch and awaits review and QA
+deployment. The project is not ready to enable automatic production submissions.
 
 ## Infrastructure Subscription (moved 2026-07-14)
 
@@ -30,19 +30,21 @@ so the workbench/API FQDNs and the workbench Entra redirect URI changed
 accordingly. GitHub `AZURE_SUBSCRIPTION_ID` and the deployer service principal's
 role assignments were repointed to the new subscription.
 
-Live estate check on 2026-08-03:
+Live estate check on 2026-08-06:
 
-- `origin/main` is merge commit `39f8bb2e3c0d` for payload archive PR #10.
-- QA deployment run `30366810266` completed successfully for that commit,
-  including 101 backend tests, frontend verification, database migrations,
-  Bicep deployment, and smoke checks.
-- API revision `ca-pvm-api-qa--0000007` serves 100 percent of traffic and uses
-  image tag `qa-39f8bb2e3c0d`.
+- `origin/main` is merge commit `30d4e836` for the corrected stale-alert PR #18.
+- QA deployment run `31101622980` completed successfully, including backend and
+  frontend verification, migrations, image publication, Bicep deployment, and
+  smoke checks.
+- API revision `ca-pvm-api-qa--0000013` serves 100 percent of traffic with image
+  tag `qa-30d4e8361d5d`; workbench revision `ca-pvm-workbench-qa--0000014` serves
+  100 percent with the matching tag.
 - API `/health` returns `200`; anonymous invoice API returns `401`; unauthenticated
   workbench `/invoices` redirects to sign-in.
 - The only PVM resource group is `rg-pvm-integrations-qa`; no production group
   has been provisioned.
-- Service Bus namespace `sb-pvm-integrations-qa` exists but contains no queues.
+- Service Bus queues are provisioned and had zero active/dead-letter messages
+  after the controlled scheduler test.
 - Blob versioning and seven-day blob/container soft deletion are enabled.
 - The API managed identity has `Storage Blob Data Contributor` on the archive
   account.
@@ -52,10 +54,10 @@ Live estate check on 2026-08-03:
 
 ## Active Priority
 
-Review, merge, and runtime-verify Slice 4 of
-`docs/implementation-plans/shoprite-production-automation-plan.md`: scheduled
-Shoprite PO refresh, persisted execution runs, changed-PO revalidation, and
-freshness monitoring. Then begin Slice 5, incremental Acumatica reconciliation.
+Review, merge, deploy, and runtime-verify Slice 5 of
+`docs/implementation-plans/shoprite-production-automation-plan.md`: incremental
+Acumatica invoice reconciliation with persisted cursors, overlap, daily
+lookback, current-source verification, and admin visibility.
 
 ## Why This Is Next
 
@@ -137,9 +139,6 @@ Done:
 - Raw archived bodies removed from terminal PostgreSQL operation/attempt rows.
 - Deployed seeded QA candidate `QA-INV-1212503708` returned HTTP `200`, created
   four verified blobs, and transitioned `Pending -> Sending -> Submitted`.
-
-Implemented, pending merge and QA deployment:
-
 - Five-minute Azure Container Apps scheduled job that writes a durable PO
   refresh command through the shared outbox path.
 - Persisted integration-run lifecycle and counts for manual and scheduled PO
@@ -149,10 +148,29 @@ Implemented, pending merge and QA deployment:
 - Changed-PO candidate revalidation.
 - Control Room, run history/detail, and PO freshness views.
 - Fifteen-minute stale threshold and Azure Monitor alert.
+- Controlled Slice 4 fault test proved stale status, automatic-processing
+  blocking, alert firing and action-group delivery, recovery, alert resolution,
+  and empty active/dead-letter queues. PO refresh recovered with 186 POs and two
+  matched candidates.
+
+Implemented, pending merge and QA deployment:
+
+- Ten-minute Acumatica last-modified reconciliation job and daily seven-day
+  lookback job.
+- Persisted query windows, cursor-before/cursor-after values, and successful-run
+  high-water marks.
+- Fifteen-minute overlap with cursor advancement only after a complete
+  successful run.
+- Stable bounded `LastModifiedDateTime` queries and per-invoice current-source
+  fetch.
+- Automatic-send source-version verification; changed or unverifiable source is
+  routed to manual review before any Shoprite POST.
+- Reconciliation freshness, cursor details, manual command, run history, and a
+  30-minute stale alert in the Admin workbench.
 
 Not done:
 
-- Acumatica push-notification webhook and incremental reconciliation.
+- Acumatica push-notification webhook.
 - Automation modes, allowlists, shadow mode, and kill switch.
 - Remaining production admin controls beyond the Control Room/run visibility.
 - Separate production infrastructure and release pipeline.
@@ -178,9 +196,9 @@ The approved architecture is:
 - Functional admin control plane for health, invoices, POs, exceptions, runs,
   mappings, automation, connections, audit, users, and emergency stop.
 
-The immediate gate is Slice 4 review and QA runtime verification. The next
-implementation slice is incremental Acumatica reconciliation. Automatic policy
-and production sending remain disabled.
+The immediate gate is Slice 5 review and QA runtime verification using
+`docs/runbooks/acumatica-invoice-reconciliation-qa.md`. Automatic policy and
+production sending remain disabled.
 
 The admin console is specified in
 `docs/implementation-plans/integration-admin-console-plan.md`. Its read-only
@@ -197,6 +215,19 @@ Read:
 
 ## Verification Snapshot
 
+Slice 5 branch verification on 2026-08-06:
+
+- Backend release build passed with zero warnings.
+- 118 non-Azurite backend tests passed: 12 domain, 24 application, 77
+  infrastructure, and 5 API. These include focused Acumatica, migration, cursor,
+  overlap, source-version, and submission-concurrency tests.
+- Seven pre-existing Blob archive tests could not run in the nested SDK
+  container because Azurite returned HTTP 400; no payload-archive code changed
+  in this slice.
+- Workbench lint, 2 tests, and production build passed.
+- `az bicep build --file infra/azure/main.bicep` passed.
+- QA deployment and runtime reconciliation evidence remain pending merge.
+
 Slice 4 branch verification on 2026-08-04:
 
 - Backend: 111 tests passed (12 domain, 20 application, 74 infrastructure,
@@ -206,7 +237,10 @@ Slice 4 branch verification on 2026-08-04:
 - The production worker image built successfully; its one-shot scheduler command
   queued a persisted run/outbox message and exited cleanly without the previous
   `libgssapi` warning.
-- QA deployment and runtime scheduler/alert evidence remain pending.
+- QA deployment run `31101622980` passed. A controlled 15-minute fault test
+  fired alert incident `e8752078-4b40-60db-d7f9-dcfc502e002f`, delivered action
+  notifications for fire and resolution, blocked stale processing, recovered on
+  execution `job-pvm-po-refresh-qa-pif7xze`, and resolved after healthy checks.
 
 Mapping slice verification on 2026-07-24:
 
