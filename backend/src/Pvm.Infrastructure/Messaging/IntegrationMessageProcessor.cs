@@ -150,6 +150,19 @@ public sealed class IntegrationMessageProcessor(
                     cancellationToken);
                 return null;
 
+            case IntegrationMessageTypes.AcumaticaInvoiceChangedV1:
+                var changedInvoice = envelope.Data.Deserialize<DiscoverAcumaticaInvoiceMessage>(SerializerOptions)
+                    ?? throw new JsonException("Acumatica changed-invoice data is required.");
+                if (string.IsNullOrWhiteSpace(changedInvoice.InvoiceId))
+                {
+                    throw new JsonException("Acumatica changed-invoice ID is required.");
+                }
+
+                await acumaticaRefreshService.RefreshInvoiceAsync(
+                    changedInvoice.InvoiceId,
+                    cancellationToken);
+                return null;
+
             case IntegrationMessageTypes.ShopriteInvoiceSubmitV1:
                 var command = envelope.Data.Deserialize<SubmitShopriteInvoiceMessage>(SerializerOptions)
                     ?? throw new JsonException("Shoprite submission data is required.");
@@ -206,6 +219,7 @@ public sealed class IntegrationMessageProcessor(
         (IntegrationQueues.ShopritePurchaseOrderRefresh, IntegrationMessageTypes.ShopritePurchaseOrderRefreshV1) => true,
         (IntegrationQueues.AcumaticaInvoiceDiscovery, IntegrationMessageTypes.AcumaticaInvoiceDiscoveryV1) => true,
         (IntegrationQueues.AcumaticaInvoiceDiscovery, IntegrationMessageTypes.AcumaticaInvoiceReconciliationV1) => true,
+        (IntegrationQueues.AcumaticaInvoiceDiscovery, IntegrationMessageTypes.AcumaticaInvoiceChangedV1) => true,
         (IntegrationQueues.ShopriteInvoiceSubmit, IntegrationMessageTypes.ShopriteInvoiceSubmitV1) => true,
         _ => false
     };

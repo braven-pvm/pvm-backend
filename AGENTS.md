@@ -16,13 +16,14 @@ Before implementing or reviewing work, read these in order:
 6. `docs/implementation-plans/shoprite-production-automation-plan.md`
 7. `docs/implementation-plans/integration-admin-console-plan.md`
 8. `docs/runbooks/shoprite-qa-submission.md`
-9. `docs/runbooks/azure-qa-provisioning-playbook.md`
+9. `docs/runbooks/acumatica-push-notifications-qa.md`
+10. `docs/runbooks/azure-qa-provisioning-playbook.md`
 
 Use `.agents/skills/overseer/SKILL.md` for status, planning, readiness, review, branch hygiene, and next-work decisions. Use `.agents/skills/handoff/SKILL.md` when preparing a future-session handoff.
 
 ## Current Ground Truth
 
-As of 2026-08-06:
+As of 2026-08-07:
 
 - Azure is locked in and the QA estate is provisioned or provisionable.
 - The active QA estate is in CSP subscription `Azure subscription 1`
@@ -44,9 +45,12 @@ As of 2026-08-06:
   runtime-verified in QA.
 - Slice 4 scheduled Shoprite PO refresh is merged, deployed, and runtime-verified,
   including its controlled freshness-alert fault test.
-- Slice 5 incremental Acumatica reconciliation is implemented on
-  `feature/incremental-acumatica-reconciliation` and awaits review and QA
-  deployment.
+- Slice 5 incremental Acumatica reconciliation is merged, deployed, and
+  runtime-verified in QA, including bootstrap, daily lookback, two incremental
+  windows, cursor advancement, stale-alert recovery, and no automatic send.
+- Slice 6 Acumatica push-notification ingestion is implemented on
+  `feature/acumatica-push-notification-ingestion` and awaits review and QA
+  deployment. The Acumatica QA destination is not active.
 - Explicit migrations, the concurrency-safe submission-operation state machine,
   immutable payload archiving, hash verification, and transition audit are
   operational.
@@ -67,11 +71,11 @@ As of 2026-08-06:
 
 ## Active Next Slice
 
-Review Slice 5, incremental Acumatica reconciliation, merge it only after
+Review Slice 6, Acumatica push-notification ingestion, merge it only after
 approval, and verify it in QA with
-`docs/runbooks/acumatica-invoice-reconciliation-qa.md`. Then implement Slice 6,
-Acumatica push-notification ingestion. Automatic invoice submission remains
-disabled.
+`docs/runbooks/acumatica-push-notifications-qa.md`. Keep the Acumatica push
+destination inactive until the synthetic endpoint checks pass. Automatic
+invoice submission remains disabled.
 
 ## Verification
 

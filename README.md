@@ -75,6 +75,7 @@ explicit PO-seeded candidate action documented in the Shoprite QA runbook.
 - [Shoprite QA Invoice Submission Runbook](docs/runbooks/shoprite-qa-submission.md)
 - [Shoprite PO Refresh Scheduler QA](docs/runbooks/shoprite-po-refresh-scheduler-qa.md)
 - [Acumatica Invoice Reconciliation QA](docs/runbooks/acumatica-invoice-reconciliation-qa.md)
+- [Acumatica Push Notifications QA](docs/runbooks/acumatica-push-notifications-qa.md)
 - [Azure Container Apps Deployment Notes](deploy/azure-container-apps-notes.md)
 - [Azure QA Infrastructure Provisioning Playbook](docs/runbooks/azure-qa-provisioning-playbook.md)
 

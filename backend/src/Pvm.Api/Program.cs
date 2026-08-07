@@ -1,6 +1,8 @@
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using Pvm.Api.Auth;
 using Pvm.Api.Features.Admin;
+using Pvm.Api.Features.AcumaticaPushNotifications;
 using Pvm.Api.Features.Auth;
 using Pvm.Api.Features.Invoices;
 using Pvm.Api.Features.IntegrationOperations;
@@ -17,6 +19,20 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddPolicy("acumatica-webhook", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = builder.Configuration.GetValue(
+                "AcumaticaPushNotifications:RateLimitPerMinute",
+                120),
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
+});
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
@@ -40,6 +56,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
     .WithName("Health");
 
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseMiddleware<AppUserClaimsMiddleware>();
 app.UseAuthorization();
 
@@ -50,6 +67,8 @@ app.MapAdminUserEndpoints();
 app.MapAuthEndpoints();
 app.MapIntegrationOperationEndpoints();
 app.MapIntegrationRunEndpoints();
+app.MapAcumaticaPushNotificationEndpoints();
+app.MapAcumaticaPushNotificationAdminEndpoints();
 
 app.Run();
 

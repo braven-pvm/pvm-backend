@@ -90,6 +90,7 @@ jobs:
           shoprite_password="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name shoprite--password --query value -o tsv)"
           acumatica_username="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name acumatica--username --query value -o tsv 2>/dev/null || true)"
           acumatica_password="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name acumatica--password --query value -o tsv 2>/dev/null || true)"
+          acumatica_webhook_secret="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name acumatica--webhooksecret --query value -o tsv 2>/dev/null || true)"
 
           if [ -z "$postgres_password" ]; then
             echo "Could not extract PostgreSQL password from Key Vault connection string." >&2
@@ -110,6 +111,7 @@ jobs:
             "shoprite_password"
             "acumatica_username"
             "acumatica_password"
+            "acumatica_webhook_secret"
           )
           for value_name in "${required_values[@]}"; do
             if [ -z "${!value_name}" ]; then
@@ -125,6 +127,7 @@ jobs:
           echo "::add-mask::$shoprite_password"
           if [ -n "$acumatica_username" ]; then echo "::add-mask::$acumatica_username"; fi
           if [ -n "$acumatica_password" ]; then echo "::add-mask::$acumatica_password"; fi
+          if [ -n "$acumatica_webhook_secret" ]; then echo "::add-mask::$acumatica_webhook_secret"; fi
 
           {
             echo "image_tag=$image_tag"
@@ -155,6 +158,9 @@ jobs:
             echo "EOF"
             echo "acumatica_password<<EOF"
             echo "$acumatica_password"
+            echo "EOF"
+            echo "acumatica_webhook_secret<<EOF"
+            echo "$acumatica_webhook_secret"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -222,6 +228,7 @@ jobs:
             --parameters shopriteInvoiceSubmissionMode=RealQa \
             --parameters acumaticaUsername='${{ steps.values.outputs.acumatica_username }}' \
             --parameters acumaticaPassword='${{ steps.values.outputs.acumatica_password }}' \
+            --parameters acumaticaWebhookSecret='${{ steps.values.outputs.acumatica_webhook_secret }}' \
             --parameters containerAppMinReplicas=1 \
             --only-show-errors
 
@@ -265,6 +272,14 @@ jobs:
           candidates_status="$(curl --show-error --silent --output /dev/null --write-out "%{http_code}" "https://$api_url/api/invoices/candidates")"
           if [ "$candidates_status" != "401" ]; then
             echo "Expected anonymous invoice candidates request to return 401, got $candidates_status." >&2
+            exit 1
+          fi
+
+          webhook_status="$(curl --show-error --silent --output /dev/null --write-out "%{http_code}" \
+            --request POST --header "Content-Type: application/json" --data '{}' \
+            "https://$api_url/api/webhooks/acumatica/invoice-changes")"
+          if [ "$webhook_status" != "401" ]; then
+            echo "Expected unauthenticated Acumatica webhook request to return 401, got $webhook_status." >&2
             exit 1
           fi
 

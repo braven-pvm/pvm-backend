@@ -14,6 +14,7 @@ public static class IntegrationMessageTypes
     public const string ShopritePurchaseOrderRefreshV1 = "shoprite.po-refresh.v1";
     public const string AcumaticaInvoiceDiscoveryV1 = "acumatica.invoice-discovery.v1";
     public const string AcumaticaInvoiceReconciliationV1 = "acumatica.invoice-reconciliation.v1";
+    public const string AcumaticaInvoiceChangedV1 = "acumatica.invoice-changed.v1";
     public const string ShopriteInvoiceSubmitV1 = "shoprite.invoice-submit.v1";
 }
 
@@ -31,6 +32,13 @@ public sealed record RefreshShopritePurchaseOrdersMessage(
     string Trigger = IntegrationRunTriggers.Manual);
 
 public sealed record DiscoverAcumaticaInvoicesMessage(string RequestedBy);
+
+public sealed record DiscoverAcumaticaInvoiceMessage(
+    string RequestedBy,
+    string InvoiceId,
+    Guid NotificationId,
+    long NotificationTimestamp,
+    string? ReferenceNumber);
 
 public sealed record ReconcileAcumaticaInvoicesMessage(
     string RequestedBy,

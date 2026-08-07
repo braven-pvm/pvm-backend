@@ -444,7 +444,9 @@ td {
 
 .status-pill.status-accepted,
 .status-pill.status-running,
-.status-pill.status-unknown {
+.status-pill.status-unknown,
+.status-pill.status-waiting,
+.status-pill.status-notconfigured {
   background: #fff7e6;
   border-color: #e7bd72;
   color: #7a4a00;
@@ -712,6 +714,8 @@ td span {
     display: grid;
     gap: 12px;
     grid-template-columns: 112px minmax(0, 1fr);
+    min-width: 0;
+    overflow-wrap: anywhere;
     padding: 8px 20px;
   }
 

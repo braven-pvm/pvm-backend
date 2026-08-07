@@ -56,6 +56,11 @@ param acumaticaReconciliationIntervalMinutes int = 10
 param acumaticaReconciliationOverlapMinutes int = 15
 param acumaticaDailyLookbackDays int = 7
 param acumaticaReconciliationStaleAfterMinutes int = 30
+@secure()
+param acumaticaWebhookSecret string = ''
+param acumaticaWebhookHeaderName string = 'X-PVM-Acumatica-Webhook-Secret'
+param acumaticaWebhookAllowedCompanies array = []
+param acumaticaWebhookAllowedQueries array = []
 param containerAppMinReplicas int = 1
 
 param tags object
@@ -94,7 +99,7 @@ var acumaticaCredentialSecrets = hasAcumaticaCredentials ? [
     value: acumaticaPassword
   }
 ] : []
-var apiSecrets = concat([
+var commonRuntimeSecrets = concat([
   {
     name: 'connectionstrings-pvm'
     value: pvmConnectionString
@@ -108,6 +113,13 @@ var apiSecrets = concat([
     value: shopritePassword
   }
 ], acumaticaCredentialSecrets)
+var hasAcumaticaWebhookSecret = !empty(acumaticaWebhookSecret)
+var apiSecrets = concat(commonRuntimeSecrets, hasAcumaticaWebhookSecret ? [
+  {
+    name: 'acumatica-webhook-secret'
+    value: acumaticaWebhookSecret
+  }
+] : [])
 var acumaticaCredentialEnvironment = hasAcumaticaCredentials ? [
   {
     name: 'Acumatica__Username'
@@ -126,6 +138,20 @@ var acumaticaParentCustomerEnvironment = map(acumaticaParentCustomerAccounts, (a
   name: 'Acumatica__ParentCustomerAccounts__${index}'
   value: account
 })
+var acumaticaWebhookCompanyEnvironment = map(acumaticaWebhookAllowedCompanies, (company, index) => {
+  name: 'AcumaticaPushNotifications__AllowedCompanies__${index}'
+  value: company
+})
+var acumaticaWebhookQueryEnvironment = map(acumaticaWebhookAllowedQueries, (query, index) => {
+  name: 'AcumaticaPushNotifications__AllowedQueries__${index}'
+  value: query
+})
+var acumaticaWebhookSecretEnvironment = hasAcumaticaWebhookSecret ? [
+  {
+    name: 'AcumaticaPushNotifications__Secret'
+    secretRef: 'acumatica-webhook-secret'
+  }
+] : []
 var apiEnvironment = concat([
   {
     name: 'ASPNETCORE_ENVIRONMENT'
@@ -256,6 +282,24 @@ var apiEnvironment = concat([
     value: string(acumaticaReconciliationStaleAfterMinutes)
   }
 ], acumaticaCredentialEnvironment, acumaticaCustomerEnvironment, acumaticaParentCustomerEnvironment)
+var apiRuntimeEnvironment = concat(apiEnvironment, [
+  {
+    name: 'AcumaticaPushNotifications__EnvironmentName'
+    value: toUpper(environmentName)
+  }
+  {
+    name: 'AcumaticaPushNotifications__HeaderName'
+    value: acumaticaWebhookHeaderName
+  }
+  {
+    name: 'AcumaticaPushNotifications__MaxBodyBytes'
+    value: '65536'
+  }
+  {
+    name: 'AcumaticaPushNotifications__RateLimitPerMinute'
+    value: '120'
+  }
+], acumaticaWebhookSecretEnvironment, acumaticaWebhookCompanyEnvironment, acumaticaWebhookQueryEnvironment)
 var workerEnvironment = concat(apiEnvironment, [
   {
     name: 'ServiceBus__FullyQualifiedNamespace'
@@ -608,7 +652,7 @@ resource apiContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: apiContainerAppName
           image: '${acr.properties.loginServer}/pvm-api:${apiImageTag}'
-          env: apiEnvironment
+          env: apiRuntimeEnvironment
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'
@@ -747,7 +791,7 @@ resource workerContainerApp 'Microsoft.App/containerApps@2025-01-01' = {
           identity: identity.id
         }
       ]
-      secrets: apiSecrets
+      secrets: commonRuntimeSecrets
     }
     template: {
       scale: {
