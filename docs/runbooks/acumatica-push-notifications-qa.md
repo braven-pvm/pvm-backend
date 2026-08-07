@@ -25,39 +25,84 @@ is recorded as a duplicate and does not enqueue another command.
 
 Create this in Acumatica QA on **Generic Inquiries (SM208000)**.
 
-Summary:
+The following steps use the labels shown by the 2025 R2 form. **Primary table**
+is not a Summary field on this screen; configure it as the first row on the
+**Data Sources** tab.
 
-| Setting | Value |
+### 1. Summary area
+
+| Screen field | Value |
 | --- | --- |
-| Inquiry title | `PVM-Shoprite-Finalized-Invoices` |
-| Primary table | `PX.Objects.AR.ARInvoice` |
-| Purpose | Header-only change detection for released sales invoices |
+| Inquiry Title | `PVM-Shoprite-Finalized-Invoices` |
+| Site Map Title | Leave blank |
+| Screen ID | Leave blank |
+| Show Deleted Records | Cleared |
+| Show Archived Records | Cleared |
+| Expose via OData | Cleared |
+| Expose to the Mobile Application | Cleared |
+| Attach Notes To | `Not Applicable` |
 
-Use these result columns and aliases:
+The title may be visually truncated by the narrow text box. Open the field or
+move the cursor to the end and confirm that the complete title was entered.
 
-| Data field | Alias | Required by receiver |
+### 2. Data Sources tab
+
+Add one row. Use the magnifier in **Source Name** to select the DAC instead of
+typing an unverified display name.
+
+| Source Name | Description | Alias |
 | --- | --- | --- |
-| `ARInvoice.NoteID` | `InvoiceId` | Yes |
-| `ARInvoice.DocType` | `InvoiceType` | Diagnostic |
-| `ARInvoice.RefNbr` | `ReferenceNbr` | Diagnostic |
-| `ARInvoice.Status` | `Status` | Diagnostic |
-| `ARInvoice.Released` | `Released` | Diagnostic |
-| `ARInvoice.CustomerID` | `CustomerAccount` | Diagnostic only |
-| `ARInvoice.CustomerOrderNbr` | `CustomerOrder` | Diagnostic only |
-| `ARInvoice.LastModifiedDateTime` | `LastModifiedDateTime` | Diagnostic |
+| `PX.Objects.AR.ARInvoice` | Leave blank | `ARInvoice` |
 
-Conditions:
+The selector may display `ARInvoice` after selection; its full DAC name must be
+`PX.Objects.AR.ARInvoice`. Do not add a related table or any additional source.
 
-1. Document type is **Invoice**. Select the Acumatica selector value rather
-   than typing an unverified internal code.
-2. Released is `True`.
-3. Voided is `False`.
+### 3. Conditions tab
 
-Do not add detail lines, tax joins, aggregation, grouping, or formulas. The
-receiver only requires `InvoiceId`; Contract REST remains authoritative for
-status, customer eligibility, PO reference, lines, tax, and totals.
+Add these active rows in this order. Select **Invoice** from the Value 1
+selector; do not type an internal document-type code.
 
-Before activating the push destination, run the inquiry in Acumatica and confirm:
+| Active | Data Field | Condition | Value 1 | Operator |
+| --- | --- | --- | --- | --- |
+| Checked | `ARInvoice.DocType` | `Equals` | `Invoice` | `And` |
+| Checked | `ARInvoice.Released` | `Equals` | `True` | `And` |
+| Checked | `ARInvoice.Voided` | `Equals` | `False` | Leave blank |
+
+Leave brackets and Value 2 blank. Do not add parameters, relations, grouping,
+sort order, formulas, detail lines, or tax joins.
+
+### 4. Results Grid tab
+
+Add the following active rows. **Object** is the Data Sources alias,
+**Data Field** is the selected DAC field, and **Caption** is the outbound field
+name used by the receiver.
+
+The **Caption** column is hidden by default in Acumatica. Open the grid's column
+configuration menu and make **Caption** visible before entering these values.
+
+| Active | Object | Data Field | Caption | Required by receiver |
+| --- | --- | --- | --- | --- |
+| Checked | `ARInvoice` | `NoteID` | `InvoiceId` | Yes |
+| Checked | `ARInvoice` | `DocType` | `InvoiceType` | Diagnostic |
+| Checked | `ARInvoice` | `RefNbr` | `ReferenceNbr` | Diagnostic |
+| Checked | `ARInvoice` | `Status` | `Status` | Diagnostic |
+| Checked | `ARInvoice` | `Released` | `Released` | Diagnostic |
+| Checked | `ARInvoice` | `CustomerID` | `CustomerAccount` | Diagnostic only |
+| Checked | `ARInvoice` | `CustomerOrderNbr` | `CustomerOrder` | Diagnostic only |
+| Checked | `ARInvoice` | `LastModifiedDateTime` | `LastModifiedDateTime` | Diagnostic |
+
+Leave Aggregate Function blank. The receiver only requires `InvoiceId`;
+Contract REST remains authoritative for status, customer eligibility, PO
+reference, lines, tax, and totals.
+
+### 5. Save and preview
+
+Save the inquiry, then click **Preview the currently selected inquiry**. Confirm
+that each released, non-voided invoice appears once and that `InvoiceId` is
+populated. Do not use **Publish to the UI** and do not expose the inquiry through
+OData.
+
+Before activating the push destination, confirm:
 
 - each invoice appears once;
 - `InvoiceId` is present and stable;
@@ -68,14 +113,35 @@ Before activating the push destination, run the inquiry in Acumatica and confirm
 
 Create this on **Push Notifications (SM302000)**.
 
-| Setting | Value |
+### 1. Summary area
+
+| Screen field | Value |
 | --- | --- |
-| Destination name | `PVM-Shoprite-Invoice-Webhook-QA` |
-| Destination type | `Webhook` |
+| Destination Name | `PVM-Shoprite-Invoice-Webhook-QA` |
+| Active | **Cleared** |
+| Destination Type | `Webhook` |
 | Address | `https://ca-pvm-api-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io/api/webhooks/acumatica/invoice-changes` |
-| Header name | `X-PVM-Acumatica-Webhook-Secret` |
-| Header value | Current `acumatica--webhooksecret` value from Key Vault |
-| Generic inquiry | `PVM-Shoprite-Finalized-Invoices` |
+| Header Name | `X-PVM-Acumatica-Webhook-Secret` |
+| Header Value | Current `acumatica--webhooksecret` value from Key Vault |
+
+### 2. Generic Inquiries tab
+
+In the upper **Inquiries** table, add this row:
+
+| Active | Inquiry Title | Track All Fields |
+| --- | --- | --- |
+| Checked | `PVM-Shoprite-Finalized-Invoices` | Cleared |
+
+With that inquiry row selected, add this row to the lower **Fields** table:
+
+| Table Name | Field Name |
+| --- | --- |
+| `ARInvoice` | `LastModifiedDateTime` |
+
+Tracking `LastModifiedDateTime` catches changes to an eligible invoice without
+tracking every result field. Acumatica still includes all Generic Inquiry result
+fields in the notification. Save the destination with the Summary **Active**
+check box cleared.
 
 Acumatica 2025 R2 explicitly supports one configured HTTP header name/value for
 Webhook destinations. Do not put the secret in the URL. Keep the destination
