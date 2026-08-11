@@ -21,6 +21,9 @@ public sealed record InvestecOptions
     /// <summary>System-assigned account id for the transactions endpoint (from the Integration Manager).</summary>
     public string? AccountId { get; init; }
 
+    /// <summary>The Acumatica Cash Account CD this Investec account's transactions import into.</summary>
+    public string? CashAccount { get; init; }
+
     /// <summary>Safety cap on pages walked per pull to avoid an unbounded loop.</summary>
     public int MaxPages { get; init; } = 200;
 }

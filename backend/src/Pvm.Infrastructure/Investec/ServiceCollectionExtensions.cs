@@ -38,6 +38,7 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddSingleton<InvestecBankStatementMapper>();
+        services.AddScoped<InvestecBankFeedRefreshService>();
         return services;
     }
 }
