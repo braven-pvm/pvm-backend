@@ -80,16 +80,27 @@ name used by the receiver.
 The **Caption** column is hidden by default in Acumatica. Open the grid's column
 configuration menu and make **Caption** visible before entering these values.
 
-| Active | Object | Data Field | Caption | Required by receiver |
+Required result rows:
+
+| Active | Object | Data Field | Caption | Purpose |
 | --- | --- | --- | --- | --- |
-| Checked | `ARInvoice` | `NoteID` | `InvoiceId` | Yes |
-| Checked | `ARInvoice` | `DocType` | `InvoiceType` | Diagnostic |
-| Checked | `ARInvoice` | `RefNbr` | `ReferenceNbr` | Diagnostic |
-| Checked | `ARInvoice` | `Status` | `Status` | Diagnostic |
-| Checked | `ARInvoice` | `Released` | `Released` | Diagnostic |
-| Checked | `ARInvoice` | `CustomerID` | `CustomerAccount` | Diagnostic only |
-| Checked | `ARInvoice` | `CustomerOrderNbr` | `CustomerOrder` | Diagnostic only |
-| Checked | `ARInvoice` | `LastModifiedDateTime` | `LastModifiedDateTime` | Diagnostic |
+| Checked | `ARInvoice` | `NoteID` | `InvoiceId` | Stable invoice identifier required by the receiver |
+| Checked | `ARInvoice` | `RefNbr` | `ReferenceNbr` | Human-readable diagnostic identifier |
+| Checked | `ARInvoice` | `LastModifiedDateTime` | `LastModifiedDateTime` | Field tracked by the push destination |
+
+Optional diagnostic rows, if these fields are available in the selector:
+
+| Active | Object | Data Field | Caption |
+| --- | --- | --- | --- |
+| Checked | `ARInvoice` | `DocType` | `InvoiceType` |
+| Checked | `ARInvoice` | `Status` | `Status` |
+| Checked | `ARInvoice` | `Released` | `Released` |
+| Checked | `ARInvoice` | `CustomerID` | `CustomerAccount` |
+
+Do not add `CustomerOrderNbr`: it is not available on the `ARInvoice` DAC in
+this Acumatica site. Do not substitute `InvoiceNbr`. The notification does not
+provide the authoritative PO reference; the worker retrieves that value through
+Contract REST after receiving the stable `InvoiceId`.
 
 Leave Aggregate Function blank. The receiver only requires `InvoiceId`;
 Contract REST remains authoritative for status, customer eligibility, PO
