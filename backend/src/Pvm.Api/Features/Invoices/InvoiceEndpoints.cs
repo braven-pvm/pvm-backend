@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using Pvm.Api.Auth;
 using Pvm.Api.Features.Invoices.Models;
 using Pvm.Application.Acumatica;
 using Pvm.Application.Shoprite;
@@ -30,9 +29,6 @@ public static class InvoiceEndpoints
             .RequireAuthorization("Invoices.Write");
         group.MapPost("/{id:guid}/revalidate", RevalidateCandidateAsync)
             .RequireAuthorization("Invoices.Write");
-        group.MapPut("/{id:guid}/line-mappings/{lineNumber:int}", SaveLineMappingAsync)
-            .RequireAuthorization("Admin");
-
         return app;
     }
 
@@ -213,51 +209,6 @@ public static class InvoiceEndpoints
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return Results.Ok(ToSummaryResponse(candidate));
-    }
-
-    private static async Task<IResult> SaveLineMappingAsync(
-        Guid id,
-        int lineNumber,
-        SaveInvoiceLineMappingRequest request,
-        CurrentAppUserAccessor currentUser,
-        ShopriteInvoiceLineMappingService mappingService,
-        CancellationToken cancellationToken)
-    {
-        if (currentUser.User is null)
-        {
-            return Results.Unauthorized();
-        }
-
-        var result = await mappingService.SaveAsync(
-            id,
-            lineNumber,
-            request.PurchaseOrderLineId,
-            request.ShopriteUom,
-            currentUser.User.Email,
-            cancellationToken);
-
-        if (result.Status == ShopriteLineMappingSaveStatus.Saved && result.Candidate is not null)
-        {
-            return Results.Ok(ToSummaryResponse(result.Candidate));
-        }
-
-        if (result.Status == ShopriteLineMappingSaveStatus.CandidateNotFound)
-        {
-            return Results.NotFound(new { id, message = result.Message });
-        }
-
-        if (result.Status == ShopriteLineMappingSaveStatus.CandidateLocked)
-        {
-            return Results.Conflict(new { id, message = result.Message });
-        }
-
-        return Results.BadRequest(new
-        {
-            id,
-            lineNumber,
-            request.PurchaseOrderLineId,
-            message = result.Message
-        });
     }
 
     private static InvoiceCandidateSummaryResponse ToSummaryResponse(InvoiceCandidateEntity candidate)

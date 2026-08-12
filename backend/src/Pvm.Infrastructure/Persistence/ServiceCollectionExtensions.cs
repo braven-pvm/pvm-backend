@@ -27,7 +27,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IInvoiceCandidateRepository, EfInvoiceCandidateRepository>();
         services.AddScoped<ShopriteSeedInvoiceCandidateService>();
         services.AddScoped<ShopriteInvoiceCandidateMatcher>();
-        services.AddScoped<ShopriteInvoiceLineMappingService>();
+        services.AddScoped<ShopriteInventoryMappingBootstrapService>();
+        services.AddScoped<ShopriteInventoryMappingService>();
         services.AddScoped<IIntegrationCommandQueue, IntegrationCommandQueue>();
         services.AddScoped<OutboxRepository>();
         services.AddScoped<IntegrationDeliveryRepository>();

@@ -89,18 +89,17 @@ public sealed class ShopriteInvoiceCandidateMatcher(PvmDbContext dbContext)
         return invoiceLines.Select(line =>
         {
             var inventoryId = Normalize(line.AcumaticaInventoryId);
-            var matchingItemMappings = itemMappings
-                .Where(mapping =>
-                    mapping.AcumaticaInventoryId == inventoryId
-                    && mapping.IsVerified
-                    && purchaseOrderLines.Any(orderLine =>
-                        string.Equals(
-                            orderLine.BuyerItemId,
-                            mapping.ShopriteBuyerItemId,
-                            StringComparison.OrdinalIgnoreCase)))
+            var mappedOrderLines = itemMappings
+                .Where(mapping => mapping.AcumaticaInventoryId == inventoryId && mapping.IsVerified)
+                .SelectMany(mapping => purchaseOrderLines.Where(orderLine =>
+                    string.Equals(
+                        orderLine.BuyerItemId,
+                        mapping.ShopriteBuyerItemId,
+                        StringComparison.OrdinalIgnoreCase)))
+                .DistinctBy(orderLine => orderLine.Id)
                 .ToArray();
-            var mappedItem = matchingItemMappings.Length == 1
-                ? matchingItemMappings[0]
+            var mappedOrderLine = mappedOrderLines.Length == 1
+                ? mappedOrderLines[0]
                 : null;
             var supplierItemMatches = purchaseOrderLines
                 .Where(orderLine => string.Equals(
@@ -118,9 +117,9 @@ public sealed class ShopriteInvoiceCandidateMatcher(PvmDbContext dbContext)
 
             return line with
             {
-                Gtin = !string.IsNullOrWhiteSpace(line.Gtin)
-                    ? line.Gtin
-                    : mappedItem?.Gtin ?? supplierItemMatch?.Gtin,
+                Gtin = mappedOrderLine?.Gtin
+                    ?? supplierItemMatch?.Gtin
+                    ?? line.Gtin,
                 ShopriteUom = mappedUom?.ShopriteUom ?? line.ShopriteUom,
                 IsShopriteUomVerified = mappedUom?.IsVerified
                     ?? line.IsShopriteUomVerified

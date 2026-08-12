@@ -292,6 +292,58 @@ export type IntegrationMessageView = {
   }>;
 };
 
+export type InventoryMappingView = {
+  inventoryId: string;
+  description?: Nullable<string>;
+  acumaticaUom: string;
+  acumaticaGtins: string[];
+  itemMappings: Array<{
+    id: string;
+    shopriteBuyerItemId: string;
+    gtin: string;
+    isVerified: boolean;
+    updatedBy: string;
+    updatedAt: string;
+  }>;
+  uomMapping?: Nullable<{
+    id: string;
+    shopriteUom: "EA" | "CA" | "CS" | "KG";
+    isVerified: boolean;
+    updatedBy: string;
+    updatedAt: string;
+  }>;
+  suggestions: Array<{
+    purchaseOrderLineId: string;
+    purchaseOrderNumber: string;
+    lineNumber: number;
+    shopriteBuyerItemId?: Nullable<string>;
+    gtin?: Nullable<string>;
+    description?: Nullable<string>;
+  }>;
+  affectedCandidateCount: number;
+  unresolvedCandidateCount: number;
+};
+
+export type ShopriteCatalogItem = {
+  shopriteBuyerItemId: string;
+  description?: Nullable<string>;
+  gtins: string[];
+  supplierItemIds: string[];
+  measurementUnitCodes: string[];
+  purchaseOrderCount: number;
+  latestPurchaseOrderNumber: string;
+  representativePurchaseOrderLineId: string;
+  mappedInventoryIds: string[];
+  isMapped: boolean;
+};
+
+export type AcumaticaInventoryItem = {
+  inventoryId: string;
+  description: string;
+  status?: Nullable<string>;
+  unitsOfMeasure: string[];
+};
+
 export async function getInvoiceCandidates(): Promise<
   InvoiceCandidateSummary[]
 > {
@@ -365,17 +417,73 @@ export async function submitInvoice(id: string): Promise<SubmitInvoiceResult> {
   throw new Error("Failed to submit invoice: invalid API response.");
 }
 
-export async function saveInvoiceLineMapping(
-  id: string,
-  lineNumber: number,
+export async function getInventoryMappings(
+  search?: string,
+): Promise<InventoryMappingView[]> {
+  const headers = await getApiAuthHeaders();
+  const query = search ? `?search=${encodeURIComponent(search)}` : "";
+  const response = await fetch(
+    `${apiBaseUrl}/api/admin/inventory-mappings${query}`,
+    { headers, cache: "no-store" },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to load inventory mappings: ${response.status}`);
+  }
+
+  const data: unknown = await response.json();
+  return Array.isArray(data) ? (data as InventoryMappingView[]) : [];
+}
+
+export async function getShopriteCatalogItems(
+  search?: string,
+): Promise<ShopriteCatalogItem[]> {
+  const headers = await getApiAuthHeaders();
+  const query = search ? `?search=${encodeURIComponent(search)}` : "";
+  const response = await fetch(
+    `${apiBaseUrl}/api/admin/inventory-mappings/shoprite-items${query}`,
+    { headers, cache: "no-store" },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to load Shoprite item catalogue: ${response.status}`);
+  }
+
+  const data: unknown = await response.json();
+  return Array.isArray(data) ? (data as ShopriteCatalogItem[]) : [];
+}
+
+export async function getAcumaticaInventoryItem(
+  inventoryId: string,
+): Promise<AcumaticaInventoryItem | null> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(
+    `${apiBaseUrl}/api/admin/inventory-mappings/acumatica-items/${encodeURIComponent(inventoryId)}`,
+    { headers, cache: "no-store" },
+  );
+
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(`Failed to load Acumatica inventory item: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function saveInventoryMapping(
+  inventoryId: string,
+  acumaticaUom: string,
   input: {
     purchaseOrderLineId: string;
     shopriteUom: "EA" | "CA" | "CS" | "KG";
+    reason: string;
   },
-): Promise<InvoiceCandidateSummary> {
+): Promise<{ revalidatedCandidateCount: number; message: string }> {
   const headers = await getApiAuthHeaders();
   const response = await fetch(
-    `${apiBaseUrl}/api/invoices/${id}/line-mappings/${lineNumber}`,
+    `${apiBaseUrl}/api/admin/inventory-mappings/${encodeURIComponent(inventoryId)}/${encodeURIComponent(acumaticaUom)}`,
     {
       method: "PUT",
       headers: {
@@ -388,10 +496,21 @@ export async function saveInvoiceLineMapping(
   );
 
   if (!response.ok) {
-    throw new Error(`Failed to save invoice line mapping: ${response.status}`);
+    const result = await readJson(response);
+    const message = getErrorMessage(result);
+    throw new Error(message ?? `Failed to save inventory mapping: ${response.status}`);
   }
 
   return response.json();
+}
+
+function getErrorMessage(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const result = value as { message?: unknown };
+  return typeof result.message === "string" ? result.message : undefined;
 }
 
 async function readJson(response: Response): Promise<unknown> {

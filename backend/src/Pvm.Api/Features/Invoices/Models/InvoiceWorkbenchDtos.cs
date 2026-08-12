@@ -18,10 +18,6 @@ public sealed record InvoiceCandidateSummaryResponse(
 
 public sealed record InvoiceRefreshResponse(int Received, int Created, int Updated);
 
-public sealed record SaveInvoiceLineMappingRequest(
-    Guid PurchaseOrderLineId,
-    ShopriteMeasurementUnit ShopriteUom);
-
 public sealed record InvoiceCandidateDetailResponse(
     Guid Id,
     string Status,

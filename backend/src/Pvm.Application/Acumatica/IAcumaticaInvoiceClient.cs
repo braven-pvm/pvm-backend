@@ -13,6 +13,11 @@ public interface IAcumaticaInvoiceClient
     Task<AcumaticaInvoiceDto?> FetchFinalizedInvoiceAsync(
         string invoiceId,
         CancellationToken cancellationToken);
+
+    Task<AcumaticaInventoryItemDto?> FetchInventoryItemAsync(
+        string inventoryId,
+        CancellationToken cancellationToken)
+        => Task.FromResult<AcumaticaInventoryItemDto?>(null);
 }
 
 public sealed record AcumaticaInvoiceQuery(

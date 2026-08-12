@@ -53,7 +53,8 @@ Implemented:
 - Manual submission and attempt history.
 - Shoprite PO inbox list and detail.
 - Manual invoice and PO refresh.
-- Invoice-level item/GTIN and UOM mapping.
+- Reusable inventory-level item/GTIN and UOM mapping with Admin verification,
+  impact counts, audit reasons, and affected-candidate revalidation.
 - Admin user management.
 
 Missing:
@@ -64,7 +65,7 @@ Missing:
 - Queue depth, age, and dead-letter visibility.
 - Unified exception/task workflow.
 - Ambiguous resolution and classified safe retry.
-- Global mapping management.
+- Remaining global location/GLN, pack, and tax mapping management.
 - Connection health and configuration status.
 - State-transition and configuration audit explorer.
 - Correlation-driven payload/trace navigation.
@@ -1073,6 +1074,36 @@ Acceptance:
 - `Unknown`, stale and failed states are distinct.
 
 ### Console Slice E: Global mappings
+
+Status as of 2026-08-12: item/GTIN and UOM mapping is implemented as reusable
+inventory configuration outside finalized invoices. During invoice discovery,
+an exact unique GTIN and matching supported UOM from the Acumatica inventory
+item and Shoprite PO automatically creates the verified global baseline. Admin
+writes are audited with a required reason and synchronously revalidate active
+affected candidates. Admin intervention is reserved for missing, ambiguous or
+conflicting product data; automatic resolution never overwrites a verified
+mapping or infers a quantity conversion. Location/GLN, pack, tax, pagination,
+and asynchronous revalidation remain.
+
+The mapping console also derives an exception queue directly from the complete
+refreshed Shoprite PO catalogue. A buyer item with no verified global mapping
+appears once regardless of how many POs contain it. Admin can resolve that
+exception or preconfigure any known Shoprite buyer item by entering an exact
+Acumatica SKU, validating the SKU and its available UOMs live against the
+Acumatica Stock Item endpoint, selecting the Shoprite UOM, and recording a
+mandatory reason. Correcting a conflict atomically reassigns the global buyer
+item/SKU relationship and audits the displaced mapping instead of leaving an
+ambiguous duplicate.
+
+Acumatica and Shoprite may use different identifiers for the same product. In
+that case the initial global assignment is explicitly verified from Acumatica
+inventory and the complete available Shoprite PO catalogue, then reused
+automatically. The product mapping identifies the stable Shoprite buyer item;
+the matched PO line remains authoritative for the GTIN sent on that invoice.
+As of 2026-08-12, all 10 Shoprite buyer items observed across 202 QA POs are
+mapped exactly once to Acumatica inventory, covering 17 historical/current GTIN
+variants with no unmapped or ambiguous products. All use Acumatica UOM `BOX`
+and Shoprite UOM `EA`.
 
 Depends on:
 

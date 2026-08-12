@@ -322,6 +322,12 @@ a {
   margin: 0;
 }
 
+.table-toolbar a {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .empty-state {
   padding: 42px 20px;
   text-align: center;
@@ -389,12 +395,15 @@ td {
   overflow-wrap: anywhere;
 }
 
+.mapping-table input,
 .mapping-table select {
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);
   font: inherit;
+  max-width: 100%;
+  min-width: 0;
   min-height: 40px;
   padding: 0 10px;
   width: 100%;
@@ -407,6 +416,227 @@ td {
 .mapping-table .button {
   min-height: 36px;
   padding: 0 12px;
+}
+
+.mapping-page {
+  max-width: 1500px;
+}
+
+.alert-banner {
+  align-items: flex-start;
+  border: 1px solid;
+  border-radius: 6px;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 12px 14px;
+}
+
+.alert-banner span {
+  color: inherit;
+  font-size: 14px;
+  margin: 0;
+}
+
+.alert-error {
+  background: #fef2f2;
+  border-color: #efb4b4;
+  color: #991b1b;
+}
+
+.alert-success {
+  background: #e8f3ec;
+  border-color: #bad8c4;
+  color: var(--accent);
+}
+
+.exception-list {
+  margin-bottom: 22px;
+}
+
+.table-toolbar > div p {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+
+.compact-empty-state {
+  padding: 24px;
+}
+
+.exception-table td {
+  vertical-align: top;
+}
+
+.exception-table td > span,
+.exception-table td > strong {
+  display: block;
+}
+
+.mapping-create-tool {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 22px;
+  padding: 20px;
+  scroll-margin-top: 20px;
+}
+
+.section-heading h2 {
+  color: var(--surface-strong);
+  font-size: 18px;
+  margin: 0;
+}
+
+.section-heading p {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 6px 0 0;
+}
+
+.sku-lookup-form {
+  margin-top: 18px;
+  max-width: 620px;
+}
+
+.sku-lookup-form label,
+.mapping-create-form label > span {
+  color: var(--surface-strong);
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 7px;
+}
+
+.sku-lookup-form > div {
+  display: flex;
+  gap: 10px;
+}
+
+.sku-lookup-form input,
+.mapping-create-form input,
+.mapping-create-form select {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  min-height: 44px;
+  padding: 0 11px;
+  width: 100%;
+}
+
+.inline-validation-error {
+  color: #991b1b;
+  display: grid;
+  font-size: 13px;
+  gap: 3px;
+  margin-top: 14px;
+}
+
+.mapping-create-form {
+  align-items: end;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(120px, 0.35fr) minmax(280px, 1.2fr) minmax(110px, 0.3fr) minmax(220px, 0.8fr) auto;
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.mapping-create-form > *,
+.mapping-create-form label,
+.mapping-create-form select,
+.mapping-create-form input {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.validated-sku {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.validated-sku span,
+.validated-sku small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.validated-sku strong {
+  color: var(--surface-strong);
+  font-size: 16px;
+  margin-top: 4px;
+}
+
+.validated-sku p {
+  font-size: 13px;
+  margin: 4px 0;
+}
+
+.mapping-filter {
+  margin-bottom: 18px;
+}
+
+.mapping-filter label {
+  color: var(--surface-strong);
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.mapping-filter > div {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.mapping-filter input {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  min-height: 44px;
+  padding: 0 12px;
+  width: min(520px, 100%);
+}
+
+.inventory-mapping-table td {
+  vertical-align: top;
+}
+
+.inventory-mapping-table td strong,
+.inventory-mapping-table td > span:not(.status-pill) {
+  display: block;
+}
+
+.inventory-mapping-table td > span:not(.status-pill) {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 6px;
+}
+
+.inventory-mapping-table th:nth-child(1) {
+  width: 14%;
+}
+
+.inventory-mapping-table th:nth-child(2) {
+  width: 22%;
+}
+
+.inventory-mapping-table th:nth-child(3) {
+  width: 28%;
+}
+
+.inventory-mapping-table .button,
+.inventory-mapping-table input,
+.inventory-mapping-table select {
+  min-height: 44px;
 }
 
 .status-pill {
@@ -687,6 +917,36 @@ td span {
     flex-direction: column;
   }
 
+  .mapping-filter > div {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .mapping-page,
+  .mapping-list,
+  .exception-list,
+  .mapping-table {
+    max-width: 100%;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .mapping-page {
+    overflow-x: hidden;
+  }
+
+  .mapping-page > *,
+  .mapping-list tbody,
+  .exception-list tbody,
+  .mapping-list tr,
+  .exception-list tr,
+  .mapping-list td,
+  .exception-list td,
+  .mapping-list td > * {
+    max-width: 100%;
+    min-width: 0;
+  }
+
   .button {
     width: 100%;
   }
@@ -698,6 +958,39 @@ td span {
   th,
   td {
     display: block;
+  }
+
+  .mapping-list td {
+    display: block;
+    width: 100%;
+  }
+
+  .exception-list td {
+    display: block;
+    width: 100%;
+  }
+
+  .sku-lookup-form > div,
+  .alert-banner {
+    flex-direction: column;
+  }
+
+  .mapping-create-form {
+    grid-template-columns: 1fr;
+  }
+
+  .mapping-list td::before {
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .mapping-list td > * {
+    overflow-wrap: anywhere;
+    width: 100%;
+  }
+
+  .mapping-list .status-pill {
+    width: fit-content;
   }
 
   thead {

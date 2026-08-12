@@ -1,9 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  saveInvoiceLineMappingAction,
-  submitInvoiceAction,
-} from "../../actions";
+import { submitInvoiceAction } from "../../actions";
 import { getInvoiceCandidate } from "../../../src/api/client";
 import { hasAnyRole, requireWorkbenchUser } from "../../../src/auth/session";
 
@@ -23,7 +20,7 @@ export default async function InvoiceDetailPage({
   const candidate = await loadCandidate(id);
   const invoice = candidate.canonicalInvoice;
   const canWrite = hasAnyRole(user, ["Admin", "Operator"]);
-  const canManageMappings = hasAnyRole(user, ["Admin"]);
+  const isAdmin = hasAnyRole(user, ["Admin"]);
 
   return (
     <main className="page-shell">
@@ -159,97 +156,54 @@ export default async function InvoiceDetailPage({
         </div>
       </section>
 
-      {canManageMappings &&
-      candidate.matchedPurchaseOrder &&
-      invoice?.lines.length ? (
+      {invoice?.lines.length ? (
         <section className="table-panel detail-section">
           <div className="table-toolbar">
-            <h2>Line mappings</h2>
-            <span>Admin managed</span>
+            <h2>Inventory configuration</h2>
+            {isAdmin ? (
+              <Link href="/admin/inventory-mappings">Manage inventory mappings</Link>
+            ) : (
+              <span>Read-only</span>
+            )}
           </div>
           <table className="mapping-table">
             <thead>
               <tr>
-                <th>Acumatica line</th>
-                <th>Current mapping</th>
-                <th>Shoprite PO line</th>
-                <th>Shoprite UOM</th>
-                <th aria-label="Action" />
+                <th>Invoice line</th>
+                <th>Acumatica inventory</th>
+                <th>Resolved GTIN</th>
+                <th>UOM mapping</th>
+                <th>Status</th>
               </tr>
             </thead>
             <tbody>
               {invoice.lines.map((line) => {
-                const formId = `line-mapping-${line.lineNumber}`;
-                const selectedPoLine =
-                  candidate.matchedPurchaseOrder?.lines.find(
-                    (poLine) => poLine.gtin === line.gtin,
-                  ) ??
-                  (candidate.matchedPurchaseOrder?.lines.length === 1
-                    ? candidate.matchedPurchaseOrder.lines[0]
-                    : undefined);
-
+                const resolved =
+                  Boolean(line.gtin) &&
+                  Boolean(line.shopriteUom) &&
+                  line.isShopriteUomVerified;
                 return (
                   <tr key={line.lineNumber}>
-                    <td data-label="Acumatica line">
+                    <td data-label="Invoice line">{line.lineNumber}</td>
+                    <td data-label="Acumatica inventory">
                       <strong>{line.acumaticaInventoryId}</strong>
-                      <span>
-                        Line {line.lineNumber} · {line.acumaticaUom}
-                      </span>
+                      <span>{line.description}</span>
                     </td>
-                    <td data-label="Current mapping">
-                      {line.gtin ?? "No GTIN"}
-                      <span>
-                        {line.shopriteUom
-                          ? `${line.shopriteUom}${line.isShopriteUomVerified ? " · verified" : " · unverified"}`
-                          : "No Shoprite UOM"}
-                      </span>
+                    <td data-label="Resolved GTIN">{line.gtin ?? "Missing"}</td>
+                    <td data-label="UOM mapping">
+                      {line.acumaticaUom} → {line.shopriteUom ?? "Missing"}
+                      {line.shopriteUom ? (
+                        <span>
+                          {line.isShopriteUomVerified ? "Verified" : "Unverified"}
+                        </span>
+                      ) : null}
                     </td>
-                    <td data-label="Shoprite PO line">
-                      <select
-                        defaultValue={selectedPoLine?.id ?? ""}
-                        form={formId}
-                        name="purchaseOrderLineId"
-                        required
+                    <td data-label="Status">
+                      <span
+                        className={`status-pill ${resolved ? "status-healthy" : "status-pending"}`}
                       >
-                        <option value="">Select PO line</option>
-                        {candidate.matchedPurchaseOrder?.lines.map((poLine) => (
-                          <option key={poLine.id} value={poLine.id}>
-                            {poLine.lineNumber} ·{" "}
-                            {poLine.buyerItemId ?? "No buyer item"} ·{" "}
-                            {poLine.gtin ?? "No GTIN"} ·{" "}
-                            {poLine.buyerItemDescription ??
-                              poLine.description ??
-                              "No description"}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td data-label="Shoprite UOM">
-                      <select
-                        defaultValue={line.shopriteUom ?? ""}
-                        form={formId}
-                        name="shopriteUom"
-                        required
-                      >
-                        <option value="">Select UOM</option>
-                        <option value="EA">EA</option>
-                        <option value="CA">CA</option>
-                        <option value="CS">CS</option>
-                        <option value="KG">KG</option>
-                      </select>
-                    </td>
-                    <td className="table-action" data-label="Action">
-                      <form action={saveInvoiceLineMappingAction} id={formId}>
-                        <input name="id" type="hidden" value={candidate.id} />
-                        <input
-                          name="lineNumber"
-                          type="hidden"
-                          value={line.lineNumber}
-                        />
-                        <button className="button secondary" type="submit">
-                          Save mapping
-                        </button>
-                      </form>
+                        {resolved ? "Configured" : "Needs configuration"}
+                      </span>
                     </td>
                   </tr>
                 );

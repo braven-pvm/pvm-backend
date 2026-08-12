@@ -8,6 +8,42 @@ namespace Pvm.Infrastructure.Tests.Acumatica;
 public sealed class AcumaticaInvoiceClientTests
 {
     [Fact]
+    public async Task FetchInventoryItemAsync_ValidatesExactSkuAndReturnsAvailableUnits()
+    {
+        const string stockItemJson = """
+            [{
+              "InventoryID":{"value":"ENER10"},
+              "Description":{"value":"E/BAR CHOC STRAWBERRY 20X45g"},
+              "ItemStatus":{"value":"Active"},
+              "SalesUOM":{"value":"BOX"},
+              "BaseUOM":{"value":"EA"},
+              "PurchaseUOM":{"value":"BOX"}
+            }]
+            """;
+        using var handler = new SequenceHandler(
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent),
+            _ => JsonResponse(stockItemJson),
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent));
+        using var httpClient = new HttpClient(handler);
+        var client = new AcumaticaInvoiceClient(httpClient, Options.Create(DefaultOptions()));
+
+        var item = await client.FetchInventoryItemAsync(" ener10 ", CancellationToken.None);
+
+        Assert.NotNull(item);
+        Assert.Equal("ENER10", item.InventoryId);
+        Assert.Equal("E/BAR CHOC STRAWBERRY 20X45g", item.Description);
+        Assert.Equal("Active", item.Status);
+        Assert.Equal(["BOX", "EA"], item.UnitsOfMeasure);
+        var lookup = Assert.Single(
+            handler.Requests,
+            request => request.Uri.AbsolutePath.EndsWith("/StockItem", StringComparison.Ordinal));
+        var query = Uri.UnescapeDataString(lookup.Uri.Query);
+        Assert.Contains("InventoryID eq 'ener10'", query);
+        Assert.Contains("$select=InventoryID,Description,ItemStatus,BaseUOM,SalesUOM,PurchaseUOM", query);
+        Assert.Contains("$top=2", query);
+    }
+
+    [Fact]
     public async Task FetchFinalizedInvoicesAsync_AuthenticatesWithConfiguredCompanyAndBranch()
     {
         using var handler = new SequenceHandler(
@@ -63,6 +99,7 @@ public sealed class AcumaticaInvoiceClientTests
                 {
                   "LineNbr": { "value": 1 },
                   "InventoryID": { "value": "PVM-ITEM-1" },
+                  "Barcode": { "value": "06001197181156" },
                   "Description": { "value": "Sales Account - HO" },
                   "TransactionDescr": { "value": "PVM test item" },
                   "Qty": { "value": 2.00 },
@@ -110,6 +147,7 @@ public sealed class AcumaticaInvoiceClientTests
         var line = Assert.Single(invoice.Lines);
         Assert.Equal(1, line.LineNumber);
         Assert.Equal("PVM-ITEM-1", line.InventoryId);
+        Assert.Equal("06001197181156", line.Gtin);
         Assert.Equal("PVM test item", line.Description);
         Assert.Equal(2.00m, line.Quantity);
         Assert.Equal("EA", line.Uom);
@@ -118,6 +156,82 @@ public sealed class AcumaticaInvoiceClientTests
         Assert.Equal(11.20m, line.TaxAmount);
         Assert.Equal("STANDARD", line.TaxCategoryCode);
         Assert.Equal(15.00m, line.TaxPercentage);
+    }
+
+    [Fact]
+    public async Task FetchFinalizedInvoicesAsync_EnrichesMissingGtinFromStockItemCrossReferences()
+    {
+        const string summaryJson = """
+            [{
+              "id":"invoice-with-stock-item",
+              "ReferenceNbr":{"value":"INV-STOCK"},
+              "Type":{"value":"Invoice"},
+              "Status":{"value":"Open"},
+              "CustomerID":{"value":"SHOPRITE"}
+            }]
+            """;
+        const string invoiceJson = """
+            {
+              "id":"invoice-with-stock-item",
+              "ReferenceNbr":{"value":"INV-STOCK"},
+              "Type":{"value":"Invoice"},
+              "Status":{"value":"Open"},
+              "CustomerID":{"value":"SHOPRITE"},
+              "CustomerOrder":{"value":"PO-STOCK"},
+              "Currency":{"value":"ZAR"},
+              "Date":{"value":"2026-08-11T00:00:00+02:00"},
+              "Amount":{"value":245.50},
+              "TaxTotal":{"value":32.02},
+              "Details":[{
+                "LineNbr":{"value":1},
+                "InventoryID":{"value":"ENER10"},
+                "Description":{"value":"E/BAR CHOC STRAWBERRY 20X45g"},
+                "Qty":{"value":1},
+                "UOM":{"value":"BOX"},
+                "Amount":{"value":213.48}
+              }],
+              "TaxDetails":[{
+                "TaxID":{"value":"STANDARD15"},
+                "TaxableAmount":{"value":213.48},
+                "TaxAmount":{"value":32.02}
+              }]
+            }
+            """;
+        const string stockItemJson = """
+            [{
+              "InventoryID":{"value":"ENER10"},
+              "CrossReferences":[
+                {
+                  "AlternateID":{"value":"10369734"},
+                  "AlternateType":{"value":"Customer Part Number"},
+                  "UOM":{"value":"BOX"}
+                },
+                {
+                  "AlternateID":{"value":"06001197181156"},
+                  "AlternateType":{"value":"Global"},
+                  "UOM":{"value":"BOX"}
+                }
+              ]
+            }]
+            """;
+        using var handler = new SequenceHandler(
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent),
+            _ => JsonResponse(summaryJson),
+            _ => JsonResponse(invoiceJson),
+            _ => JsonResponse(stockItemJson),
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent));
+        using var httpClient = new HttpClient(handler);
+        var client = new AcumaticaInvoiceClient(httpClient, Options.Create(DefaultOptions()));
+
+        var invoice = Assert.Single(await client.FetchFinalizedInvoicesAsync(CancellationToken.None));
+
+        Assert.Equal("06001197181156", Assert.Single(invoice.Lines).Gtin);
+        var stockRequest = Assert.Single(
+            handler.Requests,
+            request => request.Uri.AbsolutePath.EndsWith("/StockItem", StringComparison.Ordinal));
+        var query = Uri.UnescapeDataString(stockRequest.Uri.Query);
+        Assert.Contains("InventoryID eq 'ENER10'", query);
+        Assert.Contains("$expand=CrossReferences", query);
     }
 
     [Fact]
@@ -156,6 +270,7 @@ public sealed class AcumaticaInvoiceClientTests
             _ => new HttpResponseMessage(HttpStatusCode.NoContent),
             _ => JsonResponse(summaryJson),
             _ => JsonResponse(detailJson),
+            _ => JsonResponse("[]"),
             _ => new HttpResponseMessage(HttpStatusCode.NoContent));
         using var httpClient = new HttpClient(handler);
         var client = new AcumaticaInvoiceClient(httpClient, Options.Create(DefaultOptions()));

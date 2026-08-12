@@ -6,7 +6,7 @@ import { createUser, updateUserRoles, updateUserStatus } from "../src/api/admin"
 import {
   refreshInvoiceCandidates,
   refreshPurchaseOrders,
-  saveInvoiceLineMapping,
+  saveInventoryMapping,
   seedInvoiceCandidateFromPurchaseOrder,
   submitInvoice,
   enqueueIntegrationCommand,
@@ -31,23 +31,35 @@ export async function submitInvoiceAction(formData: FormData) {
   redirect(`/invoices/${id}`);
 }
 
-export async function saveInvoiceLineMappingAction(formData: FormData) {
-  const id = requiredString(formData, "id");
-  const lineNumber = Number(requiredString(formData, "lineNumber"));
+export async function saveInventoryMappingAction(formData: FormData) {
+  const inventoryId = requiredString(formData, "inventoryId");
+  const acumaticaUom = requiredString(formData, "acumaticaUom");
   const purchaseOrderLineId = requiredString(formData, "purchaseOrderLineId");
   const shopriteUom = requiredShopriteUom(formData, "shopriteUom");
+  const reason = requiredString(formData, "reason");
 
-  if (!Number.isInteger(lineNumber) || lineNumber <= 0) {
-    throw new Error("lineNumber must be a positive integer.");
+  let errorMessage: string | undefined;
+  try {
+    await saveInventoryMapping(inventoryId, acumaticaUom, {
+      purchaseOrderLineId,
+      shopriteUom,
+      reason,
+    });
+  } catch (error) {
+    errorMessage = error instanceof Error ? error.message : "Inventory mapping could not be saved.";
   }
 
-  await saveInvoiceLineMapping(id, lineNumber, {
-    purchaseOrderLineId,
-    shopriteUom,
-  });
+  if (errorMessage) {
+    redirect(
+      `/admin/inventory-mappings?mappingError=${encodeURIComponent(errorMessage)}&newSku=${encodeURIComponent(inventoryId)}#add-mapping`,
+    );
+  }
+
   revalidatePath("/invoices");
-  revalidatePath(`/invoices/${id}`);
-  redirect(`/invoices/${id}`);
+  revalidatePath("/admin/inventory-mappings");
+  redirect(
+    `/admin/inventory-mappings?mappingStatus=${encodeURIComponent(`${inventoryId} mapping saved and invoice candidates revalidated.`)}&search=${encodeURIComponent(inventoryId)}`,
+  );
 }
 
 export async function refreshPurchaseOrdersAction() {
