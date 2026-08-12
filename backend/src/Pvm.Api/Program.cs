@@ -6,6 +6,7 @@ using Pvm.Api.Features.AcumaticaPushNotifications;
 using Pvm.Api.Features.Auth;
 using Pvm.Api.Features.Invoices;
 using Pvm.Api.Features.IntegrationOperations;
+using Pvm.Api.Features.Mappings;
 using Pvm.Api.Features.Operations;
 using Pvm.Api.Features.ShopritePurchaseOrders;
 using Pvm.Api.Features.Submissions;
@@ -69,6 +70,7 @@ app.MapIntegrationOperationEndpoints();
 app.MapIntegrationRunEndpoints();
 app.MapAcumaticaPushNotificationEndpoints();
 app.MapAcumaticaPushNotificationAdminEndpoints();
+app.MapInventoryMappingEndpoints();
 
 app.Run();
 

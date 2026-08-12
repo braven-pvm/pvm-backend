@@ -33,6 +33,7 @@ export default async function RootLayout({
             <Link href="/runs">Runs</Link>
             <Link href="/admin/messages">Messages</Link>
             <Link href="/admin/acumatica-events">Webhook Events</Link>
+            <Link href="/admin/inventory-mappings">Inventory mappings</Link>
             <Link href="/admin/users">Users</Link>
           </nav>
           <div className="user-chip">

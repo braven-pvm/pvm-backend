@@ -6,7 +6,7 @@ import { createUser, updateUserRoles, updateUserStatus } from "../src/api/admin"
 import {
   refreshInvoiceCandidates,
   refreshPurchaseOrders,
-  saveInvoiceLineMapping,
+  saveInventoryMapping,
   seedInvoiceCandidateFromPurchaseOrder,
   submitInvoice,
   enqueueIntegrationCommand,
@@ -31,23 +31,21 @@ export async function submitInvoiceAction(formData: FormData) {
   redirect(`/invoices/${id}`);
 }
 
-export async function saveInvoiceLineMappingAction(formData: FormData) {
-  const id = requiredString(formData, "id");
-  const lineNumber = Number(requiredString(formData, "lineNumber"));
+export async function saveInventoryMappingAction(formData: FormData) {
+  const inventoryId = requiredString(formData, "inventoryId");
+  const acumaticaUom = requiredString(formData, "acumaticaUom");
   const purchaseOrderLineId = requiredString(formData, "purchaseOrderLineId");
   const shopriteUom = requiredShopriteUom(formData, "shopriteUom");
+  const reason = requiredString(formData, "reason");
 
-  if (!Number.isInteger(lineNumber) || lineNumber <= 0) {
-    throw new Error("lineNumber must be a positive integer.");
-  }
-
-  await saveInvoiceLineMapping(id, lineNumber, {
+  await saveInventoryMapping(inventoryId, acumaticaUom, {
     purchaseOrderLineId,
     shopriteUom,
+    reason,
   });
   revalidatePath("/invoices");
-  revalidatePath(`/invoices/${id}`);
-  redirect(`/invoices/${id}`);
+  revalidatePath("/admin/inventory-mappings");
+  redirect(`/admin/inventory-mappings?search=${encodeURIComponent(inventoryId)}`);
 }
 
 export async function refreshPurchaseOrdersAction() {

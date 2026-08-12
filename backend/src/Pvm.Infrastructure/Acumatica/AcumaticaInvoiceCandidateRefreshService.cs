@@ -12,9 +12,12 @@ namespace Pvm.Infrastructure.Acumatica;
 public sealed class AcumaticaInvoiceCandidateRefreshService(
     IAcumaticaInvoiceClient invoiceClient,
     PvmDbContext dbContext,
-    ShopriteInvoiceCandidateMatcher candidateMatcher)
+    ShopriteInvoiceCandidateMatcher candidateMatcher,
+    ShopriteInventoryMappingBootstrapService? mappingBootstrapService = null)
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    private readonly ShopriteInventoryMappingBootstrapService _mappingBootstrapService =
+        mappingBootstrapService ?? new ShopriteInventoryMappingBootstrapService(dbContext);
 
     public Task<AcumaticaInvoiceRefreshResult> RefreshAsync(CancellationToken cancellationToken)
         => RefreshAsync(query: null, cancellationToken);
@@ -80,6 +83,7 @@ public sealed class AcumaticaInvoiceCandidateRefreshService(
 
         foreach (var source in invoices)
         {
+            await _mappingBootstrapService.ResolveKnownMappingsAsync(source, cancellationToken);
             var canonical = AcumaticaInvoiceNormalizer.Normalize(
                 source,
                 supplierGln: null,

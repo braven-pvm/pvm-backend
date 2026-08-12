@@ -12,6 +12,7 @@ public sealed class AcumaticaInvoiceClient(
     IOptions<AcumaticaOptions> options) : IAcumaticaInvoiceClient
 {
     private const int CustomerAccountChunkSize = 20;
+    private const int InventoryItemChunkSize = 20;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly AcumaticaOptions _options = options.Value;
 
@@ -76,7 +77,7 @@ public sealed class AcumaticaInvoiceClient(
                 }
             }
 
-            return invoices;
+            return await EnrichMissingGtinsAsync(invoices, sessionCookie, cancellationToken);
         }, cancellationToken);
     }
 
@@ -112,11 +113,70 @@ public sealed class AcumaticaInvoiceClient(
                 return null;
             }
 
-            var invoice = MapInvoice(detail);
+            var invoice = AssertSingle(await EnrichMissingGtinsAsync(
+                [MapInvoice(detail)],
+                sessionCookie,
+                cancellationToken));
             return customerAccounts.Contains(invoice.CustomerAccount, StringComparer.OrdinalIgnoreCase)
                 ? invoice
                 : null;
         }, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<AcumaticaInvoiceDto>> EnrichMissingGtinsAsync(
+        IReadOnlyList<AcumaticaInvoiceDto> invoices,
+        string? sessionCookie,
+        CancellationToken cancellationToken)
+    {
+        var inventoryIds = invoices
+            .SelectMany(invoice => invoice.Lines)
+            .Where(line => string.IsNullOrWhiteSpace(line.Gtin))
+            .Select(line => line.InventoryId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (inventoryIds.Length == 0)
+        {
+            return invoices;
+        }
+
+        var crossReferences = new Dictionary<string, List<InventoryCrossReference>>(
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var chunk in inventoryIds.Chunk(InventoryItemChunkSize))
+        {
+            using var request = CreateSessionRequest(
+                HttpMethod.Get,
+                BuildStockItemPageUri(chunk),
+                sessionCookie);
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            EnsureSuccess(response, "stock item retrieval");
+            var stockItems = await ReadArrayAsync(response, "stock item retrieval", cancellationToken);
+
+            foreach (var stockItem in stockItems)
+            {
+                var inventoryId = RequiredString(stockItem, "InventoryID");
+                var references = Array(stockItem, "CrossReferences")
+                    .Select(MapInventoryCrossReference)
+                    .Where(reference => reference is not null)
+                    .Cast<InventoryCrossReference>()
+                    .ToList();
+                crossReferences[inventoryId] = references;
+            }
+        }
+
+        return invoices.Select(invoice => invoice with
+        {
+            Lines = invoice.Lines.Select(line =>
+            {
+                if (!string.IsNullOrWhiteSpace(line.Gtin)
+                    || !crossReferences.TryGetValue(line.InventoryId, out var references))
+                {
+                    return line;
+                }
+
+                return line with { Gtin = SelectGtin(references, line.Uom) };
+            }).ToArray()
+        }).ToArray();
     }
 
     private async Task<T> WithSessionAsync<T>(
@@ -283,6 +343,16 @@ public sealed class AcumaticaInvoiceClient(
         return BuildUri(endpoint + "?$expand=Details,TaxDetails");
     }
 
+    private Uri BuildStockItemPageUri(IReadOnlyCollection<string> inventoryIds)
+    {
+        var filter = string.Join(
+            " or ",
+            inventoryIds.Select(inventoryId =>
+                $"InventoryID eq '{EscapeFilterValue(inventoryId)}'"));
+        var query = $"?$filter={Uri.EscapeDataString($"({filter})")}&$expand=CrossReferences&$top={inventoryIds.Count}";
+        return BuildUri(BuildEntityEndpoint("StockItem") + query);
+    }
+
     private string BuildEntityEndpoint(string entity)
         => $"entity/{Uri.EscapeDataString(_options.EndpointName)}/{Uri.EscapeDataString(_options.EndpointVersion)}/{entity}";
 
@@ -365,6 +435,94 @@ public sealed class AcumaticaInvoiceClient(
             TaxPercentage: taxPercentage,
             IsCatchWeight: false);
     }
+
+    private static InventoryCrossReference? MapInventoryCrossReference(JsonElement source)
+    {
+        var alternateId = String(source, "AlternateID", "AlternateId");
+        if (!IsValidGtin(alternateId))
+        {
+            return null;
+        }
+
+        return new InventoryCrossReference(
+            alternateId!,
+            String(source, "AlternateType", "Type"),
+            String(source, "UOM", "Uom"));
+    }
+
+    private static string? SelectGtin(
+        IReadOnlyList<InventoryCrossReference> references,
+        string invoiceUom)
+    {
+        var exactUom = references
+            .Where(reference => string.Equals(reference.Uom, invoiceUom, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var global = references
+            .Where(reference => string.IsNullOrWhiteSpace(reference.Uom))
+            .ToArray();
+
+        return SingleDistinctPreferred(exactUom)
+            ?? SingleDistinctPreferred(global)
+            ?? SingleDistinctPreferred(references);
+    }
+
+    private static string? SingleDistinctPreferred(IReadOnlyCollection<InventoryCrossReference> references)
+    {
+        if (references.Count == 0)
+        {
+            return null;
+        }
+
+        var preferred = references
+            .Where(reference => IsPreferredGtinType(reference.Type))
+            .Select(reference => reference.AlternateId)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (preferred.Length == 1)
+        {
+            return preferred[0];
+        }
+
+        var all = references
+            .Select(reference => reference.AlternateId)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return all.Length == 1 ? all[0] : null;
+    }
+
+    private static bool IsPreferredGtinType(string? value)
+        => value is not null
+            && (value.Contains("global", StringComparison.OrdinalIgnoreCase)
+                || value.Contains("barcode", StringComparison.OrdinalIgnoreCase)
+                || value.Contains("gtin", StringComparison.OrdinalIgnoreCase)
+                || value.Contains("ean", StringComparison.OrdinalIgnoreCase)
+                || value.Contains("upc", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsValidGtin(string? value)
+    {
+        if (value is null
+            || value.Length is not (8 or 12 or 13 or 14)
+            || value.Any(character => character is < '0' or > '9'))
+        {
+            return false;
+        }
+
+        var sum = 0;
+        for (var index = value.Length - 2; index >= 0; index--)
+        {
+            var digit = value[index] - '0';
+            var positionFromRight = value.Length - 1 - index;
+            sum += digit * (positionFromRight % 2 == 1 ? 3 : 1);
+        }
+
+        var expectedCheckDigit = (10 - sum % 10) % 10;
+        return expectedCheckDigit == value[^1] - '0';
+    }
+
+    private static T AssertSingle<T>(IReadOnlyList<T> values)
+        => values.Count == 1
+            ? values[0]
+            : throw new InvalidOperationException("Expected one Acumatica invoice.");
 
     private static decimal LineAmount(JsonElement source)
     {
@@ -607,4 +765,6 @@ public sealed class AcumaticaInvoiceClient(
     }
 
     private sealed record TaxDetail(string? TaxId, decimal Percentage);
+
+    private sealed record InventoryCrossReference(string AlternateId, string? Type, string? Uom);
 }

@@ -53,6 +53,194 @@ public sealed class AcumaticaInvoiceCandidateRefreshServiceTests : IAsyncLifetim
     }
 
     [Fact]
+    public async Task RefreshAsync_BootstrapsGlobalMappingForUniqueExactGtinAndUom()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        var purchaseOrder = NewPurchaseOrder();
+        var purchaseOrderLine = Assert.Single(purchaseOrder.Lines);
+        purchaseOrderLine.BuyerItemId = "10369734";
+        db.ShopritePurchaseOrders.Add(purchaseOrder);
+        await db.SaveChangesAsync();
+        var source = NewInvoice() with
+        {
+            Lines =
+            [
+                NewInvoice().Lines[0] with
+                {
+                    Gtin = purchaseOrderLine.Gtin
+                }
+            ]
+        };
+        var service = new AcumaticaInvoiceCandidateRefreshService(
+            new StubInvoiceClient([source]),
+            db,
+            new ShopriteInvoiceCandidateMatcher(db));
+
+        await service.RefreshAsync(CancellationToken.None);
+
+        var itemMapping = await db.ShopriteItemMappings.SingleAsync();
+        Assert.Equal("PVM-ITEM-1", itemMapping.AcumaticaInventoryId);
+        Assert.Equal("10369734", itemMapping.ShopriteBuyerItemId);
+        Assert.Equal(purchaseOrderLine.Gtin, itemMapping.Gtin);
+        Assert.True(itemMapping.IsVerified);
+        Assert.Equal("system:inventory-mapping-bootstrap", itemMapping.UpdatedBy);
+        var uomMapping = await db.ShopriteUomMappings.SingleAsync();
+        Assert.Equal("EA", uomMapping.AcumaticaUom);
+        Assert.Equal(ShopriteMeasurementUnit.EA, uomMapping.ShopriteUom);
+        Assert.True(uomMapping.IsVerified);
+        Assert.Equal("system:inventory-mapping-bootstrap", uomMapping.UpdatedBy);
+        var audits = await db.AuditEvents.ToArrayAsync();
+        Assert.Equal(2, audits.Length);
+        Assert.All(audits, audit =>
+        {
+            Assert.Equal("system:inventory-mapping-bootstrap", audit.Actor);
+            Assert.Contains(purchaseOrder.PurchaseOrderNumber, audit.DetailsJson);
+            Assert.Contains(purchaseOrderLine.Id.ToString(), audit.DetailsJson);
+        });
+        var candidate = await db.InvoiceCandidates.SingleAsync();
+        var canonical = JsonSerializer.Deserialize<CanonicalInvoice>(
+            candidate.CanonicalJson!,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var canonicalLine = Assert.Single(Assert.IsType<CanonicalInvoice>(canonical).Lines);
+        Assert.Equal(ShopriteMeasurementUnit.EA, canonicalLine.ShopriteUom);
+        Assert.True(canonicalLine.IsShopriteUomVerified);
+        Assert.Equal("Ready", candidate.Status);
+    }
+
+    [Fact]
+    public async Task RefreshAsync_DoesNotBootstrapWhenShopriteUomDiffers()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        var purchaseOrder = NewPurchaseOrder();
+        var purchaseOrderLine = Assert.Single(purchaseOrder.Lines);
+        purchaseOrderLine.BuyerItemId = "10369734";
+        purchaseOrderLine.MeasurementUnitCode = "CS";
+        db.ShopritePurchaseOrders.Add(purchaseOrder);
+        await db.SaveChangesAsync();
+        var source = NewInvoice() with
+        {
+            Lines =
+            [
+                NewInvoice().Lines[0] with
+                {
+                    Gtin = purchaseOrderLine.Gtin
+                }
+            ]
+        };
+        var service = new AcumaticaInvoiceCandidateRefreshService(
+            new StubInvoiceClient([source]),
+            db,
+            new ShopriteInvoiceCandidateMatcher(db));
+
+        await service.RefreshAsync(CancellationToken.None);
+
+        Assert.Empty(await db.ShopriteItemMappings.ToArrayAsync());
+        Assert.Empty(await db.ShopriteUomMappings.ToArrayAsync());
+        Assert.Empty(await db.AuditEvents.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task RefreshAsync_ConflictingGlobalMappingDoesNotCreatePartialBootstrap()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        var purchaseOrder = NewPurchaseOrder();
+        var purchaseOrderLine = Assert.Single(purchaseOrder.Lines);
+        purchaseOrderLine.BuyerItemId = "10369734";
+        db.ShopritePurchaseOrders.Add(purchaseOrder);
+        db.ShopriteUomMappings.Add(new ShopriteUomMappingEntity
+        {
+            Id = Guid.NewGuid(),
+            AcumaticaInventoryId = "PVM-ITEM-1",
+            AcumaticaUom = "EA",
+            ShopriteUom = ShopriteMeasurementUnit.CS,
+            IsVerified = true,
+            UpdatedBy = "admin@example.com",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        });
+        await db.SaveChangesAsync();
+        var source = NewInvoice() with
+        {
+            Lines =
+            [
+                NewInvoice().Lines[0] with
+                {
+                    Gtin = purchaseOrderLine.Gtin
+                }
+            ]
+        };
+        var service = new AcumaticaInvoiceCandidateRefreshService(
+            new StubInvoiceClient([source]),
+            db,
+            new ShopriteInvoiceCandidateMatcher(db));
+
+        await service.RefreshAsync(CancellationToken.None);
+
+        Assert.Empty(await db.ShopriteItemMappings.ToArrayAsync());
+        Assert.Single(await db.ShopriteUomMappings.ToArrayAsync());
+        Assert.Empty(await db.AuditEvents.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task ListInventoryMappings_PreconfiguredProductUsesGlobalPoCatalogWithoutInvoiceCandidate()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        var purchaseOrder = NewPurchaseOrder();
+        var purchaseOrderLine = Assert.Single(purchaseOrder.Lines);
+        purchaseOrderLine.BuyerItemId = "10521531";
+        purchaseOrderLine.BuyerItemDescription = "ENERGY BAR PVM BITE SIZE 200G, SBERRY";
+        var laterPurchaseOrder = NewPurchaseOrder();
+        laterPurchaseOrder.PurchaseOrderNumber = "1210297233";
+        laterPurchaseOrder.LastSeenAt = purchaseOrder.LastSeenAt.AddMinutes(1);
+        var laterPurchaseOrderLine = Assert.Single(laterPurchaseOrder.Lines);
+        laterPurchaseOrderLine.BuyerItemId = purchaseOrderLine.BuyerItemId;
+        laterPurchaseOrderLine.BuyerItemDescription = purchaseOrderLine.BuyerItemDescription;
+        laterPurchaseOrderLine.Gtin = purchaseOrderLine.Gtin;
+        db.ShopritePurchaseOrders.AddRange(purchaseOrder, laterPurchaseOrder);
+        db.ShopriteItemMappings.Add(new ShopriteItemMappingEntity
+        {
+            Id = Guid.NewGuid(),
+            AcumaticaInventoryId = "ENER1",
+            ShopriteBuyerItemId = "10521531",
+            Gtin = purchaseOrderLine.Gtin!,
+            IsVerified = true,
+            UpdatedBy = "admin@example.com",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        });
+        db.ShopriteUomMappings.Add(new ShopriteUomMappingEntity
+        {
+            Id = Guid.NewGuid(),
+            AcumaticaInventoryId = "ENER1",
+            AcumaticaUom = "BOX",
+            ShopriteUom = ShopriteMeasurementUnit.EA,
+            IsVerified = true,
+            UpdatedBy = "admin@example.com",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        });
+        await db.SaveChangesAsync();
+        var matcher = new ShopriteInvoiceCandidateMatcher(db);
+        var service = new ShopriteInventoryMappingService(
+            db,
+            new ShopriteInvoiceCandidateRevalidationService(db, matcher));
+
+        var view = Assert.Single(await service.ListAsync(null, CancellationToken.None));
+
+        Assert.Equal("ENER1", view.InventoryId);
+        Assert.Equal("ENERGY BAR PVM BITE SIZE 200G, SBERRY", view.Description);
+        var suggestion = Assert.Single(view.Suggestions);
+        Assert.Equal(laterPurchaseOrderLine.Id, suggestion.PurchaseOrderLineId);
+        Assert.Equal("10521531", suggestion.ShopriteBuyerItemId);
+        Assert.Equal(purchaseOrderLine.Gtin, suggestion.Gtin);
+        Assert.Empty(await db.InvoiceCandidates.ToArrayAsync());
+    }
+
+    [Fact]
     public async Task RefreshAsync_AppliesVerifiedMappingsWhenLivePurchaseOrderHasNoSupplierItemOrUom()
     {
         await using var db = CreateDbContext();
@@ -68,7 +256,7 @@ public sealed class AcumaticaInvoiceCandidateRefreshServiceTests : IAsyncLifetim
             Id = Guid.NewGuid(),
             AcumaticaInventoryId = "ENER10",
             ShopriteBuyerItemId = "10369734",
-            Gtin = purchaseOrderLine.Gtin!,
+            Gtin = "06001197040170",
             IsVerified = true,
             UpdatedBy = "admin@example.com",
             CreatedAt = DateTimeOffset.UtcNow,
@@ -93,7 +281,8 @@ public sealed class AcumaticaInvoiceCandidateRefreshServiceTests : IAsyncLifetim
                 NewInvoice().Lines[0] with
                 {
                     InventoryId = "ENER10",
-                    Uom = "BOX"
+                    Uom = "BOX",
+                    Gtin = "8581035007071"
                 }
             ]
         };
@@ -116,7 +305,7 @@ public sealed class AcumaticaInvoiceCandidateRefreshServiceTests : IAsyncLifetim
     }
 
     [Fact]
-    public async Task SaveLineMapping_PersistsAuditsAndRevalidatesCandidate()
+    public async Task SaveInventoryMapping_PersistsAuditsAndRevalidatesAffectedCandidates()
     {
         await using var db = CreateDbContext();
         await db.Database.EnsureCreatedAsync();
@@ -138,34 +327,76 @@ public sealed class AcumaticaInvoiceCandidateRefreshServiceTests : IAsyncLifetim
                 }
             ]
         };
+        var secondSource = source with
+        {
+            Id = "second-acumatica-invoice",
+            InvoiceNumber = "INV000124"
+        };
         var matcher = new ShopriteInvoiceCandidateMatcher(db);
         var refreshService = new AcumaticaInvoiceCandidateRefreshService(
-            new StubInvoiceClient([source]),
+            new StubInvoiceClient([source, secondSource]),
             db,
             matcher);
         await refreshService.RefreshAsync(CancellationToken.None);
-        var candidate = await db.InvoiceCandidates.SingleAsync();
-        Assert.Equal("NeedsReview", candidate.Status);
-        var mappingService = new ShopriteInvoiceLineMappingService(db, matcher);
+        var candidates = await db.InvoiceCandidates.OrderBy(candidate => candidate.InvoiceNumber).ToArrayAsync();
+        Assert.Equal(2, candidates.Length);
+        Assert.All(candidates, candidate => Assert.Equal("NeedsReview", candidate.Status));
+        var legacyCanonical = Assert.IsType<CanonicalInvoice>(JsonSerializer.Deserialize<CanonicalInvoice>(
+            candidates[0].CanonicalJson!,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))) with
+        {
+            AcumaticaInvoiceId = "legacy-acumatica-invoice",
+            InvoiceNumber = "INV000125"
+        };
+        var legacyCandidate = new InvoiceCandidateEntity
+        {
+            Id = Guid.NewGuid(),
+            AcumaticaInvoiceId = "legacy-acumatica-invoice",
+            InvoiceNumber = "INV000125",
+            CustomerAccount = candidates[0].CustomerAccount,
+            ShopritePurchaseOrderNumber = candidates[0].ShopritePurchaseOrderNumber,
+            MatchedShopritePurchaseOrderId = candidates[0].MatchedShopritePurchaseOrderId,
+            IdempotencyKey = "legacy-idempotency-key",
+            Status = "NeedsReview",
+            SourceJson = """{"id":"legacy-source"}""",
+            CanonicalJson = JsonSerializer.Serialize(
+                legacyCanonical,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            ValidationJson = candidates[0].ValidationJson,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+        db.InvoiceCandidates.Add(legacyCandidate);
+        await db.SaveChangesAsync();
+        candidates = await db.InvoiceCandidates.OrderBy(candidate => candidate.InvoiceNumber).ToArrayAsync();
+        var sourceJsonBefore = candidates.ToDictionary(candidate => candidate.Id, candidate => candidate.SourceJson);
+        var revalidationService = new ShopriteInvoiceCandidateRevalidationService(db, matcher);
+        var mappingService = new ShopriteInventoryMappingService(db, revalidationService);
 
         var result = await mappingService.SaveAsync(
-            candidateId: candidate.Id,
-            lineNumber: 1,
+            inventoryId: "ENER10",
+            acumaticaUom: "BOX",
             purchaseOrderLineId: purchaseOrderLine.Id,
             shopriteUom: ShopriteMeasurementUnit.CS,
             actor: "admin@example.com",
+            reason: "Verified against Shoprite PO 1215382915.",
             cancellationToken: CancellationToken.None);
 
-        Assert.Equal(ShopriteLineMappingSaveStatus.Saved, result.Status);
-        var savedCandidate = Assert.IsType<InvoiceCandidateEntity>(result.Candidate);
-        Assert.Equal("Ready", savedCandidate.Status);
-        var savedCanonical = JsonSerializer.Deserialize<CanonicalInvoice>(
-            savedCandidate.CanonicalJson!,
-            new JsonSerializerOptions(JsonSerializerDefaults.Web));
-        var savedLine = Assert.Single(Assert.IsType<CanonicalInvoice>(savedCanonical).Lines);
-        Assert.Equal(purchaseOrderLine.Gtin, savedLine.Gtin);
-        Assert.Equal(ShopriteMeasurementUnit.CS, savedLine.ShopriteUom);
-        Assert.True(savedLine.IsShopriteUomVerified);
+        Assert.Equal(ShopriteInventoryMappingSaveStatus.Saved, result.Status);
+        Assert.Equal(3, result.RevalidatedCandidateCount);
+        candidates = await db.InvoiceCandidates.OrderBy(candidate => candidate.InvoiceNumber).ToArrayAsync();
+        Assert.All(candidates, candidate =>
+        {
+            Assert.Equal("Ready", candidate.Status);
+            Assert.Equal(sourceJsonBefore[candidate.Id], candidate.SourceJson);
+            var savedCanonical = JsonSerializer.Deserialize<CanonicalInvoice>(
+                candidate.CanonicalJson!,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            var savedLine = Assert.Single(Assert.IsType<CanonicalInvoice>(savedCanonical).Lines);
+            Assert.Equal(purchaseOrderLine.Gtin, savedLine.Gtin);
+            Assert.Equal(ShopriteMeasurementUnit.CS, savedLine.ShopriteUom);
+            Assert.True(savedLine.IsShopriteUomVerified);
+        });
         var itemMapping = await db.ShopriteItemMappings.SingleAsync();
         Assert.Equal("ENER10", itemMapping.AcumaticaInventoryId);
         Assert.Equal("10369734", itemMapping.ShopriteBuyerItemId);
@@ -175,9 +406,23 @@ public sealed class AcumaticaInvoiceCandidateRefreshServiceTests : IAsyncLifetim
         Assert.Equal("BOX", uomMapping.AcumaticaUom);
         Assert.Equal(ShopriteMeasurementUnit.CS, uomMapping.ShopriteUom);
         Assert.True(uomMapping.IsVerified);
+        Assert.All(
+            await db.AuditEvents.ToListAsync(),
+            audit =>
+            {
+                Assert.Contains("Verified against Shoprite PO 1215382915.", audit.DetailsJson);
+                Assert.Contains(purchaseOrderLine.Id.ToString(), audit.DetailsJson);
+            });
         var audits = await db.AuditEvents.OrderBy(audit => audit.EntityType).ToArrayAsync();
         Assert.Equal(2, audits.Length);
         Assert.All(audits, audit => Assert.Equal("admin@example.com", audit.Actor));
+        var view = Assert.Single(await mappingService.ListAsync("ENER10", CancellationToken.None));
+        Assert.Equal("ENER10", view.InventoryId);
+        Assert.Equal("BOX", view.AcumaticaUom);
+        Assert.Equal(2, view.AffectedCandidateCount);
+        Assert.Equal(0, view.UnresolvedCandidateCount);
+        Assert.Single(view.ItemMappings);
+        Assert.NotNull(view.UomMapping);
     }
 
     [Fact]

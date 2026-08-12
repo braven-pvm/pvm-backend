@@ -407,8 +407,16 @@ For MVP hardening, verify every attempt records:
   `Shoprite__InvoiceSubmissionMode=RealQa`; there is no production mode yet.
 - Workbench authentication and roles are implemented for QA through Microsoft
   Entra sign-in and app-managed roles.
-- Global mapping pages for GLN, GTIN, UOM, pack, tax, and connection settings
-  are incomplete.
+- Exact unique GTIN and matching UOM data automatically creates a reusable
+  global inventory mapping during invoice discovery. Missing, ambiguous or
+  conflicting mappings are reviewed at `/admin/inventory-mappings`;
+  when Acumatica and Shoprite identifiers differ, Admin verifies the initial
+  assignment from inventory and the complete available PO catalogue, and
+  subsequent invoices reuse it. Product identity is keyed by Shoprite buyer
+  item; the matched PO line supplies the current GTIN. The 2026-08-12 QA
+  baseline maps all 10 known buyer items and covers all 17 known GTIN variants.
+  GLN/location, pack, tax, and connection-setting
+  pages remain incomplete.
 - Manual ambiguous-resolution actions are not implemented.
 - Service Bus queues and the worker runtime are not implemented.
 - Acumatica push-notification ingestion and incremental reconciliation are not

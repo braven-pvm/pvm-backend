@@ -292,6 +292,38 @@ export type IntegrationMessageView = {
   }>;
 };
 
+export type InventoryMappingView = {
+  inventoryId: string;
+  description?: Nullable<string>;
+  acumaticaUom: string;
+  acumaticaGtins: string[];
+  itemMappings: Array<{
+    id: string;
+    shopriteBuyerItemId: string;
+    gtin: string;
+    isVerified: boolean;
+    updatedBy: string;
+    updatedAt: string;
+  }>;
+  uomMapping?: Nullable<{
+    id: string;
+    shopriteUom: "EA" | "CA" | "CS" | "KG";
+    isVerified: boolean;
+    updatedBy: string;
+    updatedAt: string;
+  }>;
+  suggestions: Array<{
+    purchaseOrderLineId: string;
+    purchaseOrderNumber: string;
+    lineNumber: number;
+    shopriteBuyerItemId?: Nullable<string>;
+    gtin?: Nullable<string>;
+    description?: Nullable<string>;
+  }>;
+  affectedCandidateCount: number;
+  unresolvedCandidateCount: number;
+};
+
 export async function getInvoiceCandidates(): Promise<
   InvoiceCandidateSummary[]
 > {
@@ -365,17 +397,36 @@ export async function submitInvoice(id: string): Promise<SubmitInvoiceResult> {
   throw new Error("Failed to submit invoice: invalid API response.");
 }
 
-export async function saveInvoiceLineMapping(
-  id: string,
-  lineNumber: number,
+export async function getInventoryMappings(
+  search?: string,
+): Promise<InventoryMappingView[]> {
+  const headers = await getApiAuthHeaders();
+  const query = search ? `?search=${encodeURIComponent(search)}` : "";
+  const response = await fetch(
+    `${apiBaseUrl}/api/admin/inventory-mappings${query}`,
+    { headers, cache: "no-store" },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to load inventory mappings: ${response.status}`);
+  }
+
+  const data: unknown = await response.json();
+  return Array.isArray(data) ? (data as InventoryMappingView[]) : [];
+}
+
+export async function saveInventoryMapping(
+  inventoryId: string,
+  acumaticaUom: string,
   input: {
     purchaseOrderLineId: string;
     shopriteUom: "EA" | "CA" | "CS" | "KG";
+    reason: string;
   },
-): Promise<InvoiceCandidateSummary> {
+): Promise<{ revalidatedCandidateCount: number; message: string }> {
   const headers = await getApiAuthHeaders();
   const response = await fetch(
-    `${apiBaseUrl}/api/invoices/${id}/line-mappings/${lineNumber}`,
+    `${apiBaseUrl}/api/admin/inventory-mappings/${encodeURIComponent(inventoryId)}/${encodeURIComponent(acumaticaUom)}`,
     {
       method: "PUT",
       headers: {
@@ -388,7 +439,7 @@ export async function saveInvoiceLineMapping(
   );
 
   if (!response.ok) {
-    throw new Error(`Failed to save invoice line mapping: ${response.status}`);
+    throw new Error(`Failed to save inventory mapping: ${response.status}`);
   }
 
   return response.json();
