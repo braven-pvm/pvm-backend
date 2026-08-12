@@ -8,6 +8,42 @@ namespace Pvm.Infrastructure.Tests.Acumatica;
 public sealed class AcumaticaInvoiceClientTests
 {
     [Fact]
+    public async Task FetchInventoryItemAsync_ValidatesExactSkuAndReturnsAvailableUnits()
+    {
+        const string stockItemJson = """
+            [{
+              "InventoryID":{"value":"ENER10"},
+              "Description":{"value":"E/BAR CHOC STRAWBERRY 20X45g"},
+              "ItemStatus":{"value":"Active"},
+              "SalesUOM":{"value":"BOX"},
+              "BaseUOM":{"value":"EA"},
+              "PurchaseUOM":{"value":"BOX"}
+            }]
+            """;
+        using var handler = new SequenceHandler(
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent),
+            _ => JsonResponse(stockItemJson),
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent));
+        using var httpClient = new HttpClient(handler);
+        var client = new AcumaticaInvoiceClient(httpClient, Options.Create(DefaultOptions()));
+
+        var item = await client.FetchInventoryItemAsync(" ener10 ", CancellationToken.None);
+
+        Assert.NotNull(item);
+        Assert.Equal("ENER10", item.InventoryId);
+        Assert.Equal("E/BAR CHOC STRAWBERRY 20X45g", item.Description);
+        Assert.Equal("Active", item.Status);
+        Assert.Equal(["BOX", "EA"], item.UnitsOfMeasure);
+        var lookup = Assert.Single(
+            handler.Requests,
+            request => request.Uri.AbsolutePath.EndsWith("/StockItem", StringComparison.Ordinal));
+        var query = Uri.UnescapeDataString(lookup.Uri.Query);
+        Assert.Contains("InventoryID eq 'ener10'", query);
+        Assert.Contains("$select=InventoryID,Description,ItemStatus,BaseUOM,SalesUOM,PurchaseUOM", query);
+        Assert.Contains("$top=2", query);
+    }
+
+    [Fact]
     public async Task FetchFinalizedInvoicesAsync_AuthenticatesWithConfiguredCompanyAndBranch()
     {
         using var handler = new SequenceHandler(

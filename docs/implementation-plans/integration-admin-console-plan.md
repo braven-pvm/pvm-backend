@@ -1085,6 +1085,16 @@ conflicting product data; automatic resolution never overwrites a verified
 mapping or infers a quantity conversion. Location/GLN, pack, tax, pagination,
 and asynchronous revalidation remain.
 
+The mapping console also derives an exception queue directly from the complete
+refreshed Shoprite PO catalogue. A buyer item with no verified global mapping
+appears once regardless of how many POs contain it. Admin can resolve that
+exception or preconfigure any known Shoprite buyer item by entering an exact
+Acumatica SKU, validating the SKU and its available UOMs live against the
+Acumatica Stock Item endpoint, selecting the Shoprite UOM, and recording a
+mandatory reason. Correcting a conflict atomically reassigns the global buyer
+item/SKU relationship and audits the displaced mapping instead of leaving an
+ambiguous duplicate.
+
 Acumatica and Shoprite may use different identifiers for the same product. In
 that case the initial global assignment is explicitly verified from Acumatica
 inventory and the complete available Shoprite PO catalogue, then reused

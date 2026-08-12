@@ -229,6 +229,80 @@ public sealed class ShopriteInventoryMappingService(
             .ToArray();
     }
 
+    public async Task<IReadOnlyList<ShopriteCatalogItemView>> ListShopriteCatalogAsync(
+        string? search,
+        CancellationToken cancellationToken)
+    {
+        var purchaseOrders = await dbContext.ShopritePurchaseOrders
+            .AsNoTracking()
+            .Include(order => order.Lines)
+            .OrderByDescending(order => order.LastSeenAt)
+            .ToListAsync(cancellationToken);
+        var mappings = await dbContext.ShopriteItemMappings
+            .AsNoTracking()
+            .Where(mapping => mapping.IsVerified)
+            .ToListAsync(cancellationToken);
+
+        var catalog = purchaseOrders
+            .SelectMany(order => order.Lines.Select(line => new { Order = order, Line = line }))
+            .Where(item => !string.IsNullOrWhiteSpace(item.Line.BuyerItemId)
+                && !string.IsNullOrWhiteSpace(item.Line.Gtin))
+            .GroupBy(item => Normalize(item.Line.BuyerItemId!))
+            .Select(group =>
+            {
+                var latest = group
+                    .OrderByDescending(item => item.Order.LastSeenAt)
+                    .ThenByDescending(item => item.Line.LineNumber)
+                    .First();
+                var mappedInventoryIds = mappings
+                    .Where(mapping => Normalize(mapping.ShopriteBuyerItemId) == group.Key)
+                    .Select(mapping => Normalize(mapping.AcumaticaInventoryId))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Order(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                return new ShopriteCatalogItemView(
+                    group.Key,
+                    latest.Line.BuyerItemDescription ?? latest.Line.Description,
+                    group.Select(item => item.Line.Gtin!.Trim())
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Order(StringComparer.OrdinalIgnoreCase)
+                        .ToArray(),
+                    group.Select(item => item.Line.SupplierItemId)
+                        .Where(value => !string.IsNullOrWhiteSpace(value))
+                        .Select(value => value!.Trim())
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Order(StringComparer.OrdinalIgnoreCase)
+                        .ToArray(),
+                    group.Select(item => item.Line.MeasurementUnitCode)
+                        .Where(value => !string.IsNullOrWhiteSpace(value))
+                        .Select(value => Normalize(value!))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Order(StringComparer.OrdinalIgnoreCase)
+                        .ToArray(),
+                    group.Select(item => item.Order.Id).Distinct().Count(),
+                    latest.Order.PurchaseOrderNumber,
+                    latest.Line.Id,
+                    mappedInventoryIds);
+            });
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            catalog = catalog.Where(item =>
+                item.ShopriteBuyerItemId.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || (item.Description?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)
+                || item.Gtins.Any(gtin => gtin.Contains(term, StringComparison.OrdinalIgnoreCase))
+                || item.SupplierItemIds.Any(id => id.Contains(term, StringComparison.OrdinalIgnoreCase))
+                || item.MappedInventoryIds.Any(id => id.Contains(term, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        return catalog
+            .OrderBy(item => item.IsMapped)
+            .ThenBy(item => item.ShopriteBuyerItemId, StringComparer.Ordinal)
+            .ToArray();
+    }
+
     public async Task<ShopriteInventoryMappingSaveResult> SaveAsync(
         string inventoryId,
         string acumaticaUom,
@@ -275,6 +349,46 @@ public sealed class ShopriteInventoryMappingService(
         var buyerItemId = Normalize(purchaseOrderLine.BuyerItemId);
         var now = DateTimeOffset.UtcNow;
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        var conflictingMappings = await dbContext.ShopriteItemMappings
+            .Where(mapping => mapping.IsVerified
+                && (mapping.ShopriteBuyerItemId == buyerItemId
+                    || mapping.AcumaticaInventoryId == normalizedInventoryId)
+                && !(mapping.ShopriteBuyerItemId == buyerItemId
+                    && mapping.AcumaticaInventoryId == normalizedInventoryId))
+            .ToListAsync(cancellationToken);
+        var affectedInventoryIds = conflictingMappings
+            .Select(mapping => mapping.AcumaticaInventoryId)
+            .Append(normalizedInventoryId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        foreach (var conflictingMapping in conflictingMappings)
+        {
+            dbContext.AuditEvents.Add(NewAuditEvent(
+                "ShopriteItemMapping",
+                conflictingMapping.Id,
+                "reassigned",
+                actor,
+                reason.Trim(),
+                new
+                {
+                    conflictingMapping.AcumaticaInventoryId,
+                    conflictingMapping.ShopriteBuyerItemId,
+                    conflictingMapping.Gtin,
+                    conflictingMapping.IsVerified
+                },
+                new
+                {
+                    AcumaticaInventoryId = normalizedInventoryId,
+                    ShopriteBuyerItemId = buyerItemId,
+                    Gtin = purchaseOrderLine.Gtin.Trim(),
+                    IsVerified = true
+                },
+                now));
+        }
+
+        dbContext.ShopriteItemMappings.RemoveRange(conflictingMappings);
 
         var itemMapping = await dbContext.ShopriteItemMappings.SingleOrDefaultAsync(
             mapping => mapping.AcumaticaInventoryId == normalizedInventoryId
@@ -374,7 +488,7 @@ public sealed class ShopriteInventoryMappingService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         var revalidated = await revalidationService.RevalidateForInventoryItemsAsync(
-            [normalizedInventoryId],
+            affectedInventoryIds,
             now,
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -477,6 +591,20 @@ public sealed record ShopriteInventoryMappingSuggestion(
     string? ShopriteBuyerItemId,
     string? Gtin,
     string? Description);
+
+public sealed record ShopriteCatalogItemView(
+    string ShopriteBuyerItemId,
+    string? Description,
+    IReadOnlyList<string> Gtins,
+    IReadOnlyList<string> SupplierItemIds,
+    IReadOnlyList<string> MeasurementUnitCodes,
+    int PurchaseOrderCount,
+    string LatestPurchaseOrderNumber,
+    Guid RepresentativePurchaseOrderLineId,
+    IReadOnlyList<string> MappedInventoryIds)
+{
+    public bool IsMapped => MappedInventoryIds.Count > 0;
+}
 
 public sealed record ShopriteInventoryMappingSaveResult(
     ShopriteInventoryMappingSaveStatus Status,

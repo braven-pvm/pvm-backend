@@ -426,6 +426,99 @@ public sealed class AcumaticaInvoiceCandidateRefreshServiceTests : IAsyncLifetim
     }
 
     [Fact]
+    public async Task ListShopriteCatalog_SeedsOneUnmappedExceptionPerBuyerItem()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        var firstOrder = NewPurchaseOrder();
+        var firstLine = Assert.Single(firstOrder.Lines);
+        firstLine.BuyerItemId = "NEW-BUYER-ITEM";
+        firstLine.Gtin = "06001197000001";
+        firstLine.SupplierItemId = "ENER99";
+        firstLine.MeasurementUnitCode = "EA";
+        var latestOrder = NewPurchaseOrder();
+        latestOrder.PurchaseOrderNumber = "1210297233";
+        latestOrder.LastSeenAt = firstOrder.LastSeenAt.AddMinutes(1);
+        var latestLine = Assert.Single(latestOrder.Lines);
+        latestLine.BuyerItemId = firstLine.BuyerItemId;
+        latestLine.Gtin = "06001197000002";
+        latestLine.SupplierItemId = firstLine.SupplierItemId;
+        latestLine.MeasurementUnitCode = firstLine.MeasurementUnitCode;
+        db.ShopritePurchaseOrders.AddRange(firstOrder, latestOrder);
+        await db.SaveChangesAsync();
+        var matcher = new ShopriteInvoiceCandidateMatcher(db);
+        var service = new ShopriteInventoryMappingService(
+            db,
+            new ShopriteInvoiceCandidateRevalidationService(db, matcher));
+
+        var item = Assert.Single(await service.ListShopriteCatalogAsync(null, CancellationToken.None));
+
+        Assert.Equal("NEW-BUYER-ITEM", item.ShopriteBuyerItemId);
+        Assert.Equal(["06001197000001", "06001197000002"], item.Gtins);
+        Assert.Equal(["ENER99"], item.SupplierItemIds);
+        Assert.Equal(["EA"], item.MeasurementUnitCodes);
+        Assert.Equal(2, item.PurchaseOrderCount);
+        Assert.Equal(latestOrder.PurchaseOrderNumber, item.LatestPurchaseOrderNumber);
+        Assert.Equal(latestLine.Id, item.RepresentativePurchaseOrderLineId);
+        Assert.False(item.IsMapped);
+    }
+
+    [Fact]
+    public async Task SaveInventoryMapping_ReassignsConflictingGlobalMappingsAtomically()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        var purchaseOrder = NewPurchaseOrder();
+        var purchaseOrderLine = Assert.Single(purchaseOrder.Lines);
+        purchaseOrderLine.BuyerItemId = "NEW-BUYER-ITEM";
+        db.ShopritePurchaseOrders.Add(purchaseOrder);
+        db.ShopriteItemMappings.AddRange(
+            new ShopriteItemMappingEntity
+            {
+                Id = Guid.NewGuid(),
+                AcumaticaInventoryId = "OLD-SKU",
+                ShopriteBuyerItemId = "NEW-BUYER-ITEM",
+                Gtin = purchaseOrderLine.Gtin!,
+                IsVerified = true,
+                UpdatedBy = "old-admin@example.com",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            },
+            new ShopriteItemMappingEntity
+            {
+                Id = Guid.NewGuid(),
+                AcumaticaInventoryId = "NEW-SKU",
+                ShopriteBuyerItemId = "OLD-BUYER-ITEM",
+                Gtin = "06001197000000",
+                IsVerified = true,
+                UpdatedBy = "old-admin@example.com",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
+        await db.SaveChangesAsync();
+        var matcher = new ShopriteInvoiceCandidateMatcher(db);
+        var service = new ShopriteInventoryMappingService(
+            db,
+            new ShopriteInvoiceCandidateRevalidationService(db, matcher));
+
+        var result = await service.SaveAsync(
+            "NEW-SKU",
+            "BOX",
+            purchaseOrderLine.Id,
+            ShopriteMeasurementUnit.EA,
+            "admin@example.com",
+            "Corrected global ownership.",
+            CancellationToken.None);
+
+        Assert.Equal(ShopriteInventoryMappingSaveStatus.Saved, result.Status);
+        var mapping = Assert.Single(await db.ShopriteItemMappings.ToArrayAsync());
+        Assert.Equal("NEW-SKU", mapping.AcumaticaInventoryId);
+        Assert.Equal("NEW-BUYER-ITEM", mapping.ShopriteBuyerItemId);
+        Assert.Equal(2, await db.AuditEvents.CountAsync(audit => audit.Action == "reassigned"));
+        Assert.Equal(1, await db.AuditEvents.CountAsync(audit => audit.Action == "created" && audit.EntityType == "ShopriteItemMapping"));
+    }
+
+    [Fact]
     public async Task RefreshAsync_RepeatedInvoiceUpdatesExistingCandidateWithoutDuplicate()
     {
         await using var db = CreateDbContext();

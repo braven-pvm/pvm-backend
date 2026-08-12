@@ -38,14 +38,28 @@ export async function saveInventoryMappingAction(formData: FormData) {
   const shopriteUom = requiredShopriteUom(formData, "shopriteUom");
   const reason = requiredString(formData, "reason");
 
-  await saveInventoryMapping(inventoryId, acumaticaUom, {
-    purchaseOrderLineId,
-    shopriteUom,
-    reason,
-  });
+  let errorMessage: string | undefined;
+  try {
+    await saveInventoryMapping(inventoryId, acumaticaUom, {
+      purchaseOrderLineId,
+      shopriteUom,
+      reason,
+    });
+  } catch (error) {
+    errorMessage = error instanceof Error ? error.message : "Inventory mapping could not be saved.";
+  }
+
+  if (errorMessage) {
+    redirect(
+      `/admin/inventory-mappings?mappingError=${encodeURIComponent(errorMessage)}&newSku=${encodeURIComponent(inventoryId)}#add-mapping`,
+    );
+  }
+
   revalidatePath("/invoices");
   revalidatePath("/admin/inventory-mappings");
-  redirect(`/admin/inventory-mappings?search=${encodeURIComponent(inventoryId)}`);
+  redirect(
+    `/admin/inventory-mappings?mappingStatus=${encodeURIComponent(`${inventoryId} mapping saved and invoice candidates revalidated.`)}&search=${encodeURIComponent(inventoryId)}`,
+  );
 }
 
 export async function refreshPurchaseOrdersAction() {

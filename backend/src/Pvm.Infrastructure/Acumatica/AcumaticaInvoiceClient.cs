@@ -123,6 +123,34 @@ public sealed class AcumaticaInvoiceClient(
         }, cancellationToken);
     }
 
+    public async Task<AcumaticaInventoryItemDto?> FetchInventoryItemAsync(
+        string inventoryId,
+        CancellationToken cancellationToken)
+    {
+        ValidateOptions(_options);
+        if (string.IsNullOrWhiteSpace(inventoryId))
+        {
+            throw new ArgumentException("Acumatica inventory ID is required.", nameof(inventoryId));
+        }
+
+        var normalizedInventoryId = inventoryId.Trim();
+        return await WithSessionAsync(async sessionCookie =>
+        {
+            using var request = CreateSessionRequest(
+                HttpMethod.Get,
+                BuildStockItemLookupUri(normalizedInventoryId),
+                sessionCookie);
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            EnsureSuccess(response, "stock item lookup");
+            var items = await ReadArrayAsync(response, "stock item lookup", cancellationToken);
+            var item = items.SingleOrDefault(source => string.Equals(
+                String(source, "InventoryID"),
+                normalizedInventoryId,
+                StringComparison.OrdinalIgnoreCase));
+            return item.ValueKind == JsonValueKind.Undefined ? null : MapInventoryItem(item);
+        }, cancellationToken);
+    }
+
     private async Task<IReadOnlyList<AcumaticaInvoiceDto>> EnrichMissingGtinsAsync(
         IReadOnlyList<AcumaticaInvoiceDto> invoices,
         string? sessionCookie,
@@ -353,6 +381,14 @@ public sealed class AcumaticaInvoiceClient(
         return BuildUri(BuildEntityEndpoint("StockItem") + query);
     }
 
+    private Uri BuildStockItemLookupUri(string inventoryId)
+    {
+        var filter = $"InventoryID eq '{EscapeFilterValue(inventoryId)}'";
+        var fields = Uri.EscapeDataString("InventoryID,Description,ItemStatus,BaseUOM,SalesUOM,PurchaseUOM");
+        var query = $"?$select={fields}&$filter={Uri.EscapeDataString(filter)}&$top=2";
+        return BuildUri(BuildEntityEndpoint("StockItem") + query);
+    }
+
     private string BuildEntityEndpoint(string entity)
         => $"entity/{Uri.EscapeDataString(_options.EndpointName)}/{Uri.EscapeDataString(_options.EndpointVersion)}/{entity}";
 
@@ -366,6 +402,26 @@ public sealed class AcumaticaInvoiceClient(
         return string.Equals(type, "Invoice", StringComparison.OrdinalIgnoreCase) &&
             (string.Equals(status, "Open", StringComparison.OrdinalIgnoreCase) ||
              string.Equals(status, "Closed", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static AcumaticaInventoryItemDto MapInventoryItem(JsonElement source)
+    {
+        var units = new[]
+            {
+                String(source, "SalesUOM"),
+                String(source, "BaseUOM"),
+                String(source, "PurchaseUOM")
+            }
+            .Where(unit => !string.IsNullOrWhiteSpace(unit))
+            .Select(unit => unit!.Trim().ToUpperInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return new AcumaticaInventoryItemDto(
+            RequiredString(source, "InventoryID"),
+            String(source, "Description") ?? string.Empty,
+            String(source, "ItemStatus", "Status"),
+            units);
     }
 
     private AcumaticaInvoiceDto MapInvoice(JsonElement source)
