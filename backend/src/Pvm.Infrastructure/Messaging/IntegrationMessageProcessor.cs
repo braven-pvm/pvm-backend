@@ -179,6 +179,7 @@ public sealed class IntegrationMessageProcessor(
                     SubmitShopriteInvoiceStatus.InProgress or
                     SubmitShopriteInvoiceStatus.DuplicateBlocked or
                     SubmitShopriteInvoiceStatus.Ambiguous => null,
+                    SubmitShopriteInvoiceStatus.PolicyBlocked => null,
                     SubmitShopriteInvoiceStatus.ValidationBlocked => ("validation-blocked", result.Message),
                     SubmitShopriteInvoiceStatus.ManualReviewRequired => ("manual-review-required", result.Message),
                     SubmitShopriteInvoiceStatus.Failed => throw new InvalidOperationException(result.Message),

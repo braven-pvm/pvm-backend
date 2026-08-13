@@ -10,12 +10,18 @@ type InvoiceDetailPageProps = {
   params: Promise<{
     id: string;
   }>;
+  searchParams: Promise<{
+    submissionError?: string;
+    submissionStatus?: string;
+  }>;
 };
 
 export default async function InvoiceDetailPage({
   params,
+  searchParams,
 }: InvoiceDetailPageProps) {
   const { id } = await params;
+  const query = await searchParams;
   const user = await requireWorkbenchUser(`/invoices/${id}`);
   const candidate = await loadCandidate(id);
   const invoice = candidate.canonicalInvoice;
@@ -48,6 +54,17 @@ export default async function InvoiceDetailPage({
           </button>
         )}
       </section>
+
+      {query.submissionError ? (
+        <div className="alert-banner alert-error" role="alert">
+          <strong>Invoice not submitted</strong><span>{query.submissionError}</span>
+        </div>
+      ) : null}
+      {query.submissionStatus ? (
+        <div className="alert-banner alert-success" role="status">
+          <strong>Submission command completed</strong><span>{query.submissionStatus}</span>
+        </div>
+      ) : null}
 
       <section className="detail-grid">
         <div className="detail-panel">

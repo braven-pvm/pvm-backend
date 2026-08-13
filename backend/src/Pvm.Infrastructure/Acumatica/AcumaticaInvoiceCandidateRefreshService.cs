@@ -6,6 +6,7 @@ using Pvm.Domain.Validation;
 using Pvm.Infrastructure.Persistence;
 using Pvm.Infrastructure.Persistence.Entities;
 using Pvm.Infrastructure.Shoprite;
+using Pvm.Infrastructure.Automation;
 
 namespace Pvm.Infrastructure.Acumatica;
 
@@ -13,7 +14,8 @@ public sealed class AcumaticaInvoiceCandidateRefreshService(
     IAcumaticaInvoiceClient invoiceClient,
     PvmDbContext dbContext,
     ShopriteInvoiceCandidateMatcher candidateMatcher,
-    ShopriteInventoryMappingBootstrapService? mappingBootstrapService = null)
+    ShopriteInventoryMappingBootstrapService? mappingBootstrapService = null,
+    AutomationPolicyService? automationPolicyService = null)
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly ShopriteInventoryMappingBootstrapService _mappingBootstrapService =
@@ -80,6 +82,7 @@ public sealed class AcumaticaInvoiceCandidateRefreshService(
         var updated = 0;
         var unchanged = 0;
         var now = DateTimeOffset.UtcNow;
+        var evaluatedCandidateIds = new List<Guid>(invoices.Count);
 
         foreach (var source in invoices)
         {
@@ -151,9 +154,24 @@ public sealed class AcumaticaInvoiceCandidateRefreshService(
             candidate.CanonicalJson = canonicalJson;
             candidate.ValidationJson = validationJson;
             candidate.UpdatedAt = now;
+            evaluatedCandidateIds.Add(candidate.Id);
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        if (automationPolicyService is not null)
+        {
+            var sourceInvoiceIds = invoices.Select(invoice => invoice.Id).ToArray();
+            IReadOnlyCollection<Guid> allCandidateIds = invoices.Count == evaluatedCandidateIds.Count
+                ? evaluatedCandidateIds.ToArray()
+                : await dbContext.InvoiceCandidates.AsNoTracking()
+                    .Where(candidate => sourceInvoiceIds.Contains(candidate.AcumaticaInvoiceId))
+                    .Select(candidate => candidate.Id)
+                    .ToArrayAsync(cancellationToken);
+            await automationPolicyService.EvaluateCandidatesAsync(
+                allCandidateIds,
+                now,
+                cancellationToken);
+        }
         return new AcumaticaInvoiceRefreshResult(invoices.Count, created, updated, unchanged);
     }
 

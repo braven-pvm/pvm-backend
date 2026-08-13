@@ -6,7 +6,8 @@ public enum SubmissionOperationState
     Sending,
     Submitted,
     Rejected,
-    Ambiguous
+    Ambiguous,
+    Cancelled
 }
 
 public sealed record SubmissionOperation(

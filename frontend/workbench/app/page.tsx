@@ -20,9 +20,19 @@ export default async function HomePage() {
         </div>
         <div className="mode-summary" aria-label="Environment and automation mode">
           <span>{view.environmentName}</span>
-          <strong>Automation {view.automationMode}</strong>
+          <strong>{view.automationEmergencyStop
+            ? "Emergency stop active"
+            : `Automation ${view.automationMode}`} · policy v{view.automationPolicyVersion}</strong>
         </div>
       </section>
+
+      {view.automationEmergencyStop ? (
+        <div className="alert-banner alert-error" role="alert">
+          <strong>Submission emergency stop active</strong>
+          <span>Manual and automatic Shoprite submissions are blocked.</span>
+          <Link href="/automation">Open automation controls</Link>
+        </div>
+      ) : null}
 
       <section className="metric-strip four-up" aria-label="Operational summary">
         <div>

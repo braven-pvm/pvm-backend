@@ -2,6 +2,7 @@ using Pvm.Application.Submissions;
 using Pvm.Domain.Invoices;
 using Pvm.Domain.Validation;
 using System.Collections.Concurrent;
+using Pvm.Application.Automation;
 
 namespace Pvm.Application.Tests.Submissions;
 
@@ -117,6 +118,94 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         Assert.Equal(1, verifier.CallCount);
         Assert.Equal(0, shopriteClient.SubmitCallCount);
         Assert.Empty(repository.Attempts);
+    }
+
+    [Fact]
+    public async Task Shadow_mode_blocks_automatic_submission_before_operation_or_external_send()
+    {
+        var repository = new FakeInvoiceCandidateRepository
+        {
+            Invoice = ValidInvoice(),
+            ValidationResult = new ValidationResult([]),
+            HasMatchedPurchaseOrder = true
+        };
+        var shopriteClient = new FakeShopriteInvoiceClient();
+        var gate = new FakeAutomationGate(new AutomationSubmissionPermission(
+            false,
+            4,
+            "automation-mode-blocked",
+            "Automatic submission is blocked while mode is Shadow."));
+        var handler = new SubmitShopriteInvoiceHandler(
+            repository,
+            shopriteClient,
+            new FakePayloadArchive(),
+            automationGate: gate);
+
+        var result = await handler.HandleAsync(
+            Command with { InitiationMode = "automatic" },
+            CancellationToken.None);
+
+        Assert.Equal(SubmitShopriteInvoiceStatus.PolicyBlocked, result.Status);
+        Assert.Equal(1, gate.CallCount);
+        Assert.Equal(0, shopriteClient.SubmitCallCount);
+        Assert.Empty(repository.Attempts);
+    }
+
+    [Fact]
+    public async Task Emergency_stop_blocks_manual_submission()
+    {
+        var repository = new FakeInvoiceCandidateRepository
+        {
+            Invoice = ValidInvoice(),
+            ValidationResult = new ValidationResult([]),
+            HasMatchedPurchaseOrder = true
+        };
+        var shopriteClient = new FakeShopriteInvoiceClient();
+        var gate = new FakeAutomationGate(new AutomationSubmissionPermission(
+            false,
+            5,
+            "emergency-stop",
+            "Invoice submission is disabled by the emergency stop."));
+        var handler = new SubmitShopriteInvoiceHandler(
+            repository,
+            shopriteClient,
+            new FakePayloadArchive(),
+            automationGate: gate);
+
+        var result = await handler.HandleAsync(Command, CancellationToken.None);
+
+        Assert.Equal(SubmitShopriteInvoiceStatus.PolicyBlocked, result.Status);
+        Assert.Equal(0, shopriteClient.SubmitCallCount);
+        Assert.Empty(repository.Attempts);
+    }
+
+    [Fact]
+    public async Task Policy_change_before_claim_cancels_pending_operation_without_sending()
+    {
+        var repository = new FakeInvoiceCandidateRepository
+        {
+            Invoice = ValidInvoice(),
+            ValidationResult = new ValidationResult([]),
+            HasMatchedPurchaseOrder = true,
+            RejectStart = true
+        };
+        var shopriteClient = new FakeShopriteInvoiceClient();
+        var gate = new FakeAutomationGate(
+            new AutomationSubmissionPermission(true, 7, "eligible", "Eligible."),
+            new AutomationSubmissionPermission(false, 8, "emergency-stop", "Emergency stop active."));
+        var handler = new SubmitShopriteInvoiceHandler(
+            repository,
+            shopriteClient,
+            new FakePayloadArchive(),
+            automationGate: gate);
+
+        var result = await handler.HandleAsync(
+            Command with { InitiationMode = "automatic" },
+            CancellationToken.None);
+
+        Assert.Equal(SubmitShopriteInvoiceStatus.PolicyBlocked, result.Status);
+        Assert.True(repository.PendingOperationWasCancelled);
+        Assert.Equal(0, shopriteClient.SubmitCallCount);
     }
 
     [Fact]
@@ -348,6 +437,8 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         public bool StartWasCalled { get; private set; }
         public bool ArchiveFailureWasMarkedAmbiguous { get; private set; }
         public bool SimulateArchiveRace { get; init; }
+        public bool RejectStart { get; init; }
+        public bool PendingOperationWasCancelled { get; private set; }
 
         public Task<InvoiceSubmissionSnapshot?> GetSubmissionSnapshotAsync(
             Guid invoiceCandidateId,
@@ -436,11 +527,17 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         public Task<bool> TryStartSubmissionOperationAsync(
             Guid submissionOperationId,
             DateTimeOffset startedAt,
+            int? expectedAutomationPolicyVersion,
+            bool automatic,
             CancellationToken cancellationToken)
         {
             lock (_sync)
             {
                 StartWasCalled = true;
+                if (RejectStart)
+                {
+                    return Task.FromResult(false);
+                }
                 var item = _operations.Single(pair => pair.Value.Operation.Id == submissionOperationId);
                 if (item.Value.Operation.State != SubmissionOperationState.Pending)
                 {
@@ -452,6 +549,26 @@ public sealed class SubmitShopriteInvoiceHandlerTests
                     item.Value.Operation with { State = SubmissionOperationState.Sending });
                 return Task.FromResult(true);
             }
+        }
+
+        public Task CancelPendingSubmissionOperationAsync(
+            Guid submissionOperationId,
+            string reason,
+            DateTimeOffset cancelledAt,
+            CancellationToken cancellationToken)
+        {
+            lock (_sync)
+            {
+                var item = _operations.Single(pair => pair.Value.Operation.Id == submissionOperationId);
+                if (item.Value.Operation.State == SubmissionOperationState.Pending)
+                {
+                    _operations[item.Key] = (
+                        item.Value.Request,
+                        item.Value.Operation with { State = SubmissionOperationState.Cancelled });
+                    PendingOperationWasCancelled = true;
+                }
+            }
+            return Task.CompletedTask;
         }
 
         public Task<SubmissionOperation?> GetSubmissionOperationAsync(
@@ -593,6 +710,25 @@ public sealed class SubmitShopriteInvoiceHandlerTests
             CallCount++;
             return Task.FromResult(result);
         }
+    }
+
+    private sealed class FakeAutomationGate(params AutomationSubmissionPermission[] permissions)
+        : IAutomationSubmissionGate
+    {
+        private readonly Queue<AutomationSubmissionPermission> _permissions = new(permissions);
+        public int CallCount { get; private set; }
+
+        public Task<AutomationSubmissionPermission> EvaluateSubmissionAsync(
+            Guid invoiceCandidateId,
+            string initiationMode,
+            DateTimeOffset now,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            var permission = _permissions.Count > 1 ? _permissions.Dequeue() : _permissions.Peek();
+            return Task.FromResult(permission);
+        }
+
     }
 
     private sealed record RecordedAttempt(

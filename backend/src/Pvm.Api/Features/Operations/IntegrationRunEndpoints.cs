@@ -4,6 +4,7 @@ using Pvm.Infrastructure.Acumatica;
 using Pvm.Infrastructure.Operations;
 using Pvm.Infrastructure.Persistence;
 using Pvm.Infrastructure.Persistence.Entities;
+using Pvm.Infrastructure.Automation;
 
 namespace Pvm.Api.Features.Operations;
 
@@ -55,6 +56,7 @@ public static class IntegrationRunEndpoints
         ShopritePurchaseOrderFreshnessService freshnessService,
         AcumaticaInvoiceReconciliationFreshnessService reconciliationFreshnessService,
         AcumaticaPushNotificationHealthService pushNotificationHealthService,
+        AutomationPolicyService automationPolicyService,
         IConfiguration configuration,
         CancellationToken cancellationToken)
     {
@@ -65,6 +67,7 @@ public static class IntegrationRunEndpoints
         var pushNotificationHealth = await pushNotificationHealthService.GetAsync(
             DateTimeOffset.UtcNow,
             cancellationToken);
+        var automationPolicy = await automationPolicyService.GetCurrentAsync(cancellationToken);
         var failedSince = DateTimeOffset.UtcNow.AddHours(-24);
         var activeRuns = await dbContext.IntegrationRuns.CountAsync(
             run => run.Status == IntegrationRunStatuses.Accepted
@@ -92,7 +95,9 @@ public static class IntegrationRunEndpoints
         return Results.Ok(new
         {
             environmentName = configuration["Pvm:EnvironmentName"] ?? "Development",
-            automationMode = configuration["Automation:Mode"] ?? "Disabled",
+            automationMode = automationPolicy.Mode.ToString(),
+            automationEmergencyStop = automationPolicy.EmergencyStop,
+            automationPolicyVersion = automationPolicy.Version,
             generatedAt = DateTimeOffset.UtcNow,
             purchaseOrderFreshness = freshness,
             acumaticaReconciliationFreshness = reconciliationFreshness,

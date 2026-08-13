@@ -23,7 +23,7 @@ Use `.agents/skills/overseer/SKILL.md` for status, planning, readiness, review, 
 
 ## Current Ground Truth
 
-As of 2026-08-07:
+As of 2026-08-12:
 
 - Azure is locked in and the QA estate is provisioned or provisionable.
 - The active QA estate is in CSP subscription `Azure subscription 1`
@@ -48,9 +48,15 @@ As of 2026-08-07:
 - Slice 5 incremental Acumatica reconciliation is merged, deployed, and
   runtime-verified in QA, including bootstrap, daily lookback, two incremental
   windows, cursor advancement, stale-alert recovery, and no automatic send.
-- Slice 6 Acumatica push-notification ingestion is implemented on
-  `feature/acumatica-push-notification-ingestion` and awaits review and QA
-  deployment. The Acumatica QA destination is not active.
+- Slice 6 Acumatica push-notification ingestion is merged, deployed, and
+  configured in Acumatica QA; its Generic Inquiry and push notification are
+  active.
+- Global Shoprite inventory mappings and the Admin exception workflow are
+  merged on `main`.
+- Slice 7 automation policy, shadow decisions, allowlists, emergency stop, and
+  the Automation Control console are implemented on
+  `feature/automation-policy-shadow-mode`. They are not deployed, and the
+  persisted default remains `Disabled`.
 - Explicit migrations, the concurrency-safe submission-operation state machine,
   immutable payload archiving, hash verification, and transition audit are
   operational.
@@ -71,11 +77,11 @@ As of 2026-08-07:
 
 ## Active Next Slice
 
-Review Slice 6, Acumatica push-notification ingestion, merge it only after
-approval, and verify it in QA with
-`docs/runbooks/acumatica-push-notifications-qa.md`. Keep the Acumatica push
-destination inactive until the synthetic endpoint checks pass. Automatic
-invoice submission remains disabled.
+Review Slice 7, merge it only after approval, deploy it with the policy left in
+`Disabled`, then run a controlled QA `Shadow` evaluation. Verify that shadow
+decisions are visible and audited while no automatic Shoprite submission
+operation or external POST is created. Automatic production submission remains
+disabled.
 
 ## Verification
 

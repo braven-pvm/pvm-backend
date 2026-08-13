@@ -1,4 +1,5 @@
 using Pvm.Application.Shoprite;
+using Pvm.Application.Automation;
 
 namespace Pvm.Application.Submissions;
 
@@ -6,7 +7,8 @@ public sealed class SubmitShopriteInvoiceHandler(
     IInvoiceCandidateRepository repository,
     IShopriteInvoiceClient shopriteClient,
     IPayloadArchive payloadArchive,
-    IInvoiceSourceVersionVerifier? sourceVersionVerifier = null)
+    IInvoiceSourceVersionVerifier? sourceVersionVerifier = null,
+    IAutomationSubmissionGate? automationGate = null)
 {
     private static readonly TimeSpan SendingRecoveryThreshold = TimeSpan.FromMinutes(15);
 
@@ -36,6 +38,22 @@ public sealed class SubmitShopriteInvoiceHandler(
             return new SubmitShopriteInvoiceResult(
                 SubmitShopriteInvoiceStatus.ValidationBlocked,
                 "Invoice must match one loaded Shoprite PO before submission.");
+        }
+
+        AutomationSubmissionPermission? policyPermission = null;
+        if (automationGate is not null)
+        {
+            policyPermission = await automationGate.EvaluateSubmissionAsync(
+                command.InvoiceCandidateId,
+                command.InitiationMode,
+                now,
+                cancellationToken);
+            if (!policyPermission.Allowed)
+            {
+                return new SubmitShopriteInvoiceResult(
+                    SubmitShopriteInvoiceStatus.PolicyBlocked,
+                    policyPermission.Message);
+            }
         }
 
         if (string.Equals(command.InitiationMode, "automatic", StringComparison.OrdinalIgnoreCase)
@@ -99,9 +117,33 @@ public sealed class SubmitShopriteInvoiceHandler(
         var started = await repository.TryStartSubmissionOperationAsync(
             operation.Id,
             DateTimeOffset.UtcNow,
+            policyPermission?.PolicyVersion,
+            string.Equals(command.InitiationMode, "automatic", StringComparison.OrdinalIgnoreCase),
             cancellationToken);
         if (!started)
         {
+            if (automationGate is not null && policyPermission is not null)
+            {
+                var currentPermission = await automationGate.EvaluateSubmissionAsync(
+                    command.InvoiceCandidateId,
+                    command.InitiationMode,
+                    DateTimeOffset.UtcNow,
+                    cancellationToken);
+                if (!currentPermission.Allowed || currentPermission.PolicyVersion != policyPermission.PolicyVersion)
+                {
+                    await repository.CancelPendingSubmissionOperationAsync(
+                        operation.Id,
+                        "Automation policy changed before the external-send claim.",
+                        DateTimeOffset.UtcNow,
+                        cancellationToken);
+                    return new SubmitShopriteInvoiceResult(
+                        SubmitShopriteInvoiceStatus.PolicyBlocked,
+                        currentPermission.Allowed
+                            ? "Automation policy changed before submission. The candidate must be evaluated again."
+                            : currentPermission.Message,
+                        operation.Id);
+                }
+            }
             var current = await repository.GetSubmissionOperationAsync(operation.Id, cancellationToken);
             return current is null
                 ? new SubmitShopriteInvoiceResult(
@@ -191,6 +233,10 @@ public sealed class SubmitShopriteInvoiceHandler(
             SubmissionOperationState.Rejected => new(
                 SubmitShopriteInvoiceStatus.Failed,
                 "This submission command was already rejected by Shoprite.",
+                operation.Id),
+            SubmissionOperationState.Cancelled => new(
+                SubmitShopriteInvoiceStatus.PolicyBlocked,
+                "This submission command was cancelled by an automation policy change.",
                 operation.Id),
             _ => throw new ArgumentOutOfRangeException(nameof(operation))
         };

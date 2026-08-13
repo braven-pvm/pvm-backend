@@ -202,6 +202,8 @@ export type IntegrationRun = {
 export type OperationsSummary = {
   environmentName: string;
   automationMode: string;
+  automationEmergencyStop: boolean;
+  automationPolicyVersion: number;
   generatedAt: string;
   purchaseOrderFreshness: ShopritePurchaseOrderFreshness;
   acumaticaReconciliationFreshness: {
@@ -342,6 +344,64 @@ export type AcumaticaInventoryItem = {
   description: string;
   status?: Nullable<string>;
   unitsOfMeasure: string[];
+};
+
+export type AutomationMode = "Disabled" | "Shadow" | "Allowlisted" | "Enabled";
+
+export type AutomationPolicy = {
+  version: number;
+  mode: AutomationMode;
+  emergencyStop: boolean;
+  accountAllowlist: string[];
+  locationAllowlist: string[];
+  supportedOrderTypes: string[];
+  stabilizationDelayMinutes: number;
+  purchaseOrderFreshnessMinutes: number;
+  acumaticaFreshnessMinutes: number;
+  dailyAutomaticSubmissionCap: number;
+  automaticWindowStart: string;
+  automaticWindowEnd: string;
+  timeZoneId: string;
+  createdBy: string;
+  reason: string;
+  createdAt: string;
+};
+
+export type AutomationPolicyView = {
+  environmentName: string;
+  policy: AutomationPolicy;
+  decisionSummary: {
+    evaluated: number;
+    wouldSubmit: number;
+    queued: number;
+    excluded: number;
+    disabled: number;
+    emergencyStopped: number;
+  };
+  recentDecisions: Array<{
+    id: string;
+    invoiceCandidateId: string;
+    invoiceNumber: string;
+    policyVersion: number;
+    outcome: string;
+    reasonCodes: string[];
+    summary: string;
+    notBefore?: Nullable<string>;
+    commandId?: Nullable<string>;
+    messageId?: Nullable<string>;
+    evaluatedAt: string;
+  }>;
+  recentVersions: AutomationPolicy[];
+};
+
+export type AutomationPolicyChange = Omit<
+  AutomationPolicy,
+  "version" | "emergencyStop" | "createdBy" | "createdAt"
+> & {
+  expectedVersion: number;
+  acknowledgeAutomaticSubmissions: boolean;
+  environmentConfirmation?: string;
+  typedConfirmation?: string;
 };
 
 export async function getInvoiceCandidates(): Promise<
@@ -501,6 +561,54 @@ export async function saveInventoryMapping(
     throw new Error(message ?? `Failed to save inventory mapping: ${response.status}`);
   }
 
+  return response.json();
+}
+
+export async function getAutomationPolicy(): Promise<AutomationPolicyView> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(`${apiBaseUrl}/api/automation/policy`, {
+    headers,
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load automation policy: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function changeAutomationPolicy(
+  input: AutomationPolicyChange,
+): Promise<AutomationPolicyView> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(`${apiBaseUrl}/api/automation/policy`, {
+    method: "PUT",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const result = await readJson(response);
+    throw new Error(getErrorMessage(result) ?? `Failed to change automation policy: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function setAutomationEmergencyStop(input: {
+  expectedVersion: number;
+  active: boolean;
+  reason: string;
+}): Promise<AutomationPolicyView> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(`${apiBaseUrl}/api/automation/emergency-stop`, {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const result = await readJson(response);
+    throw new Error(getErrorMessage(result) ?? `Failed to change emergency stop: ${response.status}`);
+  }
   return response.json();
 }
 
