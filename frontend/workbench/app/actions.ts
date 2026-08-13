@@ -10,6 +10,9 @@ import {
   seedInvoiceCandidateFromPurchaseOrder,
   submitInvoice,
   enqueueIntegrationCommand,
+  changeAutomationPolicy,
+  setAutomationEmergencyStop,
+  type AutomationMode,
 } from "../src/api/client";
 
 export async function refreshCandidatesAction() {
@@ -25,10 +28,11 @@ export async function submitInvoiceAction(formData: FormData) {
     throw new Error("Invoice candidate id is required.");
   }
 
-  await submitInvoice(id);
+  const result = await submitInvoice(id);
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${id}`);
-  redirect(`/invoices/${id}`);
+  const successful = ["Submitted", "InProgress", "Ambiguous"].includes(result.status);
+  redirect(`/invoices/${id}?${successful ? "submissionStatus" : "submissionError"}=${encodeURIComponent(result.message)}`);
 }
 
 export async function saveInventoryMappingAction(formData: FormData) {
@@ -118,6 +122,59 @@ export async function enqueueIntegrationCommandAction(formData: FormData) {
   redirect("/admin/messages");
 }
 
+export async function changeAutomationPolicyAction(formData: FormData) {
+  const expectedVersion = requiredInteger(formData, "expectedVersion");
+  const mode = requiredAutomationMode(formData, "mode");
+  let errorMessage: string | undefined;
+  try {
+    await changeAutomationPolicy({
+      expectedVersion,
+      mode,
+      accountAllowlist: csv(formData, "accountAllowlist"),
+      locationAllowlist: csv(formData, "locationAllowlist"),
+      supportedOrderTypes: csv(formData, "supportedOrderTypes"),
+      stabilizationDelayMinutes: requiredInteger(formData, "stabilizationDelayMinutes"),
+      purchaseOrderFreshnessMinutes: requiredInteger(formData, "purchaseOrderFreshnessMinutes"),
+      acumaticaFreshnessMinutes: requiredInteger(formData, "acumaticaFreshnessMinutes"),
+      dailyAutomaticSubmissionCap: requiredInteger(formData, "dailyAutomaticSubmissionCap"),
+      automaticWindowStart: requiredString(formData, "automaticWindowStart"),
+      automaticWindowEnd: requiredString(formData, "automaticWindowEnd"),
+      timeZoneId: requiredString(formData, "timeZoneId"),
+      reason: requiredString(formData, "reason"),
+      acknowledgeAutomaticSubmissions: formData.get("acknowledgeAutomaticSubmissions") === "true",
+      environmentConfirmation: optionalString(formData, "environmentConfirmation"),
+      typedConfirmation: optionalString(formData, "typedConfirmation"),
+    });
+  } catch (error) {
+    errorMessage = error instanceof Error ? error.message : "Automation policy could not be saved.";
+  }
+
+  revalidatePath("/");
+  revalidatePath("/automation");
+  redirect(errorMessage
+    ? `/automation?policyError=${encodeURIComponent(errorMessage)}`
+    : "/automation?policyStatus=Automation%20policy%20saved%20and%20candidates%20evaluated.");
+}
+
+export async function setAutomationEmergencyStopAction(formData: FormData) {
+  let errorMessage: string | undefined;
+  try {
+    await setAutomationEmergencyStop({
+      expectedVersion: requiredInteger(formData, "expectedVersion"),
+      active: requiredString(formData, "active") === "true",
+      reason: requiredString(formData, "reason"),
+    });
+  } catch (error) {
+    errorMessage = error instanceof Error ? error.message : "Emergency control could not be changed.";
+  }
+
+  revalidatePath("/");
+  revalidatePath("/automation");
+  redirect(errorMessage
+    ? `/automation?policyError=${encodeURIComponent(errorMessage)}`
+    : "/automation?policyStatus=Emergency%20control%20updated.");
+}
+
 function requiredString(formData: FormData, key: string) {
   const value = formData.get(key);
   if (typeof value !== "string" || value.length === 0) {
@@ -139,4 +196,25 @@ function requiredShopriteUom(formData: FormData, key: string) {
   }
 
   return value as "EA" | "CA" | "CS" | "KG";
+}
+
+function requiredInteger(formData: FormData, key: string) {
+  const value = Number(requiredString(formData, key));
+  if (!Number.isInteger(value)) {
+    throw new Error(`${key} must be a whole number.`);
+  }
+  return value;
+}
+
+function csv(formData: FormData, key: string) {
+  const value = optionalString(formData, key) ?? "";
+  return value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function requiredAutomationMode(formData: FormData, key: string): AutomationMode {
+  const value = requiredString(formData, key);
+  if (!["Disabled", "Shadow", "Allowlisted", "Enabled"].includes(value)) {
+    throw new Error(`${key} is invalid.`);
+  }
+  return value as AutomationMode;
 }

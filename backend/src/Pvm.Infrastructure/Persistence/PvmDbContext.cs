@@ -40,6 +40,10 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<IntegrationEventInboxEntity> IntegrationEventInbox => Set<IntegrationEventInboxEntity>();
 
+    public DbSet<AutomationPolicyVersionEntity> AutomationPolicyVersions => Set<AutomationPolicyVersionEntity>();
+
+    public DbSet<AutomationDecisionEntity> AutomationDecisions => Set<AutomationDecisionEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<InvoiceCandidateEntity>(entity =>
@@ -57,6 +61,41 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
                 .WithMany()
                 .HasForeignKey(candidate => candidate.MatchedShopritePurchaseOrderId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<AutomationPolicyVersionEntity>(entity =>
+        {
+            entity.ToTable("automation_policy_versions");
+            entity.HasKey(policy => policy.Id);
+            entity.HasIndex(policy => policy.Version).IsUnique();
+            entity.Property(policy => policy.Mode).HasMaxLength(32);
+            entity.Property(policy => policy.TimeZoneId).HasMaxLength(128);
+            entity.Property(policy => policy.CreatedBy).HasMaxLength(320);
+            entity.Property(policy => policy.Reason).HasMaxLength(1000);
+        });
+
+        modelBuilder.Entity<AutomationDecisionEntity>(entity =>
+        {
+            entity.ToTable("automation_decisions");
+            entity.HasKey(decision => decision.Id);
+            entity.HasIndex(decision => new
+            {
+                decision.InvoiceCandidateId,
+                decision.PolicyVersion,
+                decision.SourceVersion,
+                decision.Outcome
+            }).IsUnique();
+            entity.HasIndex(decision => decision.CommandId)
+                .IsUnique()
+                .HasFilter("\"CommandId\" IS NOT NULL");
+            entity.HasIndex(decision => decision.EvaluatedAt);
+            entity.HasOne<InvoiceCandidateEntity>()
+                .WithMany()
+                .HasForeignKey(decision => decision.InvoiceCandidateId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.Property(decision => decision.SourceVersion).HasMaxLength(64);
+            entity.Property(decision => decision.Outcome).HasMaxLength(64);
+            entity.Property(decision => decision.Summary).HasMaxLength(1000);
         });
 
         modelBuilder.Entity<InvoiceSubmissionAttemptEntity>(entity =>

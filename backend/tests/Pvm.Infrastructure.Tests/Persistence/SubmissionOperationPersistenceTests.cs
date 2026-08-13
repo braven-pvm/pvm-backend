@@ -243,7 +243,9 @@ public sealed class SubmissionOperationPersistenceTests : IAsyncLifetime
             Assert.True(await repository.TryStartSubmissionOperationAsync(
                 operation.Id,
                 DateTimeOffset.UtcNow,
-                CancellationToken.None));
+                expectedAutomationPolicyVersion: null,
+                automatic: true,
+                cancellationToken: CancellationToken.None));
             await preparationDb.SubmissionOperations
                 .Where(item => item.Id == operation.Id)
                 .ExecuteUpdateAsync(
@@ -306,7 +308,9 @@ public sealed class SubmissionOperationPersistenceTests : IAsyncLifetime
             Assert.True(await repository.TryStartSubmissionOperationAsync(
                 operation.Id,
                 DateTimeOffset.UtcNow,
-                CancellationToken.None));
+                expectedAutomationPolicyVersion: null,
+                automatic: true,
+                cancellationToken: CancellationToken.None));
             await preparationDb.SubmissionOperations
                 .Where(item => item.Id == operation.Id)
                 .ExecuteUpdateAsync(

@@ -6,6 +6,7 @@ using Npgsql;
 using Pvm.Application.Submissions;
 using Pvm.Domain.Invoices;
 using Pvm.Domain.Validation;
+using Pvm.Infrastructure.Automation;
 using Pvm.Infrastructure.Persistence.Entities;
 
 namespace Pvm.Infrastructure.Persistence.Repositories;
@@ -144,9 +145,12 @@ public sealed class EfInvoiceCandidateRepository(PvmDbContext dbContext) : IInvo
     public async Task<bool> TryStartSubmissionOperationAsync(
         Guid submissionOperationId,
         DateTimeOffset startedAt,
+        int? expectedAutomationPolicyVersion,
+        bool automatic,
         CancellationToken cancellationToken)
     {
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await AutomationPolicyLock.AcquireAsync(dbContext, cancellationToken);
         var operation = await dbContext.SubmissionOperations
             .AsNoTracking()
             .SingleOrDefaultAsync(item => item.Id == submissionOperationId, cancellationToken);
@@ -154,6 +158,23 @@ public sealed class EfInvoiceCandidateRepository(PvmDbContext dbContext) : IInvo
         {
             await transaction.RollbackAsync(cancellationToken);
             return false;
+        }
+
+        if (expectedAutomationPolicyVersion.HasValue)
+        {
+            var policy = await dbContext.AutomationPolicyVersions
+                .AsNoTracking()
+                .OrderByDescending(item => item.Version)
+                .Select(item => new { item.Version, item.Mode, item.EmergencyStop })
+                .FirstOrDefaultAsync(cancellationToken);
+            if (policy is null
+                || policy.Version != expectedAutomationPolicyVersion.Value
+                || policy.EmergencyStop
+                || (automatic && policy.Mode is "Disabled" or "Shadow"))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
         }
 
         var requestArchived = await dbContext.PayloadArchives
@@ -189,6 +210,46 @@ public sealed class EfInvoiceCandidateRepository(PvmDbContext dbContext) : IInvo
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return true;
+    }
+
+    public async Task CancelPendingSubmissionOperationAsync(
+        Guid submissionOperationId,
+        string reason,
+        DateTimeOffset cancelledAt,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var operation = await dbContext.SubmissionOperations.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == submissionOperationId, cancellationToken);
+        if (operation is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return;
+        }
+        var updated = await dbContext.SubmissionOperations
+            .Where(item => item.Id == submissionOperationId && item.Status == "Pending")
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(item => item.Status, "Cancelled")
+                    .SetProperty(item => item.ErrorMessage, reason)
+                    .SetProperty(item => item.FailureClassification, "automation-policy-changed")
+                    .SetProperty(item => item.CompletedAt, cancelledAt),
+                cancellationToken);
+        if (updated == 1)
+        {
+            dbContext.SubmissionOperationTransitions.Add(NewTransition(
+                operation,
+                "Pending",
+                "Cancelled",
+                reason,
+                cancelledAt));
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        else
+        {
+            await transaction.RollbackAsync(cancellationToken);
+        }
     }
 
     public async Task<SubmissionOperation?> GetSubmissionOperationAsync(

@@ -13,6 +13,14 @@ public interface IInvoiceCandidateRepository
     Task<bool> TryStartSubmissionOperationAsync(
         Guid submissionOperationId,
         DateTimeOffset startedAt,
+        int? expectedAutomationPolicyVersion,
+        bool automatic,
+        CancellationToken cancellationToken);
+
+    Task CancelPendingSubmissionOperationAsync(
+        Guid submissionOperationId,
+        string reason,
+        DateTimeOffset cancelledAt,
         CancellationToken cancellationToken);
 
     Task<SubmissionOperation?> GetSubmissionOperationAsync(

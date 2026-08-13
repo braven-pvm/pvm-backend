@@ -46,7 +46,7 @@ automatic retries, event delivery, backup recovery, or operational response.
 
 ## Implementation Progress
 
-As of 2026-08-07:
+As of 2026-08-12:
 
 - Slice 1 is complete and deployed: explicit EF migrations, persisted submission
   operations, concurrency constraints, frozen source/payload versions, stale-send
@@ -70,11 +70,18 @@ As of 2026-08-07:
   lookback, and consecutive incremental windows advanced the persisted cursor
   without duplicate candidates or submission operations; the stale alert fired
   before recovery and resolved after healthy reconciliation.
-- Slice 6 is implemented on `feature/acumatica-push-notification-ingestion` and
-  awaits review and QA deployment. It adds authenticated bounded webhook receipt,
-  a transactional event inbox/outbox, transaction-ID deduplication,
-  authoritative per-invoice retrieval, Admin event visibility, and a QA setup
-  and recovery runbook.
+- Slice 6 is merged, deployed, and configured in Acumatica QA. Authenticated
+  bounded webhook receipt, transactional inbox/outbox deduplication,
+  authoritative per-invoice retrieval, Admin event visibility, and recovery
+  documentation are operational; the QA Generic Inquiry and push notification
+  are active.
+- Slice 7 is implemented on `feature/automation-policy-shadow-mode` and awaits
+  review, merge, and QA deployment. It adds immutable policy versions,
+  persisted decisions, `Disabled -> Shadow -> Allowlisted -> Enabled` modes,
+  account/location/order-type controls, freshness and stabilization gates,
+  daily and time-window limits, an audited emergency stop, and the Automation
+  Control console. Policy changes and send claims share a database lock so a
+  newly changed policy is enforced before another external-send claim.
 - Automatic invoice submission remains disabled.
 
 ## Decisions
@@ -966,11 +973,13 @@ From PVM:
 
 ## Recommended Immediate Next Work
 
-Complete Slice 6 review and QA runtime verification using
-`docs/runbooks/acumatica-push-notifications-qa.md`. First prove the deployed
-endpoint with synthetic notifications, then activate the Acumatica QA
-destination for a controlled real-origin event and recovery check. Do not enable
-automatic invoice submission during this verification.
+Review and merge Slice 7, deploy it with the seeded policy left in `Disabled`,
+then run a controlled QA `Shadow` evaluation against known finalized invoice
+candidates. Prove that decisions, reasons, policy versions, and audit history
+are visible in the Automation Control console while automatic submission
+operations, Service Bus submit commands, and Shoprite POSTs remain at zero.
+Exercise the emergency stop for both automatic and manual paths, clear it with
+an audited reason, and return the environment to `Disabled` after verification.
 
 ## References
 

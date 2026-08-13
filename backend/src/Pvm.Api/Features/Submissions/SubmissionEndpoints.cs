@@ -52,6 +52,7 @@ public static class SubmissionEndpoints
             SubmitShopriteInvoiceStatus.Submitted => Results.Ok(result),
             SubmitShopriteInvoiceStatus.InProgress => Results.Accepted($"/api/invoices/candidates/{id}", result),
             SubmitShopriteInvoiceStatus.ValidationBlocked => Results.BadRequest(result),
+            SubmitShopriteInvoiceStatus.PolicyBlocked => Results.Conflict(result),
             SubmitShopriteInvoiceStatus.DuplicateBlocked => Results.Conflict(result),
             SubmitShopriteInvoiceStatus.ManualReviewRequired => Results.Conflict(result),
             SubmitShopriteInvoiceStatus.Ambiguous => Results.Accepted($"/api/invoices/candidates/{id}", result),

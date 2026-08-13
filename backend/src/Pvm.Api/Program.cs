@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using Pvm.Api.Auth;
 using Pvm.Api.Features.Admin;
 using Pvm.Api.Features.AcumaticaPushNotifications;
+using Pvm.Api.Features.Automation;
 using Pvm.Api.Features.Auth;
 using Pvm.Api.Features.Invoices;
 using Pvm.Api.Features.IntegrationOperations;
@@ -71,6 +72,7 @@ app.MapIntegrationRunEndpoints();
 app.MapAcumaticaPushNotificationEndpoints();
 app.MapAcumaticaPushNotificationAdminEndpoints();
 app.MapInventoryMappingEndpoints();
+app.MapAutomationPolicyEndpoints();
 
 app.Run();
 

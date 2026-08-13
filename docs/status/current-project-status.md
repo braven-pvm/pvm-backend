@@ -1,6 +1,6 @@
 # Current Project Status
 
-Last updated: 2026-08-07
+Last updated: 2026-08-12
 
 ## Overall Status
 
@@ -12,10 +12,11 @@ On 2026-07-27 Shoprite confirmed that the submitted invoice was structurally
 sound, correct, and verified.
 
 The QA payload-contract milestone is complete for the tested normal-order
-scenario. Production automation Slices 1 through 5 are merged, deployed, and
-runtime-verified in QA. Slice 6 is implemented on its feature branch and awaits
-review and QA deployment. The project is not ready to enable automatic
-production submissions.
+scenario. Production automation Slices 1 through 6 are merged and deployed in
+QA, and the Acumatica QA Generic Inquiry and push notification are active.
+Global Shoprite inventory mappings and the Admin exception workflow are also
+merged. Slice 7 is implemented on its feature branch but is not deployed. The
+project is not ready to enable automatic production submissions.
 
 ## Infrastructure Subscription (moved 2026-07-14)
 
@@ -51,10 +52,11 @@ Live estate check on 2026-08-07:
 
 ## Active Priority
 
-Review, merge, deploy, and runtime-verify Slice 6 of
-`docs/implementation-plans/shoprite-production-automation-plan.md`: authenticated
-Acumatica invoice push notifications with durable deduplication, authoritative
-per-invoice retrieval, Admin event visibility, and failed-delivery recovery.
+Review, merge, deploy, and runtime-verify Slice 7 of
+`docs/implementation-plans/shoprite-production-automation-plan.md`: persisted
+automation policy and decisions, `Shadow` evaluation, allowlists, freshness and
+stabilization controls, audited emergency stop, and the Automation Control
+console. Deployment must retain the seeded `Disabled` policy.
 
 ## Why This Is Next
 
@@ -158,7 +160,7 @@ Done:
   not increase, Service Bus active/dead-letter counts returned to zero, and the
   stale alert fired before bootstrap then resolved after recovery.
 
-Implemented, pending merge and QA deployment:
+Implemented and merged since the previous status snapshot:
 
 - Bounded authenticated Acumatica webhook endpoint with company/query allowlists,
   a 64 KiB body limit, and per-source rate limiting.
@@ -171,15 +173,30 @@ Implemented, pending merge and QA deployment:
   exposes metadata and hashes but not raw payloads or secrets.
 - Bicep, Key Vault deployment wiring, CI smoke check, and the Acumatica Generic
   Inquiry/push destination/recovery runbook.
+- Global inventory mapping bootstrap from known Shoprite PO items.
+- Admin mapping list/create/edit workflow and automatically seeded unresolved
+  mapping exceptions.
+
+Implemented, pending review, merge, and QA deployment:
+
+- Immutable versioned automation policy with optimistic Admin updates.
+- Persisted candidate decisions with policy/source evidence and reason codes.
+- `Disabled`, `Shadow`, `Allowlisted`, and `Enabled` modes, with account,
+  location, and order-type controls.
+- Stabilization delay, source freshness, automatic time window, and daily cap.
+- Audited emergency stop that blocks both automatic and manual submission.
+- Transactionally serialized policy changes and external-send claims.
+- Admin Automation Control page with active policy, safeguards, decision
+  summary/history, policy history, high-friction enablement, and emergency
+  controls.
 
 Not done:
 
-- QA deployment and controlled Acumatica-originated verification of Slice 6.
-- Automation modes, allowlists, shadow mode, and kill switch.
+- QA deployment and controlled shadow-mode verification of Slice 7.
 - Remaining production admin controls beyond the Control Room/run visibility.
 - Separate production infrastructure and release pipeline.
-- Global mapping list/edit pages for GLN, GTIN, UOM, pack, tax, and connection
-  settings. The MVP invoice-detail mapping action is implemented.
+- Global mapping coverage for GLN, pack, tax, and connection settings beyond
+  the implemented inventory/GTIN/UOM mapping workflow.
 - Manual ambiguous-resolution actions.
 
 ## Production Automation Position
@@ -200,9 +217,9 @@ The approved architecture is:
 - Functional admin control plane for health, invoices, POs, exceptions, runs,
   mappings, automation, connections, audit, users, and emergency stop.
 
-The immediate gate is Slice 6 review and QA runtime verification using
-`docs/runbooks/acumatica-push-notifications-qa.md`. Automatic policy and
-production sending remain disabled.
+The immediate gate is Slice 7 review, QA deployment in `Disabled`, and a
+controlled `Shadow` evaluation proving visibility without creating an external
+Shoprite POST. Production sending remains disabled.
 
 The admin console is specified in
 `docs/implementation-plans/integration-admin-console-plan.md`. Its read-only
