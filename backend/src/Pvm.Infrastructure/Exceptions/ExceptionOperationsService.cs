@@ -675,6 +675,77 @@ public sealed class ExceptionOperationsService(
         return new ExceptionOperationResult(true, Detail: replayId.ToString("D"));
     }
 
+    public async Task<ExceptionOperationResult> ResolveDeadLettersAsync(
+        string? queueName,
+        int olderThanDays,
+        string reason,
+        string actor,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return new ExceptionOperationResult(false, "A reason is required to resolve dead letters.");
+        }
+
+        if (olderThanDays < 0)
+        {
+            return new ExceptionOperationResult(false, "The age in days cannot be negative.");
+        }
+
+        var cutoff = now.AddDays(-olderThanDays);
+        var deliveries = await dbContext.IntegrationMessageDeliveries
+            .Where(delivery =>
+                delivery.Status == "DeadLettered"
+                && delivery.LastReceivedAt < cutoff
+                && (queueName == null || delivery.QueueName == queueName))
+            .ToListAsync(cancellationToken);
+        if (deliveries.Count == 0)
+        {
+            return new ExceptionOperationResult(
+                false,
+                "No dead letter matches that queue and age.");
+        }
+
+        var keys = deliveries.Select(delivery => DeadLetterKey(delivery.Id)).ToArray();
+        var tasks = await dbContext.ExceptionTasks
+            .Where(task => keys.Contains(task.DeduplicationKey))
+            .ToListAsync(cancellationToken);
+        foreach (var delivery in deliveries)
+        {
+            delivery.Status = "DeadLetterResolved";
+            delivery.UpdatedAt = now;
+        }
+
+        foreach (var task in tasks.Where(task => task.Status != ExceptionTaskStatuses.Resolved))
+        {
+            task.Status = ExceptionTaskStatuses.Resolved;
+            task.ResolvedAt = now;
+            task.ResolvedBy = actor;
+            task.ResolutionReason = reason.Trim();
+            task.UpdatedAt = now;
+        }
+
+        dbContext.AuditEvents.Add(NewAudit(
+            "IntegrationMessageDelivery",
+            queueName ?? "all-queues",
+            "dead-letters-resolved",
+            actor,
+            new
+            {
+                reason,
+                queueName,
+                olderThanDays,
+                deliveries = deliveries.Count,
+                tasks = tasks.Count,
+                oldest = deliveries.Min(delivery => delivery.LastReceivedAt),
+                newest = deliveries.Max(delivery => delivery.LastReceivedAt)
+            },
+            now));
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return new ExceptionOperationResult(true, Detail: deliveries.Count.ToString());
+    }
+
     private async Task RecordStillUnknownAsync(
         SubmissionOperationEntity operation,
         string evidence,

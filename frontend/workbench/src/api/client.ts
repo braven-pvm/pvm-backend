@@ -929,3 +929,11 @@ export function retrySubmission(invoiceCandidateId: string, reason: string): Pro
 export function replayDeadLetter(deliveryId: string, reason: string): Promise<void> {
   return postException(`dead-letters/${deliveryId}/replay`, { reason });
 }
+
+export function resolveDeadLetters(
+  reason: string,
+  queueName: string | null,
+  olderThanDays: number,
+): Promise<void> {
+  return postException("dead-letters/resolve", { reason, queueName, olderThanDays });
+}

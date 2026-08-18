@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getExceptions, type ExceptionTask } from "../../src/api/client";
 import { hasAnyRole, requireWorkbenchUser } from "../../src/auth/session";
 import { ExceptionActions } from "./exception-actions";
+import { DeadLetterBulkForm } from "./dead-letter-bulk-form";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +75,10 @@ export default async function ExceptionsPage({ searchParams }: ExceptionsPagePro
           </Link>
         ))}
       </nav>
+
+      {isAdmin && activeTab.key === "dead-letters" && summary.deadLetters > 0 ? (
+        <DeadLetterBulkForm openCount={summary.deadLetters} />
+      ) : null}
 
       {listing.tasks.length === 0 ? (
         <p className="empty-state">No exception is open in this queue.</p>

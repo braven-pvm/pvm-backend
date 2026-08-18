@@ -1535,3 +1535,11 @@ td span {
     align-items: stretch;
   }
 }
+
+.exception-form.bulk-form {
+  margin-bottom: 1rem;
+}
+
+.exception-form.bulk-form fieldset {
+  border-style: dashed;
+}

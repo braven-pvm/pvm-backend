@@ -68,7 +68,7 @@ public sealed class IntegrationMessageProcessor(
             return new MessageProcessingResult(MessageSettlement.Complete);
         }
 
-        if (delivery.Status == "DeadLettered")
+        if (delivery.Status is "DeadLettered" or "DeadLetterResolved")
         {
             return new MessageProcessingResult(
                 MessageSettlement.DeadLetter,

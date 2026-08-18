@@ -20,6 +20,7 @@ import {
   releaseInvoice,
   retrySubmission,
   replayDeadLetter,
+  resolveDeadLetters,
   type AutomationMode,
 } from "../src/api/client";
 
@@ -248,6 +249,13 @@ export async function replayDeadLetterAction(formData: FormData) {
   const deliveryId = requiredString(formData, "deliveryId");
   const reason = requiredString(formData, "reason");
   await runExceptionAction(() => replayDeadLetter(deliveryId, reason));
+}
+
+export async function resolveDeadLettersAction(formData: FormData) {
+  const reason = requiredString(formData, "reason");
+  const queueName = optionalString(formData, "queueName") ?? null;
+  const olderThanDays = requiredInteger(formData, "olderThanDays");
+  await runExceptionAction(() => resolveDeadLetters(reason, queueName, olderThanDays));
 }
 
 function requiredString(formData: FormData, key: string) {
