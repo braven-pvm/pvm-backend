@@ -1,6 +1,8 @@
+using System.Text.Json;
 using Pvm.Api.Auth;
 using Pvm.Application.Submissions;
 using Pvm.Infrastructure.Persistence;
+using Pvm.Infrastructure.Persistence.Entities;
 
 namespace Pvm.Api.Features.Submissions;
 
@@ -41,11 +43,15 @@ public static class SubmissionEndpoints
         Guid id,
         SubmitShopriteInvoiceHandler handler,
         CurrentAppUserAccessor currentUser,
+        PvmDbContext dbContext,
         CancellationToken cancellationToken)
     {
+        var actor = currentUser.User?.Email ?? "unknown";
         var result = await handler.HandleAsync(
-            new SubmitShopriteInvoiceCommand(Guid.NewGuid(), id, currentUser.User?.Email ?? "unknown", "manual"),
+            new SubmitShopriteInvoiceCommand(Guid.NewGuid(), id, actor, "manual"),
             cancellationToken);
+
+        await RecordRefusalAsync(dbContext, id, actor, result, cancellationToken);
 
         return result.Status switch
         {
@@ -59,4 +65,41 @@ public static class SubmissionEndpoints
             _ => Results.BadRequest(result)
         };
     }
+
+    private static async Task RecordRefusalAsync(
+        PvmDbContext dbContext,
+        Guid invoiceCandidateId,
+        string actor,
+        SubmitShopriteInvoiceResult result,
+        CancellationToken cancellationToken)
+    {
+        if (result.Status is not (SubmitShopriteInvoiceStatus.PolicyBlocked
+            or SubmitShopriteInvoiceStatus.ValidationBlocked
+            or SubmitShopriteInvoiceStatus.DuplicateBlocked
+            or SubmitShopriteInvoiceStatus.ManualReviewRequired))
+        {
+            return;
+        }
+
+        dbContext.AuditEvents.Add(new AuditEventEntity
+        {
+            Id = Guid.NewGuid(),
+            EntityType = "InvoiceCandidate",
+            EntityId = invoiceCandidateId.ToString(),
+            Action = "manual-submission-refused",
+            Actor = actor,
+            DetailsJson = JsonSerializer.Serialize(
+                new
+                {
+                    status = result.Status.ToString(),
+                    message = result.Message,
+                    submissionOperationId = result.SubmissionOperationId
+                },
+                SerializerOptions),
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 }

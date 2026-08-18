@@ -36,7 +36,8 @@ public sealed class EfInvoiceCandidateRepository(PvmDbContext dbContext) : IInvo
                 candidate.SourceJson,
                 candidate.CanonicalJson,
                 candidate.ValidationJson,
-                candidate.MatchedShopritePurchaseOrderId
+                candidate.MatchedShopritePurchaseOrderId,
+                candidate.Status
             })
             .SingleOrDefaultAsync(cancellationToken);
 
@@ -70,7 +71,8 @@ public sealed class EfInvoiceCandidateRepository(PvmDbContext dbContext) : IInvo
             candidate.IdempotencyKey,
             candidate.SourceJson,
             candidate.CanonicalJson,
-            sourceVersion);
+            sourceVersion,
+            candidate.Status);
     }
 
     public async Task<SubmissionOperation> GetOrCreateSubmissionOperationAsync(

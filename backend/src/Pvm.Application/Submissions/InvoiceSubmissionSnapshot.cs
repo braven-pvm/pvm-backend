@@ -11,4 +11,5 @@ public sealed record InvoiceSubmissionSnapshot(
     string IdempotencyKey,
     string? SourceJson,
     string CanonicalJson,
-    string SourceVersion);
+    string SourceVersion,
+    string CandidateStatus = "Unknown");

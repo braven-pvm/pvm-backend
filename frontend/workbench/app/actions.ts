@@ -12,6 +12,14 @@ import {
   enqueueIntegrationCommand,
   changeAutomationPolicy,
   setAutomationEmergencyStop,
+  assignException,
+  commentOnException,
+  setExceptionStatus,
+  resolveAmbiguousSubmission,
+  holdInvoice,
+  releaseInvoice,
+  retrySubmission,
+  replayDeadLetter,
   type AutomationMode,
 } from "../src/api/client";
 
@@ -173,6 +181,73 @@ export async function setAutomationEmergencyStopAction(formData: FormData) {
   redirect(errorMessage
     ? `/automation?policyError=${encodeURIComponent(errorMessage)}`
     : "/automation?policyStatus=Emergency%20control%20updated.");
+}
+
+async function runExceptionAction(action: () => Promise<void>) {
+  let errorMessage: string | undefined;
+  try {
+    await action();
+  } catch (error) {
+    errorMessage = error instanceof Error ? error.message : "The exception action failed.";
+  }
+
+  revalidatePath("/exceptions");
+  revalidatePath("/invoices");
+  redirect(errorMessage
+    ? `/exceptions?exceptionError=${encodeURIComponent(errorMessage)}`
+    : "/exceptions?exceptionStatus=Exception%20updated.");
+}
+
+export async function assignExceptionAction(formData: FormData) {
+  const id = requiredString(formData, "id");
+  const owner = optionalString(formData, "owner") ?? null;
+  await runExceptionAction(() => assignException(id, owner));
+}
+
+export async function commentOnExceptionAction(formData: FormData) {
+  const id = requiredString(formData, "id");
+  const body = requiredString(formData, "body");
+  await runExceptionAction(() => commentOnException(id, body));
+}
+
+export async function setExceptionStatusAction(formData: FormData) {
+  const id = requiredString(formData, "id");
+  const status = requiredString(formData, "status");
+  const reason = requiredString(formData, "reason");
+  await runExceptionAction(() => setExceptionStatus(id, status, reason));
+}
+
+export async function resolveAmbiguousSubmissionAction(formData: FormData) {
+  const submissionOperationId = requiredString(formData, "submissionOperationId");
+  const outcome = requiredString(formData, "outcome");
+  const evidence = requiredString(formData, "evidence");
+  const reason = requiredString(formData, "reason");
+  await runExceptionAction(() =>
+    resolveAmbiguousSubmission(submissionOperationId, outcome, evidence, reason));
+}
+
+export async function holdInvoiceAction(formData: FormData) {
+  const id = requiredString(formData, "invoiceCandidateId");
+  const reason = requiredString(formData, "reason");
+  await runExceptionAction(() => holdInvoice(id, reason));
+}
+
+export async function releaseInvoiceAction(formData: FormData) {
+  const id = requiredString(formData, "invoiceCandidateId");
+  const reason = requiredString(formData, "reason");
+  await runExceptionAction(() => releaseInvoice(id, reason));
+}
+
+export async function retrySubmissionAction(formData: FormData) {
+  const id = requiredString(formData, "invoiceCandidateId");
+  const reason = requiredString(formData, "reason");
+  await runExceptionAction(() => retrySubmission(id, reason));
+}
+
+export async function replayDeadLetterAction(formData: FormData) {
+  const deliveryId = requiredString(formData, "deliveryId");
+  const reason = requiredString(formData, "reason");
+  await runExceptionAction(() => replayDeadLetter(deliveryId, reason));
 }
 
 function requiredString(formData: FormData, key: string) {

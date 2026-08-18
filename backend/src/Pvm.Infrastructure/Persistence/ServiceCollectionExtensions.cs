@@ -9,6 +9,7 @@ using Pvm.Infrastructure.Messaging;
 using Pvm.Infrastructure.Operations;
 using Pvm.Infrastructure.Acumatica;
 using Pvm.Infrastructure.Automation;
+using Pvm.Infrastructure.Exceptions;
 using Pvm.Application.Automation;
 
 namespace Pvm.Infrastructure.Persistence;
@@ -42,6 +43,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<AcumaticaPushNotificationHealthService>();
         services.AddScoped<ShopritePurchaseOrderFreshnessService>();
         services.AddScoped<AutomationPolicyService>();
+        services.AddScoped<ExceptionOperationsService>();
         services.AddScoped<IAutomationSubmissionGate>(provider => provider.GetRequiredService<AutomationPolicyService>());
         return services;
     }

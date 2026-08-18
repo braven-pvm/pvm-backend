@@ -96,7 +96,7 @@ public sealed class ShopriteSeedInvoiceCandidateService(PvmDbContext dbContext)
 
     private static string CandidateStatus(ValidationResult validation, string? currentStatus)
     {
-        if (currentStatus is "Submitted" or "Rejected" or "Ambiguous")
+        if (currentStatus is "Submitted" or "Rejected" or "Ambiguous" or "Suspended")
         {
             return currentStatus;
         }

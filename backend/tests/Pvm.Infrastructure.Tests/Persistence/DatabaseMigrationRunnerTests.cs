@@ -23,7 +23,7 @@ public sealed class DatabaseMigrationRunnerTests : IAsyncLifetime
         await DatabaseMigrationRunner.MigrateAsync(db);
 
         var applied = await db.Database.GetAppliedMigrationsAsync();
-        Assert.Equal(8, applied.Count());
+        Assert.Equal(9, applied.Count());
         Assert.Contains(DatabaseMigrationRunner.LegacyBaselineMigration, applied);
         Assert.True(await TableExistsAsync(db, "submission_operations"));
         Assert.True(await TableExistsAsync(db, "payload_archives"));
@@ -34,6 +34,8 @@ public sealed class DatabaseMigrationRunnerTests : IAsyncLifetime
         Assert.True(await TableExistsAsync(db, "integration_event_inbox"));
         Assert.True(await TableExistsAsync(db, "automation_policy_versions"));
         Assert.True(await TableExistsAsync(db, "automation_decisions"));
+        Assert.True(await TableExistsAsync(db, "exception_tasks"));
+        Assert.True(await TableExistsAsync(db, "exception_task_comments"));
         Assert.True(await ColumnExistsAsync(db, "invoice_candidates", "SourceLastModifiedAt"));
         Assert.True(await ColumnExistsAsync(db, "integration_runs", "CursorAfter"));
         var policy = await db.AutomationPolicyVersions.SingleAsync();
@@ -75,9 +77,11 @@ public sealed class DatabaseMigrationRunnerTests : IAsyncLifetime
         Assert.True(await TableExistsAsync(db, "integration_event_inbox"));
         Assert.True(await TableExistsAsync(db, "automation_policy_versions"));
         Assert.True(await TableExistsAsync(db, "automation_decisions"));
+        Assert.True(await TableExistsAsync(db, "exception_tasks"));
+        Assert.True(await TableExistsAsync(db, "exception_task_comments"));
         Assert.True(await ColumnExistsAsync(db, "invoice_candidates", "SourceLastModifiedAt"));
         Assert.True(await ColumnExistsAsync(db, "integration_runs", "CursorAfter"));
-        Assert.Equal(8, (await db.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(9, (await db.Database.GetAppliedMigrationsAsync()).Count());
         var policy = await db.AutomationPolicyVersions.SingleAsync();
         Assert.Equal(1, policy.Version);
         Assert.Equal("Disabled", policy.Mode);

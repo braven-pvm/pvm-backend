@@ -73,6 +73,27 @@ public sealed class SubmitShopriteInvoiceHandlerTests
     }
 
     [Fact]
+    public async Task Held_invoice_is_not_sent_to_shoprite()
+    {
+        var repository = new FakeInvoiceCandidateRepository
+        {
+            Invoice = ValidInvoice(),
+            ValidationResult = new ValidationResult([]),
+            HasMatchedPurchaseOrder = true,
+            CandidateStatus = "Suspended"
+        };
+        var shopriteClient = new FakeShopriteInvoiceClient();
+        var handler = new SubmitShopriteInvoiceHandler(repository, shopriteClient, new FakePayloadArchive());
+
+        var result = await handler.HandleAsync(Command, CancellationToken.None);
+
+        Assert.Equal(SubmitShopriteInvoiceStatus.PolicyBlocked, result.Status);
+        Assert.Contains("hold", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, shopriteClient.SubmitCallCount);
+        Assert.Empty(repository.Attempts);
+    }
+
+    [Fact]
     public async Task Valid_invoice_without_matched_local_purchase_order_is_not_sent_to_shoprite()
     {
         var repository = new FakeInvoiceCandidateRepository
@@ -430,6 +451,7 @@ public sealed class SubmitShopriteInvoiceHandlerTests
         public CanonicalInvoice? Invoice { get; init; }
         public ValidationResult ValidationResult { get; init; } = new([]);
         public bool HasMatchedPurchaseOrder { get; init; }
+        public string CandidateStatus { get; init; } = "Ready";
         public bool HasUnresolvedAmbiguousSubmission { get; init; }
         public bool HasSuccessfulSubmission { get; init; }
         public ConcurrentBag<RecordedAttempt> Attempts { get; } = [];
@@ -453,7 +475,8 @@ public sealed class SubmitShopriteInvoiceHandlerTests
                     "candidate-key",
                     """{"source":"fixture"}""",
                     """{"canonical":"fixture"}""",
-                    "source-version"));
+                    "source-version",
+                    CandidateStatus));
 
         public Task<SubmissionOperation> GetOrCreateSubmissionOperationAsync(
             PrepareSubmissionOperation request,

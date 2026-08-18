@@ -802,3 +802,130 @@ export async function enqueueIntegrationCommand(
 
   return response.json();
 }
+
+export type ExceptionTaskComment = {
+  id: string;
+  actor: string;
+  body: string;
+  createdAt: string;
+};
+
+export type ExceptionTask = {
+  id: string;
+  deduplicationKey: string;
+  category: string;
+  severity: string;
+  status: string;
+  entityType: string;
+  entityId: string;
+  invoiceCandidateId?: string;
+  invoiceNumber?: string;
+  errorCode: string;
+  summary: string;
+  fixLocation: string;
+  retryClassification: string;
+  owner?: string;
+  occurrenceCount: number;
+  latestEvidence?: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  dueAt?: string;
+  isOverdue: boolean;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  resolutionReason?: string;
+  comments: ExceptionTaskComment[];
+};
+
+export type ExceptionQueueSummary = {
+  ambiguous: number;
+  rejected: number;
+  needsReview: number;
+  deadLetters: number;
+  stuck: number;
+  held: number;
+  overdue: number;
+  resolved: number;
+};
+
+export type ExceptionQueueListing = {
+  tasks: ExceptionTask[];
+  summary: ExceptionQueueSummary;
+};
+
+export async function getExceptions(
+  status?: string,
+  category?: string,
+): Promise<ExceptionQueueListing> {
+  const headers = await getApiAuthHeaders();
+  const query = new URLSearchParams();
+  if (status) {
+    query.set("status", status);
+  }
+  if (category) {
+    query.set("category", category);
+  }
+  const suffix = query.size > 0 ? `?${query.toString()}` : "";
+  const response = await fetch(`${apiBaseUrl}/api/exceptions${suffix}`, {
+    headers,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load exceptions: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+async function postException(path: string, body: unknown): Promise<void> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(`${apiBaseUrl}/api/exceptions/${path}`, {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const result = await readJson(response);
+    throw new Error(getErrorMessage(result) ?? `The exception action failed: ${response.status}`);
+  }
+}
+
+export function assignException(id: string, owner: string | null): Promise<void> {
+  return postException(`${id}/assign`, { owner });
+}
+
+export function commentOnException(id: string, body: string): Promise<void> {
+  return postException(`${id}/comments`, { body });
+}
+
+export function setExceptionStatus(id: string, status: string, reason: string): Promise<void> {
+  return postException(`${id}/status`, { status, reason });
+}
+
+export function resolveAmbiguousSubmission(
+  submissionOperationId: string,
+  outcome: string,
+  evidence: string,
+  reason: string,
+): Promise<void> {
+  return postException(`ambiguous/${submissionOperationId}/resolve`, { outcome, evidence, reason });
+}
+
+export function holdInvoice(invoiceCandidateId: string, reason: string): Promise<void> {
+  return postException(`invoices/${invoiceCandidateId}/hold`, { reason });
+}
+
+export function releaseInvoice(invoiceCandidateId: string, reason: string): Promise<void> {
+  return postException(`invoices/${invoiceCandidateId}/release`, { reason });
+}
+
+export function retrySubmission(invoiceCandidateId: string, reason: string): Promise<void> {
+  return postException(`invoices/${invoiceCandidateId}/retry`, { reason });
+}
+
+export function replayDeadLetter(deliveryId: string, reason: string): Promise<void> {
+  return postException(`dead-letters/${deliveryId}/replay`, { reason });
+}

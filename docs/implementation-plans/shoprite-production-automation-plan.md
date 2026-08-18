@@ -46,7 +46,7 @@ automatic retries, event delivery, backup recovery, or operational response.
 
 ## Implementation Progress
 
-As of 2026-08-12:
+As of 2026-08-18:
 
 - Slice 1 is complete and deployed: explicit EF migrations, persisted submission
   operations, concurrency constraints, frozen source/payload versions, stale-send
@@ -75,13 +75,25 @@ As of 2026-08-12:
   authoritative per-invoice retrieval, Admin event visibility, and recovery
   documentation are operational; the QA Generic Inquiry and push notification
   are active.
-- Slice 7 is implemented on `feature/automation-policy-shadow-mode` and awaits
-  review, merge, and QA deployment. It adds immutable policy versions,
+- Slice 7 is merged, deployed, and runtime-verified in QA. It adds immutable
+  policy versions,
   persisted decisions, `Disabled -> Shadow -> Allowlisted -> Enabled` modes,
   account/location/order-type controls, freshness and stabilization gates,
   daily and time-window limits, an audited emergency stop, and the Automation
   Control console. Policy changes and send claims share a database lock so a
   newly changed policy is enforced before another external-send claim.
+- QA verification on 2026-08-13 recorded four `WouldSubmit` and four `Excluded`
+  shadow decisions with zero submit commands. QA verification on 2026-08-18
+  recorded policy versions 3, 4, and 5, four `EmergencyStopped` decisions while
+  the stop was active, a refused manual submission, and four `Disabled`
+  decisions after the return to `Disabled`.
+- Slice 8 is implemented on `slice/exception-operations` and awaits review,
+  merge, and QA deployment. It adds persisted exception tasks with a
+  deduplication key, derived queues for ambiguous, rejected, needs-review,
+  dead-lettered, stuck, and held work, an evidence-bound ambiguous resolution,
+  invoice hold and release, a retry that requires successful revalidation, a
+  guarded dead-letter replay, and the Admin exception console. A refused manual
+  submission is now audited.
 - Automatic invoice submission remains disabled.
 
 ## Decisions
