@@ -1361,3 +1361,177 @@ td span {
     text-align: left;
   }
 }
+
+.tab-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1.25rem 0;
+}
+
+.tab-strip .tab {
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.4));
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.tab-strip .tab.is-active {
+  background: var(--accent-soft, rgba(59, 130, 246, 0.15));
+  border-color: var(--accent, #2563eb);
+  font-weight: 600;
+}
+
+.exception-list {
+  display: grid;
+  gap: 1rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.exception-card {
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.4));
+  border-left-width: 4px;
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.exception-card.severity-critical { border-left-color: #dc2626; }
+.exception-card.severity-high { border-left-color: #ea580c; }
+.exception-card.severity-medium { border-left-color: #ca8a04; }
+.exception-card.severity-low { border-left-color: #64748b; }
+
+.exception-card header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.exception-card h2 {
+  font-size: 1.05rem;
+  margin: 0.15rem 0 0;
+}
+
+.exception-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.exception-badges .badge {
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.4));
+  border-radius: 999px;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.6rem;
+}
+
+.exception-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0;
+}
+
+.exception-facts dt {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.exception-facts dd {
+  margin: 0;
+  font-size: 0.9rem;
+  word-break: break-word;
+}
+
+.exception-evidence,
+.exception-resolution {
+  font-size: 0.85rem;
+  margin: 0;
+  opacity: 0.9;
+  word-break: break-word;
+}
+
+.exception-comments {
+  display: grid;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.exception-comments li {
+  display: grid;
+  gap: 0.1rem;
+  border-left: 2px solid var(--border-subtle, rgba(148, 163, 184, 0.4));
+  padding-left: 0.6rem;
+  font-size: 0.85rem;
+}
+
+.exception-actions {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.exception-form fieldset {
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.4));
+  border-radius: 10px;
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem 1rem;
+}
+
+.exception-form label {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.exception-form.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: end;
+}
+
+.exception-form.inline-form label {
+  flex: 1 1 12rem;
+}
+
+.consequence-list {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.field-note {
+  font-size: 0.8rem;
+  margin: 0;
+  opacity: 0.8;
+}
+
+.field-note.replay-blocked {
+  border: 1px dashed var(--border-subtle, rgba(148, 163, 184, 0.4));
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+}
+
+@media (max-width: 640px) {
+  .exception-card header {
+    flex-direction: column;
+  }
+
+  .exception-form.inline-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

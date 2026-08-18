@@ -28,6 +28,13 @@ public sealed class SubmitShopriteInvoiceHandler(
             return new SubmitShopriteInvoiceResult(SubmitShopriteInvoiceStatus.Failed, "Invoice candidate not found.");
         }
 
+        if (string.Equals(snapshot.CandidateStatus, "Suspended", StringComparison.OrdinalIgnoreCase))
+        {
+            return new SubmitShopriteInvoiceResult(
+                SubmitShopriteInvoiceStatus.PolicyBlocked,
+                "Invoice submission is on hold. An Admin must release the hold first.");
+        }
+
         if (!snapshot.Validation.CanSubmit)
         {
             return new SubmitShopriteInvoiceResult(SubmitShopriteInvoiceStatus.ValidationBlocked, "Invoice has blocking validation issues.");

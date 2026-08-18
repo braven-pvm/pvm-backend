@@ -16,8 +16,9 @@ Before implementing or reviewing work, read these in order:
 6. `docs/implementation-plans/shoprite-production-automation-plan.md`
 7. `docs/implementation-plans/integration-admin-console-plan.md`
 8. `docs/runbooks/shoprite-qa-submission.md`
-9. `docs/runbooks/acumatica-push-notifications-qa.md`
-10. `docs/runbooks/azure-qa-provisioning-playbook.md`
+9. `docs/runbooks/exception-operations-qa.md`
+10. `docs/runbooks/acumatica-push-notifications-qa.md`
+11. `docs/runbooks/azure-qa-provisioning-playbook.md`
 
 Use `.agents/skills/overseer/SKILL.md` for status, planning, readiness, review, branch hygiene, and next-work decisions. Use `.agents/skills/handoff/SKILL.md` when preparing a future-session handoff.
 

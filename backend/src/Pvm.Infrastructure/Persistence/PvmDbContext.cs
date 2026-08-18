@@ -44,6 +44,10 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<AutomationDecisionEntity> AutomationDecisions => Set<AutomationDecisionEntity>();
 
+    public DbSet<ExceptionTaskEntity> ExceptionTasks => Set<ExceptionTaskEntity>();
+
+    public DbSet<ExceptionTaskCommentEntity> ExceptionTaskComments => Set<ExceptionTaskCommentEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<InvoiceCandidateEntity>(entity =>
@@ -406,6 +410,44 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(item => item.QueryName).HasMaxLength(256);
             entity.Property(item => item.PayloadJson).HasColumnType("jsonb");
             entity.Property(item => item.PayloadHash).HasMaxLength(64);
+        });
+
+        modelBuilder.Entity<ExceptionTaskEntity>(entity =>
+        {
+            entity.ToTable("exception_tasks");
+            entity.HasKey(task => task.Id);
+            entity.HasIndex(task => task.DeduplicationKey).IsUnique();
+            entity.HasIndex(task => new { task.Status, task.Severity });
+            entity.HasIndex(task => task.InvoiceCandidateId);
+            entity.Property(task => task.DeduplicationKey).HasMaxLength(512);
+            entity.Property(task => task.Category).HasMaxLength(64);
+            entity.Property(task => task.Severity).HasMaxLength(16);
+            entity.Property(task => task.Status).HasMaxLength(32);
+            entity.Property(task => task.EntityType).HasMaxLength(64);
+            entity.Property(task => task.EntityId).HasMaxLength(128);
+            entity.Property(task => task.ErrorCode).HasMaxLength(128);
+            entity.Property(task => task.Summary).HasMaxLength(1024);
+            entity.Property(task => task.FixLocation).HasMaxLength(256);
+            entity.Property(task => task.RetryClassification).HasMaxLength(64);
+            entity.Property(task => task.Owner).HasMaxLength(320);
+            entity.Property(task => task.LatestEvidence).HasMaxLength(2048);
+            entity.Property(task => task.DetailsJson).HasColumnType("jsonb");
+            entity.Property(task => task.ResolvedBy).HasMaxLength(320);
+            entity.Property(task => task.ResolutionReason).HasMaxLength(1024);
+        });
+
+        modelBuilder.Entity<ExceptionTaskCommentEntity>(entity =>
+        {
+            entity.ToTable("exception_task_comments");
+            entity.HasKey(comment => comment.Id);
+            entity.HasIndex(comment => comment.ExceptionTaskId);
+            entity.Property(comment => comment.Actor).HasMaxLength(320);
+            entity.Property(comment => comment.Body).HasMaxLength(4096);
+            entity
+                .HasOne<ExceptionTaskEntity>()
+                .WithMany()
+                .HasForeignKey(comment => comment.ExceptionTaskId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

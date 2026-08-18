@@ -1,6 +1,6 @@
 # Current Project Status
 
-Last updated: 2026-08-12
+Last updated: 2026-08-18
 
 ## Overall Status
 
@@ -12,11 +12,11 @@ On 2026-07-27 Shoprite confirmed that the submitted invoice was structurally
 sound, correct, and verified.
 
 The QA payload-contract milestone is complete for the tested normal-order
-scenario. Production automation Slices 1 through 6 are merged and deployed in
+scenario. Production automation Slices 1 through 7 are merged and deployed in
 QA, and the Acumatica QA Generic Inquiry and push notification are active.
-Global Shoprite inventory mappings and the Admin exception workflow are also
-merged. Slice 7 is implemented on its feature branch but is not deployed. The
-project is not ready to enable automatic production submissions.
+Global Shoprite inventory mappings and the Admin mapping workflow are also
+merged. Slice 8 is implemented on `slice/exception-operations` but is not
+deployed. The project is not ready to enable automatic production submissions.
 
 ## Infrastructure Subscription (moved 2026-07-14)
 
@@ -49,6 +49,26 @@ Live estate check on 2026-08-07:
 - Seeded candidate `QA-INV-1212503708` created four archive objects with one
   current version each. Independent downloads matched every PostgreSQL SHA-256
   hash and byte count.
+
+## Automation Verification (2026-08-18)
+
+QA automation was returned to `Disabled` after a controlled emergency-stop test.
+Evidence in the QA database:
+
+- Policy versions: v3 `Shadow` with the stop active, v4 `Shadow` with the stop
+  cleared, v5 `Disabled`. Each version records the actor and a reason.
+- Four `EmergencyStopped` automation decisions were written while the stop was
+  active. Four `Disabled` decisions followed the return to `Disabled`.
+- A manual submission of `QA-INV-1215382155` was refused with the message
+  `Invoice submission is disabled by the emergency stop.`
+- `INV158889` was submitted after the operator cleared the stop. Shoprite
+  returned `200`, four payloads were archived, and the transition sequence
+  `Pending -> Sending -> Submitted` was recorded.
+- Automatic submit commands remain at zero. All three Service Bus queues hold
+  zero active and zero dead-lettered messages.
+
+A refused manual submission wrote no audit record at the time of that test.
+Slice 8 adds the `manual-submission-refused` audit event.
 
 ## Active Priority
 

@@ -147,7 +147,7 @@ public sealed class ShopriteInvoiceCandidateRevalidationService(
     }
 
     private static string CandidateStatus(ValidationResult validation, string currentStatus)
-        => currentStatus is "Submitted" or "Rejected" or "Ambiguous"
+        => currentStatus is "Submitted" or "Rejected" or "Ambiguous" or "Suspended"
             ? currentStatus
             : validation.CanSubmit ? "Ready" : "NeedsReview";
 
