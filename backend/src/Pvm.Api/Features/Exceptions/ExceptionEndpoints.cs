@@ -24,6 +24,7 @@ public static class ExceptionEndpoints
         admin.MapPost("/invoices/{invoiceCandidateId:guid}/release", ReleaseAsync);
         admin.MapPost("/invoices/{invoiceCandidateId:guid}/retry", RetryAsync);
         admin.MapPost("/dead-letters/{deliveryId:guid}/replay", ReplayAsync);
+        admin.MapPost("/dead-letters/resolve", ResolveDeadLettersAsync);
         return app;
     }
 
@@ -174,6 +175,19 @@ public static class ExceptionEndpoints
             DateTimeOffset.UtcNow,
             cancellationToken));
 
+    private static async Task<IResult> ResolveDeadLettersAsync(
+        ResolveDeadLettersRequest request,
+        ExceptionOperationsService service,
+        CurrentAppUserAccessor currentUser,
+        CancellationToken cancellationToken)
+        => Respond(await service.ResolveDeadLettersAsync(
+            string.IsNullOrWhiteSpace(request.QueueName) ? null : request.QueueName,
+            request.OlderThanDays,
+            request.Reason,
+            Actor(currentUser),
+            DateTimeOffset.UtcNow,
+            cancellationToken));
+
     private static IResult Respond(ExceptionOperationResult result)
     {
         if (result.Applied)
@@ -199,3 +213,5 @@ public sealed record ExceptionStatusRequest(string Status, string Reason);
 public sealed record ExceptionReasonRequest(string Reason);
 
 public sealed record ResolveAmbiguousRequest(string Outcome, string Evidence, string Reason);
+
+public sealed record ResolveDeadLettersRequest(string Reason, string? QueueName = null, int OlderThanDays = 1);

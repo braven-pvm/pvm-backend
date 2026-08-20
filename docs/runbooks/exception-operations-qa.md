@@ -88,7 +88,22 @@ Pass:
 - A replay creates a new message identity. The original message identity becomes
   the causation identity, so the consumer cannot deduplicate the replay away.
 
-## Test 7: Audit
+## Test 7: Close historical dead letters
+
+Use this when an incident is already fixed and the broker no longer holds the
+messages. Resolution never replays a message.
+
+1. Open the **Dead letters** tab.
+2. Select the queue, or leave `Every queue`.
+3. Set the age in days. A message newer than that age is kept.
+4. Give the incident reference as the reason, then confirm.
+
+Pass: the matching delivery rows become `DeadLetterResolved`, their tasks close
+with your reason, and one `dead-letters-resolved` audit event records the count,
+the queue, the age limit, and the oldest and newest message times. The next
+synchronisation does not derive those tasks again.
+
+## Test 8: Audit
 
 Confirm that the audit trail records these actions with actor and reason:
 
@@ -100,6 +115,7 @@ Confirm that the audit trail records these actions with actor and reason:
 - `ambiguous-submission-resolved`
 - `ambiguous-submission-evidence-recorded`
 - `dead-letter-replayed`
+- `dead-letters-resolved`
 - `exception-task-assigned`
 - `exception-task-status-changed`
 

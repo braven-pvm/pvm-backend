@@ -87,13 +87,17 @@ As of 2026-08-18:
   recorded policy versions 3, 4, and 5, four `EmergencyStopped` decisions while
   the stop was active, a refused manual submission, and four `Disabled`
   decisions after the return to `Disabled`.
-- Slice 8 is implemented on `slice/exception-operations` and awaits review,
-  merge, and QA deployment. It adds persisted exception tasks with a
+- Slice 8 is merged and deployed in QA. It adds persisted exception tasks with a
   deduplication key, derived queues for ambiguous, rejected, needs-review,
   dead-lettered, stuck, and held work, an evidence-bound ambiguous resolution,
   invoice hold and release, a retry that requires successful revalidation, a
   guarded dead-letter replay, and the Admin exception console. A refused manual
-  submission is now audited.
+  submission is now audited, which the QA test on 2026-08-18 confirmed.
+- The first QA synchronisation derived 229 dead-letter tasks from the resolved
+  incidents of 5 to 7 August, because nothing closed those delivery rows when
+  the defects were fixed. An audited bulk resolution now closes historical dead
+  letters without replaying them, and the message processor treats a resolved
+  dead letter as non-processable.
 - Automatic invoice submission remains disabled.
 
 ## Decisions

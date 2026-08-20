@@ -365,6 +365,91 @@ public sealed class ExceptionOperationsServiceTests : IAsyncLifetime
         Assert.Equal(1, listing.Summary.DeadLetters);
     }
 
+    [Fact]
+    public async Task Historical_dead_letters_are_resolved_in_one_audited_action()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        var service = Service(db);
+        await SeedDeadLetterAsync(
+            db,
+            IntegrationQueues.ShopritePurchaseOrderRefresh,
+            IntegrationMessageTypes.ShopritePurchaseOrderRefreshV1,
+            invoiceCandidateId: null,
+            receivedAt: DateTimeOffset.UtcNow.AddDays(-12));
+        await service.SynchronizeAsync(DateTimeOffset.UtcNow, CancellationToken.None);
+
+        var result = await service.ResolveDeadLettersAsync(
+            IntegrationQueues.ShopritePurchaseOrderRefresh,
+            olderThanDays: 1,
+            reason: "Parser defect fixed by PR #14.",
+            actor: "admin@pvm.co.za",
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+
+        Assert.True(result.Applied);
+        Assert.Equal("DeadLetterResolved", (await db.IntegrationMessageDeliveries.SingleAsync()).Status);
+        var task = await db.ExceptionTasks.SingleAsync();
+        Assert.Equal(ExceptionTaskStatuses.Resolved, task.Status);
+        Assert.Equal("admin@pvm.co.za", task.ResolvedBy);
+        var audit = await db.AuditEvents.SingleAsync(item => item.Action == "dead-letters-resolved");
+        Assert.Contains("PR #14", audit.DetailsJson);
+    }
+
+    [Fact]
+    public async Task A_resolved_dead_letter_is_not_derived_again()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        var service = Service(db);
+        await SeedDeadLetterAsync(
+            db,
+            IntegrationQueues.ShopritePurchaseOrderRefresh,
+            IntegrationMessageTypes.ShopritePurchaseOrderRefreshV1,
+            invoiceCandidateId: null,
+            receivedAt: DateTimeOffset.UtcNow.AddDays(-12));
+        await service.SynchronizeAsync(DateTimeOffset.UtcNow, CancellationToken.None);
+        await service.ResolveDeadLettersAsync(
+            null,
+            olderThanDays: 1,
+            reason: "Incident closed.",
+            actor: "admin@pvm.co.za",
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+
+        await service.SynchronizeAsync(DateTimeOffset.UtcNow, CancellationToken.None);
+
+        var listing = await service.ListAsync("active", null, DateTimeOffset.UtcNow, CancellationToken.None);
+        Assert.Empty(listing.Tasks);
+        Assert.Equal(0, listing.Summary.DeadLetters);
+        Assert.Equal(ExceptionTaskStatuses.Resolved, (await db.ExceptionTasks.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task A_recent_dead_letter_is_kept_when_an_age_limit_is_given()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        var service = Service(db);
+        await SeedDeadLetterAsync(
+            db,
+            IntegrationQueues.ShopritePurchaseOrderRefresh,
+            IntegrationMessageTypes.ShopritePurchaseOrderRefreshV1,
+            invoiceCandidateId: null,
+            receivedAt: DateTimeOffset.UtcNow.AddMinutes(-30));
+
+        var result = await service.ResolveDeadLettersAsync(
+            null,
+            olderThanDays: 1,
+            reason: "Bulk close.",
+            actor: "admin@pvm.co.za",
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+
+        Assert.False(result.Applied);
+        Assert.Equal("DeadLettered", (await db.IntegrationMessageDeliveries.SingleAsync()).Status);
+    }
+
     private static ExceptionOperationsService Service(PvmDbContext db)
         => new(db, new ShopriteInvoiceCandidateMatcher(db));
 
@@ -485,9 +570,10 @@ public sealed class ExceptionOperationsServiceTests : IAsyncLifetime
         PvmDbContext db,
         string queueName,
         string messageType,
-        Guid? invoiceCandidateId)
+        Guid? invoiceCandidateId,
+        DateTimeOffset? receivedAt = null)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = receivedAt ?? DateTimeOffset.UtcNow;
         var messageId = Guid.NewGuid();
         object data = invoiceCandidateId is null
             ? new { requestedBy = "system:test", trigger = IntegrationRunTriggers.Scheduled }

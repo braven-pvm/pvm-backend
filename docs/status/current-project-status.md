@@ -15,8 +15,7 @@ The QA payload-contract milestone is complete for the tested normal-order
 scenario. Production automation Slices 1 through 7 are merged and deployed in
 QA, and the Acumatica QA Generic Inquiry and push notification are active.
 Global Shoprite inventory mappings and the Admin mapping workflow are also
-merged. Slice 8 is implemented on `slice/exception-operations` but is not
-deployed. The project is not ready to enable automatic production submissions.
+merged. Slice 8 is merged and deployed in QA. The project is not ready to enable automatic production submissions.
 
 ## Infrastructure Subscription (moved 2026-07-14)
 
