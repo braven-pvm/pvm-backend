@@ -5,11 +5,11 @@ namespace Pvm.Application.Investec;
 /// (<c>GET /za/bb/v2/accounts/{accountId}/transactions</c>).
 /// </summary>
 /// <remarks>
-/// Field shape is modelled from the Bank Integrations Technical Guide v1.0 and the
-/// public Investec transaction structure. It MUST be verified against the sandbox
-/// response before go-live; in particular whether <see cref="Amount"/> is a signed
-/// value or a positive magnitude paired with <see cref="Direction"/>, and whether a
-/// stable <see cref="TransactionId"/> is present (it drives Acumatica de-duplication).
+/// This is a normalised shape; <c>InvestecTransactionClient</c> maps the live BCB response
+/// onto it. Verified against the live API 2026-08-20: money in/out arrives as
+/// <c>deposit</c>/<c>withdrawal</c> (mapped to a positive <see cref="Amount"/> +
+/// <see cref="Direction"/>), and a stable <c>transactionId</c> is present, so
+/// <see cref="TransactionId"/> drives Acumatica de-duplication (no synthetic hash needed).
 /// </remarks>
 public sealed record InvestecTransaction(
     string AccountId,

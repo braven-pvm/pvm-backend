@@ -13,13 +13,15 @@ public sealed class InvestecTransactionClientTests
         const string tokenJson = """{"access_token":"tok-123","token_type":"Bearer","expires_in":1799}""";
         const string page1 = """
             {"data":{"transactions":[
-              {"accountId":"1300","type":"CREDIT","transactionType":"Deposits","status":"POSTED",
-               "description":"SALARY","postingDate":"2026-08-03","valueDate":"2026-08-03",
-               "actionDate":"2026-08-03","transactionDate":"2026-08-03","amount":1000.00,"runningBalance":5000.00},
-              {"accountId":"1300","type":"DEBIT","transactionType":"FeesAndInterest","status":"POSTED",
-               "description":"BANK FEE","postingDate":"2026-08-04","valueDate":"2026-08-04",
-               "actionDate":"2026-08-04","transactionDate":"2026-08-04","amount":55.00,"runningBalance":4945.00}
-            ]}}
+              {"accountId":"1300","transactionId":"202608030000000000001","drCrIndicator":"CREDIT",
+               "transactionDescription":"EFT Transaction","clientStatementReference":"SALARY AUG",
+               "postDate":"2026-08-03","valueDate":"2026-08-03","deposit":1000.00,"withdrawal":0.00,
+               "runningBalance":5000.00,"transactionStatus":"approved","transactionCode":"607"},
+              {"accountId":"1300","transactionId":"202608040000000000002","drCrIndicator":"DEBIT",
+               "transactionDescription":"EFT Transaction","clientStatementReference":"BANK FEE",
+               "postDate":"2026-08-04","valueDate":"2026-08-04","deposit":0.00,"withdrawal":-55.00,
+               "runningBalance":4945.00,"transactionStatus":"approved","transactionCode":"247"}
+            ]},"meta":{"TotalPages":1,"CurrentPage":1}}
             """;
         const string page2 = """{"data":{"transactions":[]}}""";
         using var handler = new SequenceHandler(
@@ -41,8 +43,11 @@ public sealed class InvestecTransactionClientTests
         Assert.Equal(1000.00m, credit.Amount);
         Assert.Equal(5000.00m, credit.RunningBalance);
         Assert.Equal(new DateOnly(2026, 8, 3), credit.PostingDate);
+        Assert.Equal("SALARY AUG", credit.Description);
+        Assert.Equal("202608030000000000001", credit.TransactionId);
         Assert.Equal("BANK FEE", transactions[1].Description);
         Assert.Equal("DEBIT", transactions[1].Direction);
+        Assert.Equal(55.00m, transactions[1].Amount);
 
         var token = Assert.Single(
             handler.Requests,
