@@ -81,6 +81,13 @@ param shopritePassword string = ''
 ])
 param shopriteInvoiceSubmissionMode string = 'LocalStub'
 
+@description('Shoprite Layer 7 contract identifier.')
+@secure()
+param shopriteContractId string = ''
+
+@description('Acknowledges downloaded Shoprite orders after they are stored.')
+param shopriteAcknowledgeOrders bool = false
+
 @description('Acumatica invoice source mode. RealQa must be enabled explicitly after QA credentials and schema are verified.')
 @allowed([
   'Fixture'
@@ -203,6 +210,8 @@ module platform 'modules/platform.bicep' = {
     shopriteBaseUrl: shopriteBaseUrl
     shopriteUsername: shopriteUsername
     shopritePassword: shopritePassword
+    shopriteContractId: shopriteContractId
+    shopriteAcknowledgeOrders: shopriteAcknowledgeOrders
     shopriteInvoiceSubmissionMode: shopriteInvoiceSubmissionMode
     acumaticaInvoiceSourceMode: acumaticaInvoiceSourceMode
     acumaticaBaseUrl: acumaticaBaseUrl

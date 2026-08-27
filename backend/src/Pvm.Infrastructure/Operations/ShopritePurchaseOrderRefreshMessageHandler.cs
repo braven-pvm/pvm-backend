@@ -8,6 +8,7 @@ namespace Pvm.Infrastructure.Operations;
 public sealed class ShopritePurchaseOrderRefreshMessageHandler(
     IShopritePurchaseOrderClient purchaseOrderClient,
     ShopritePurchaseOrderRefreshService refreshService,
+    ShopriteOrderAcknowledgementService acknowledgementService,
     ShopriteInvoiceCandidateRevalidationService revalidationService,
     IntegrationRunService runService,
     ILogger<ShopritePurchaseOrderRefreshMessageHandler> logger)
@@ -29,6 +30,26 @@ public sealed class ShopritePurchaseOrderRefreshMessageHandler(
         {
             var batch = await purchaseOrderClient.FetchAsync(cancellationToken);
             var result = await refreshService.RefreshAsync(batch, DateTimeOffset.UtcNow, cancellationToken);
+            var acknowledgement = await acknowledgementService.AcknowledgeStoredOrdersAsync(
+                DateTimeOffset.UtcNow,
+                cancellationToken);
+            if (acknowledgement.Error is not null)
+            {
+                logger.LogWarning(
+                    "shoprite.order.acknowledgement.failed RunId={RunId} Pending={Pending} Error={Error}",
+                    runId,
+                    acknowledgement.Pending,
+                    acknowledgement.Error);
+            }
+            else if (acknowledgement.Enabled)
+            {
+                logger.LogInformation(
+                    "shoprite.order.acknowledgement.completed RunId={RunId} Acknowledged={Acknowledged} Pending={Pending}",
+                    runId,
+                    acknowledgement.Acknowledged,
+                    acknowledgement.Pending);
+            }
+
             var revalidated = await revalidationService.RevalidateForPurchaseOrdersAsync(
                 result.ChangedPurchaseOrderNumbers,
                 DateTimeOffset.UtcNow,

@@ -35,6 +35,13 @@ param shopriteUsername string = ''
 param shopritePassword string = ''
 
 param shopriteInvoiceSubmissionMode string = 'LocalStub'
+
+@description('Shoprite Layer 7 contract identifier. Shoprite uses the same value for QA and production.')
+@secure()
+param shopriteContractId string = ''
+
+@description('Acknowledges downloaded Shoprite orders. Shoprite stops sending new orders without it.')
+param shopriteAcknowledgeOrders bool = false
 param acumaticaInvoiceSourceMode string = 'Fixture'
 param acumaticaBaseUrl string = ''
 param acumaticaCompany string = ''
@@ -111,6 +118,10 @@ var commonRuntimeSecrets = concat([
   {
     name: 'shoprite-password'
     value: shopritePassword
+  }
+  {
+    name: 'shoprite-contractid'
+    value: shopriteContractId
   }
 ], acumaticaCredentialSecrets)
 var hasAcumaticaWebhookSecret = !empty(acumaticaWebhookSecret)
@@ -224,6 +235,14 @@ var apiEnvironment = concat([
   {
     name: 'Shoprite__Password'
     secretRef: 'shoprite-password'
+  }
+  {
+    name: 'Shoprite__ContractId'
+    secretRef: 'shoprite-contractid'
+  }
+  {
+    name: 'Shoprite__AcknowledgeOrders'
+    value: string(shopriteAcknowledgeOrders)
   }
   {
     name: 'Shoprite__InvoiceSubmissionMode'

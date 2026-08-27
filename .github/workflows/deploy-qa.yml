@@ -88,6 +88,7 @@ jobs:
           shoprite_base_url="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name shoprite--baseurl --query value -o tsv)"
           shoprite_username="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name shoprite--username --query value -o tsv)"
           shoprite_password="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name shoprite--password --query value -o tsv)"
+          shoprite_contract_id="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name shoprite--contractid --query value -o tsv)"
           acumatica_username="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name acumatica--username --query value -o tsv 2>/dev/null || true)"
           acumatica_password="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name acumatica--password --query value -o tsv 2>/dev/null || true)"
           acumatica_webhook_secret="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name acumatica--webhooksecret --query value -o tsv 2>/dev/null || true)"
@@ -109,6 +110,7 @@ jobs:
             "shoprite_base_url"
             "shoprite_username"
             "shoprite_password"
+            "shoprite_contract_id"
             "acumatica_username"
             "acumatica_password"
             "acumatica_webhook_secret"
@@ -125,6 +127,7 @@ jobs:
           echo "::add-mask::$auth_nextauth_secret"
           echo "::add-mask::$shoprite_username"
           echo "::add-mask::$shoprite_password"
+          echo "::add-mask::$shoprite_contract_id"
           if [ -n "$acumatica_username" ]; then echo "::add-mask::$acumatica_username"; fi
           if [ -n "$acumatica_password" ]; then echo "::add-mask::$acumatica_password"; fi
           if [ -n "$acumatica_webhook_secret" ]; then echo "::add-mask::$acumatica_webhook_secret"; fi
@@ -152,6 +155,9 @@ jobs:
             echo "EOF"
             echo "shoprite_password<<EOF"
             echo "$shoprite_password"
+            echo "EOF"
+            echo "shoprite_contract_id<<EOF"
+            echo "$shoprite_contract_id"
             echo "EOF"
             echo "acumatica_username<<EOF"
             echo "$acumatica_username"
@@ -225,7 +231,7 @@ jobs:
             --parameters shopriteBaseUrl='${{ steps.values.outputs.shoprite_base_url }}' \
             --parameters shopriteUsername='${{ steps.values.outputs.shoprite_username }}' \
             --parameters shopritePassword='${{ steps.values.outputs.shoprite_password }}' \
-            --parameters shopriteInvoiceSubmissionMode=RealQa \
+            --parameters shopriteContractId='${{ steps.values.outputs.shoprite_contract_id }}'             --parameters shopriteAcknowledgeOrders=true             --parameters shopriteInvoiceSubmissionMode=RealQa \
             --parameters acumaticaUsername='${{ steps.values.outputs.acumatica_username }}' \
             --parameters acumaticaPassword='${{ steps.values.outputs.acumatica_password }}' \
             --parameters acumaticaWebhookSecret='${{ steps.values.outputs.acumatica_webhook_secret }}' \

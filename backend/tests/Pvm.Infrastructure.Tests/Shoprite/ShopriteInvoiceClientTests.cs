@@ -185,7 +185,8 @@ public sealed class ShopriteInvoiceClientTests
         {
             ["Shoprite:BaseUrl"] = "https://shoprite.example/B2BWebAPISupplierServices/api",
             ["Shoprite:Username"] = "api-user",
-            ["Shoprite:Password"] = "secret"
+            ["Shoprite:Password"] = "secret",
+            ["Shoprite:ContractId"] = "contract-123"
         };
     }
 
@@ -195,7 +196,8 @@ public sealed class ShopriteInvoiceClientTests
         {
             BaseUrl = "https://shoprite.example/B2BWebAPISupplierServices/api",
             Username = "api-user",
-            Password = "secret"
+            Password = "secret",
+            ContractId = "contract-123"
         };
     }
 

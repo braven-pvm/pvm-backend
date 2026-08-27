@@ -106,6 +106,7 @@ public sealed class ShopritePurchaseOrderRefreshRunTests : IAsyncLifetime
             new FailingPurchaseOrderClient(),
             null!,
             null!,
+            null!,
             new IntegrationRunService(db, Configuration()),
             NullLogger<ShopritePurchaseOrderRefreshMessageHandler>.Instance);
         var envelope = new IntegrationMessageEnvelope(
@@ -161,6 +162,16 @@ public sealed class ShopritePurchaseOrderRefreshRunTests : IAsyncLifetime
     private sealed class FailingPurchaseOrderClient : IShopritePurchaseOrderClient
     {
         public Task<ShopritePurchaseOrderBatch> FetchAsync(CancellationToken cancellationToken)
+            => throw new HttpRequestException("Shoprite unavailable.");
+
+        public Task AcknowledgeAsync(
+            IReadOnlyCollection<string> purchaseOrderNumbers,
+            CancellationToken cancellationToken)
+            => throw new HttpRequestException("Shoprite unavailable.");
+
+        public Task ResetAsync(
+            IReadOnlyCollection<string> purchaseOrderNumbers,
+            CancellationToken cancellationToken)
             => throw new HttpRequestException("Shoprite unavailable.");
     }
 }

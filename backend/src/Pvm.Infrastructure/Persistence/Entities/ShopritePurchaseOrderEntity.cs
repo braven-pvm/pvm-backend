@@ -25,6 +25,9 @@ public sealed class ShopritePurchaseOrderEntity
     public DateTimeOffset? ShopriteLastUpdatedAt { get; set; }
     public DateTimeOffset FirstSeenAt { get; set; }
     public DateTimeOffset LastSeenAt { get; set; }
+    public DateTimeOffset? AcknowledgedAt { get; set; }
+    public int AcknowledgementAttempts { get; set; }
+    public string? LastAcknowledgementError { get; set; }
     public List<ShopritePurchaseOrderLineEntity> Lines { get; set; } = [];
 }
 
