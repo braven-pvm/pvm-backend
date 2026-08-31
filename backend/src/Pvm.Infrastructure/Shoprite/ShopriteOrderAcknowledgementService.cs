@@ -23,19 +23,34 @@ public sealed class ShopriteOrderAcknowledgementService(
     private const int BatchSize = 200;
     private readonly ShopriteOptions _options = options.Value;
 
-    public async Task<ShopriteAcknowledgementResult> AcknowledgeStoredOrdersAsync(
+    /// <summary>
+    /// Acknowledges the orders that Shoprite returned in this fetch. Shoprite rejects the
+    /// whole call when it is given an order that the user does not currently hold, so an
+    /// order that was downloaded earlier is never acknowledged again. Shoprite re-offers an
+    /// unacknowledged order in the next fetch, which is how a failed attempt is retried.
+    /// </summary>
+    public async Task<ShopriteAcknowledgementResult> AcknowledgeFetchedOrdersAsync(
+        IReadOnlyCollection<string> fetchedOrderNumbers,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         if (!_options.AcknowledgeOrders)
         {
             var waiting = await dbContext.ShopritePurchaseOrders
-                .CountAsync(order => order.AcknowledgedAt == null, cancellationToken);
+                .CountAsync(
+                    order => order.AcknowledgedAt == null && fetchedOrderNumbers.Contains(order.PurchaseOrderNumber),
+                    cancellationToken);
             return new ShopriteAcknowledgementResult(false, 0, waiting);
         }
 
+        if (fetchedOrderNumbers.Count == 0)
+        {
+            return new ShopriteAcknowledgementResult(true, 0, 0);
+        }
+
+        var candidates = fetchedOrderNumbers.ToArray();
         var pending = await dbContext.ShopritePurchaseOrders
-            .Where(order => order.AcknowledgedAt == null)
+            .Where(order => order.AcknowledgedAt == null && candidates.Contains(order.PurchaseOrderNumber))
             .OrderBy(order => order.FirstSeenAt)
             .Take(BatchSize)
             .ToListAsync(cancellationToken);
@@ -62,7 +77,9 @@ public sealed class ShopriteOrderAcknowledgementService(
 
             await dbContext.SaveChangesAsync(cancellationToken);
             var stillPending = await dbContext.ShopritePurchaseOrders
-                .CountAsync(order => order.AcknowledgedAt == null, cancellationToken);
+                .CountAsync(
+                    order => order.AcknowledgedAt == null && candidates.Contains(order.PurchaseOrderNumber),
+                    cancellationToken);
             return new ShopriteAcknowledgementResult(true, 0, stillPending, Trim(exception.Message));
         }
 
@@ -75,7 +92,9 @@ public sealed class ShopriteOrderAcknowledgementService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         var remaining = await dbContext.ShopritePurchaseOrders
-            .CountAsync(order => order.AcknowledgedAt == null, cancellationToken);
+            .CountAsync(
+                order => order.AcknowledgedAt == null && candidates.Contains(order.PurchaseOrderNumber),
+                cancellationToken);
         return new ShopriteAcknowledgementResult(true, pending.Count, remaining);
     }
 

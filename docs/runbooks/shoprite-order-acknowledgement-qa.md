@@ -52,6 +52,27 @@ Shoprite uses the same contract identifier for QA and production.
 Pass: the refresh returns orders. In QA this proves that no Layer 7 header is
 sent, because the supplier-services host redirects any request that carries one.
 
+## What may be acknowledged
+
+Only the orders that Shoprite returned in the current fetch. Shoprite rejects
+the whole call when the list contains an order the account no longer holds:
+
+```
+Current User PVMQA does not appear to have any of the orders in the given list,
+Order numbers: 1212021109
+```
+
+An order that was downloaded before acknowledgement existed is therefore never
+acknowledged. It stays without an acknowledgement time, and that is correct.
+Shoprite re-offers an unacknowledged order in the next fetch, so a failed
+attempt is retried by the protocol itself.
+
+Observed on the QA host on 2026-08-31:
+
+- `PUT VendorOrder?action=A` with a JSON array of order numbers is the right
+  shape. Removing `action` returns `405`.
+- An order the account no longer holds returns `500` with the message above.
+
 ## Test 2: Orders are acknowledged once
 
 1. Run a PO refresh.
@@ -59,12 +80,15 @@ sent, because the supplier-services host redirects any request that carries one.
 
 ```sql
 select count(*) filter (where "AcknowledgedAt" is null) as pending,
-       count(*) filter (where "AcknowledgedAt" is not null) as acknowledged
-from shoprite_purchase_orders;
+       count(*) filter (where "AcknowledgedAt" is not null) as acknowledged,
+       max("LastAcknowledgementError") as last_error
+from shoprite_purchase_orders
+where "FirstSeenAt" > now() - interval '1 day';
 ```
 
-Pass: `pending` falls to zero. Each acknowledged order records one attempt and
-no error. A second refresh acknowledges nothing more.
+Pass: every order received today is acknowledged, with one attempt and no
+error. A second refresh acknowledges nothing more. Orders received before this
+feature existed stay unacknowledged, which is expected.
 
 ## Test 3: A failed acknowledgement is safe
 
