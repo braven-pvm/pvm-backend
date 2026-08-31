@@ -1,0 +1,20 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": { "value": "prod" },
+    "location": { "value": "southafricanorth" },
+    "resourceGroupName": { "value": "rg-pvm-integrations-prod" },
+    "ownerObjectId": { "value": "35425387-d19a-4e63-97b5-2165cce0032b" },
+    "monthlyBudgetAmountUsd": { "value": 250 },
+    "alertEmail": { "value": "developer@pvm.co.za" },
+    "acumaticaInvoiceSourceMode": { "value": "Fixture" },
+    "acumaticaEndpointName": { "value": "Default" },
+    "acumaticaEndpointVersion": { "value": "24.200.001" },
+    "acumaticaCompany": { "value": "PVM" },
+    "acumaticaParentCustomerAccounts": { "value": [ "DEB2062" ] },
+    "shopriteInvoiceSubmissionMode": { "value": "LocalStub" },
+    "shopriteAcknowledgeOrders": { "value": false },
+    "containerAppMinReplicas": { "value": 1 }
+  }
+}
