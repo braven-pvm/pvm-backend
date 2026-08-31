@@ -20,6 +20,7 @@ Use this index to orient quickly.
 - `docs/implementation-plans/integration-admin-console-plan.md`
 - `docs/implementation-plans/shoprite-invoice-upload-mvp-plan.md`
 - `docs/implementation-plans/shoprite-production-automation-plan.md`
+- `docs/implementation-plans/qa-completion-and-production-rollout-plan.md`
 - `docs/implementation-plans/workbench-auth-and-roles-plan.md`
 
 ## Runbooks
@@ -40,12 +41,14 @@ Use this index to orient quickly.
 
 ## Current Priority
 
-Shoprite has confirmed that the real Acumatica-source QA invoice submission is
-structurally sound and correct. Production automation Slices 1 through 3 are
-merged, deployed, and runtime-verified in QA. Slice 4, scheduled Shoprite PO
-refresh and persisted run visibility, is runtime-verified. Slice 5, incremental
-Acumatica reconciliation, is also deployed and runtime-verified. Slice 6,
-authenticated Acumatica push-notification ingestion, is implemented and awaits
-review and QA deployment. Automatic invoice submission remains disabled. Read
-`docs/status/current-project-status.md` and both production implementation plans
-before starting.
+Read `docs/implementation-plans/qa-completion-and-production-rollout-plan.md`
+first. It carries the schedule, the gates, and the inputs that production waits
+on.
+
+## Background
+
+Shoprite confirmed on 2026-07-27 that the real Acumatica-source QA invoice
+submission is structurally sound and correct. Production automation Slices 1
+through 8 are merged, deployed, and runtime-verified in QA. Automatic invoice
+submission remains disabled and has never run. Read
+`docs/status/current-project-status.md` before starting.

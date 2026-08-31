@@ -15,55 +15,37 @@ Before implementing or reviewing work, read these in order:
 5. `docs/spec-slices/shoprite-po-pivot-invoice-submission.md`
 6. `docs/implementation-plans/shoprite-production-automation-plan.md`
 7. `docs/implementation-plans/integration-admin-console-plan.md`
-8. `docs/runbooks/shoprite-qa-submission.md`
-9. `docs/runbooks/exception-operations-qa.md`
-10. `docs/runbooks/acumatica-push-notifications-qa.md`
-11. `docs/runbooks/azure-qa-provisioning-playbook.md`
+8. `docs/implementation-plans/qa-completion-and-production-rollout-plan.md`
+9. `docs/runbooks/shoprite-qa-submission.md`
+10. `docs/runbooks/exception-operations-qa.md`
+11. `docs/runbooks/acumatica-push-notifications-qa.md`
+12. `docs/runbooks/azure-qa-provisioning-playbook.md`
 
 Use `.agents/skills/overseer/SKILL.md` for status, planning, readiness, review, branch hygiene, and next-work decisions. Use `.agents/skills/handoff/SKILL.md` when preparing a future-session handoff.
 
 ## Current Ground Truth
 
-As of 2026-08-12:
+As of 2026-08-20:
 
-- Azure is locked in and the QA estate is provisioned or provisionable.
-- The active QA estate is in CSP subscription `Azure subscription 1`
-  (`1d0e7292-24e5-425e-870b-c56904b70da6`).
-- Cost visibility and budget access are confirmed.
-- Required Azure resource providers are registered.
-- The QA workbench/API infrastructure exists in the CSP subscription.
-- Microsoft Entra workbench auth and app-managed users are implemented.
-- Real Shoprite QA `VendorOrder` refresh and `VendorInvoice` submission are implemented.
-- Real Acumatica QA finalized-invoice refresh is deployed.
-- Live invoice `INV158888` was matched to Shoprite PO `1212021109`, mapped,
-  submitted to Shoprite QA, and confirmed by Shoprite as structurally sound and
-  correct.
-- Production automation foundations are partially implemented but automatic
-  submission is not enabled.
-- The production automation plan is approved. A functional Admin console is a
-  required release gate, with Admin retaining full controlled access.
-- Production automation Slices 1 through 3 are merged, deployed, and
-  runtime-verified in QA.
-- Slice 4 scheduled Shoprite PO refresh is merged, deployed, and runtime-verified,
-  including its controlled freshness-alert fault test.
-- Slice 5 incremental Acumatica reconciliation is merged, deployed, and
-  runtime-verified in QA, including bootstrap, daily lookback, two incremental
-  windows, cursor advancement, stale-alert recovery, and no automatic send.
-- Slice 6 Acumatica push-notification ingestion is merged, deployed, and
-  configured in Acumatica QA; its Generic Inquiry and push notification are
-  active.
-- Global Shoprite inventory mappings and the Admin exception workflow are
-  merged on `main`.
-- Slice 7 automation policy, shadow decisions, allowlists, emergency stop, and
-  the Automation Control console are implemented on
-  `feature/automation-policy-shadow-mode`. They are not deployed, and the
-  persisted default remains `Disabled`.
-- Explicit migrations, the concurrency-safe submission-operation state machine,
-  immutable payload archiving, hash verification, and transition audit are
-  operational.
-- QA candidate `QA-INV-1212503708` completed the deployed archive path on
-  2026-08-03 with four verified payload blobs and a successful Shoprite QA
-  response.
+- Azure is locked in. The QA estate is in CSP subscription
+  `Azure subscription 1` (`1d0e7292-24e5-425e-870b-c56904b70da6`), resource
+  group `rg-pvm-integrations-qa`.
+- No production estate exists yet. Building it is Part Two of the rollout plan.
+- Production automation Slices 1 through 8 are merged, deployed, and
+  runtime-verified in QA. That covers submission safety, the payload archive,
+  Service Bus and the worker, scheduled PO refresh, incremental reconciliation,
+  push-notification ingestion, the automation policy with shadow mode, and
+  exception operations.
+- Live invoices `INV158888` and `INV158889` were matched, mapped, submitted to
+  Shoprite QA, and accepted. Shoprite confirmed the payload on 2026-07-27.
+- The emergency stop is proven on the automatic path and on the manual path.
+  Both refusals are audited.
+- QA automation policy is v7, mode `Disabled`, emergency stop clear. The
+  automatic submit-command count is zero.
+- Microsoft Entra workbench auth and app-managed users are implemented. The API
+  refuses Azure CLI tokens, so Admin actions need a browser session.
+- Production sending is not enabled and is blocked by the five gates in the
+  rollout plan.
 
 ## Important Design Decisions
 
@@ -78,11 +60,11 @@ As of 2026-08-12:
 
 ## Active Next Slice
 
-Review Slice 7, merge it only after approval, deploy it with the policy left in
-`Disabled`, then run a controlled QA `Shadow` evaluation. Verify that shadow
-decisions are visible and audited while no automatic Shoprite submission
-operation or external POST is created. Automatic production submission remains
-disabled.
+Read `docs/implementation-plans/qa-completion-and-production-rollout-plan.md`.
+Slices 1 to 8 of the production automation plan are merged and deployed in QA.
+The active work is Part One of that plan, which completes the QA evidence set,
+and Part Two, which builds the production estate. Production sending stays
+disabled until the five gates pass.
 
 ## Verification
 
