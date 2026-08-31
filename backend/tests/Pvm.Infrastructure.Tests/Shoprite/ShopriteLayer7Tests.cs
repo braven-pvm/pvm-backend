@@ -50,6 +50,26 @@ public sealed class ShopriteLayer7Tests
     }
 
     [Fact]
+    public async Task The_headers_stay_off_for_the_supplier_services_host()
+    {
+        using var inner = new CaptureHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"orderField":[]}""")
+        });
+        var options = DefaultOptions() with { UseLayer7Headers = false };
+        using var layer7 = new ShopriteLayer7Handler(Options.Create(options)) { InnerHandler = inner };
+        using var httpClient = new HttpClient(layer7);
+        var client = new ShopritePurchaseOrderClient(httpClient, Options.Create(options));
+
+        await client.FetchAsync(CancellationToken.None);
+
+        var request = Assert.IsType<HttpRequestMessage>(inner.Request);
+        Assert.Null(request.Headers.Authorization);
+        Assert.False(request.Headers.Contains("ContractID"));
+        Assert.False(request.Headers.Contains("UIUser"));
+    }
+
+    [Fact]
     public async Task A_missing_contract_identifier_stops_the_call()
     {
         using var inner = new CaptureHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
@@ -144,7 +164,8 @@ public sealed class ShopriteLayer7Tests
             BaseUrl = "https://shoprite.example/B2BWebAPISupplierServices/api",
             Username = "api-user",
             Password = "secret",
-            ContractId = "contract-123"
+            ContractId = "contract-123",
+            UseLayer7Headers = true
         };
 
     private sealed class CaptureHandler(Func<HttpRequestMessage, HttpResponseMessage> send) : HttpMessageHandler

@@ -8,23 +8,49 @@ Purpose: verify the two production requirements that Shoprite confirmed on
 2. Downloaded orders are acknowledged. Shoprite returns the same orders, and
    stops providing new orders, until acknowledgement succeeds.
 
+## Two Shoprite hosts, two authentication styles
+
+Shoprite runs two interfaces, and they do not accept the same request.
+
+| Host | Used by | Authentication |
+|---|---|---|
+| `b2b.shopriteholdingsqa.co.za/B2BWebAPISupplierServices/api` | Our QA integration | Query-string credentials only |
+| `externalservices.shopriteholdings.co.za/b2bservice/api` | Production | Layer 7 headers |
+
+Verified on 2026-08-31: the QA supplier-services host answers `HTTP 200` with JSON
+when the credentials are in the query string, and answers `HTTP 302` with an
+empty body when the request carries an `Authorization` header. The redirect
+target is not JSON, which is why an unconditional Layer 7 header broke the QA
+order refresh.
+
+The documented QA gateway
+`externalservicesqa.shopriteholdings.co.za/b2bservice/api` answers `HTTP 401`
+`SH-401-EXT Authentication Required` with the current QA credentials and the
+contract identifier from the guide. Ask Shoprite to enable the QA account on
+that gateway. Until they do, the Layer 7 header path cannot be proven before
+production.
+
+`Shoprite:UseLayer7Headers` selects the style. It is `false` in QA and `true` in
+production.
+
 ## Configuration
 
 | Setting | QA value | Where |
 |---|---|---|
+| `Shoprite__UseLayer7Headers` | `false` | Deployment parameter |
 | `Shoprite__ContractId` | `aa659aa2-4175-471f-8c82-59ca416723cf` | Key Vault secret `shoprite--contractid` |
 | `Shoprite__UiUser` | Not set. Defaults to the username | Optional container setting |
 | `Shoprite__AcknowledgeOrders` | `true` | Deployment parameter |
 
 Shoprite uses the same contract identifier for QA and production.
 
-## Test 1: Headers reach Shoprite
+## Test 1: The refresh still works
 
 1. Trigger a PO refresh from **Messages**.
 2. Confirm the run succeeds under `/runs`.
 
-Pass: the refresh returns orders. A missing or wrong header produces an HTTP
-failure, which appears as a failed run and a dead letter.
+Pass: the refresh returns orders. In QA this proves that no Layer 7 header is
+sent, because the supplier-services host redirects any request that carries one.
 
 ## Test 2: Orders are acknowledged once
 
