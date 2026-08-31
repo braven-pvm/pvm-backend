@@ -10,7 +10,7 @@ namespace Pvm.Infrastructure.Investec;
 /// <summary>
 /// Investec BCB Transaction History client. Acquires an OAuth 2.0 client-credentials token,
 /// then walks the paged <c>GET /za/bb/v2/accounts/{accountId}/transactions</c> endpoint and
-/// maps each row (positive <c>amount</c> + <c>type</c> direction) to an <see cref="InvestecTransaction"/>.
+/// maps each row (<c>deposit</c>/<c>withdrawal</c> + <c>drCrIndicator</c>) to an <see cref="InvestecTransaction"/>.
 /// </summary>
 public sealed class InvestecTransactionClient(
     HttpClient httpClient,
@@ -66,6 +66,7 @@ public sealed class InvestecTransactionClient(
         request.Content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["grant_type"] = "client_credentials",
+            ["scope"] = "accounts transactions",
         });
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
@@ -133,19 +134,27 @@ public sealed class InvestecTransactionClient(
         DateOnly? DateOrNull(string name) =>
             DateOnly.TryParse(Text(name), CultureInfo.InvariantCulture, out var date) ? date : null;
 
+        // Investec BCB splits money in/out into deposit (>= 0) and withdrawal (<= 0).
+        var signed = Amount("deposit") + Amount("withdrawal");
+        var direction = Text("drCrIndicator") ?? (signed >= 0m ? "CREDIT" : "DEBIT");
+
         return new InvestecTransaction(
             AccountId: Text("accountId") ?? accountId,
-            Description: Text("description") ?? string.Empty,
-            Amount: Amount("amount"),
-            TransactionDate: Date("transactionDate"),
-            Direction: Text("type"),
-            TransactionType: Text("transactionType"),
-            Status: Text("status"),
+            Description: Text("clientStatementReference")
+                ?? Text("paymentReference")
+                ?? Text("transactionDescription")
+                ?? string.Empty,
+            Amount: Math.Abs(signed),
+            TransactionDate: Date("postDate"),
+            Direction: direction,
+            TransactionType: Text("transactionCodeDescription") ?? Text("transactionCode"),
+            Status: Text("transactionStatus"),
             CardNumber: Text("cardNumber"),
-            PostingDate: DateOrNull("postingDate"),
+            PostingDate: DateOrNull("postDate"),
             ValueDate: DateOrNull("valueDate"),
             RunningBalance: AmountOrNull("runningBalance"),
-            Reference: Text("reference"));
+            Reference: Text("paymentReference") ?? Text("uetr"),
+            TransactionId: Text("transactionId"));
     }
 
     private Uri BuildTransactionsUri(string accountId, DateOnly fromDate, DateOnly toDate, int page)

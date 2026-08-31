@@ -28,10 +28,12 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient<IInvestecTransactionClient, InvestecTransactionClient>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(300);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("PVM-BankFeed/1.0");
         });
         services.AddHttpClient<IAcumaticaBankStatementClient, AcumaticaBankStatementClient>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(300);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("PVM-BankFeed/1.0");
         }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
         {
             UseCookies = false
