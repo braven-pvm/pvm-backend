@@ -9,10 +9,9 @@ public static class WorkerShopriteInvoiceClientRegistration
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        if (string.Equals(
-            configuration["Shoprite:InvoiceSubmissionMode"],
-            "RealQa",
-            StringComparison.OrdinalIgnoreCase))
+        var mode = configuration["Shoprite:InvoiceSubmissionMode"];
+        if (string.Equals(mode, "Real", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "RealQa", StringComparison.OrdinalIgnoreCase))
         {
             return services.AddShopriteClient(configuration);
         }
