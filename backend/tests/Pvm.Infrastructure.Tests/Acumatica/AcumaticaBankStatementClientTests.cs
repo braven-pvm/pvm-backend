@@ -9,34 +9,19 @@ namespace Pvm.Infrastructure.Tests.Acumatica;
 
 public sealed class AcumaticaBankStatementClientTests
 {
+    private const string CreatedJson = """{ "ReferenceNbr": { "value": "STMT000042" } }""";
+
     [Fact]
-    public async Task ImportAsync_puts_statement_to_bank_feed_endpoint_with_wrapped_fields_and_details()
+    public async Task ImportAsync_imports_new_lines_when_none_exist()
     {
-        const string createdJson = """{ "ReferenceNbr": { "value": "STMT000042" } }""";
         using var handler = new SequenceHandler(
             _ => new HttpResponseMessage(HttpStatusCode.NoContent), // sign-in
-            _ => JsonResponse(createdJson),                         // PUT
+            _ => JsonResponse("[]"),                                // existing-id lookup: none
+            _ => JsonResponse(CreatedJson),                         // PUT
             _ => new HttpResponseMessage(HttpStatusCode.NoContent)); // sign-out
-        using var httpClient = new HttpClient(handler);
-        var client = new AcumaticaBankStatementClient(
-            httpClient,
-            Options.Create(DefaultAcumaticaOptions()),
-            Options.Create(new AcumaticaBankFeedOptions()));
+        var client = NewClient(handler);
 
-        var statement = new BankStatementImport(
-            CashAccount: "INVESTEC",
-            StatementDate: new DateOnly(2026, 8, 31),
-            StartBalanceDate: new DateOnly(2026, 8, 1),
-            EndBalanceDate: new DateOnly(2026, 8, 31),
-            BeginningBalance: 1000m,
-            EndingBalance: 1070m,
-            Lines: new[]
-            {
-                new BankStatementLine("INV-ABC", new DateOnly(2026, 8, 3), "DEPOSIT", 100m, 0m, ExtRefNbr: "REF1"),
-                new BankStatementLine("INV-DEF", new DateOnly(2026, 8, 4), "FEE", 0m, 30m),
-            });
-
-        var result = await client.ImportAsync(statement, CancellationToken.None);
+        var result = await client.ImportAsync(TwoLineStatement(), CancellationToken.None);
 
         Assert.Equal("STMT000042", result.ReferenceNbr);
         Assert.Equal(2, result.LineCount);
@@ -61,17 +46,51 @@ public sealed class AcumaticaBankStatementClientTests
     }
 
     [Fact]
+    public async Task ImportAsync_skips_put_when_all_lines_already_imported()
+    {
+        const string existing =
+            """[{"Details":[{"ExtTranID":{"value":"INV-ABC"},"TranDate":{"value":"2026-08-03"}},{"ExtTranID":{"value":"INV-DEF"},"TranDate":{"value":"2026-08-04"}}]}]""";
+        using var handler = new SequenceHandler(
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent), // sign-in
+            _ => JsonResponse(existing),                            // lookup: both already present
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent)); // sign-out
+        var client = NewClient(handler);
+
+        var result = await client.ImportAsync(TwoLineStatement(), CancellationToken.None);
+
+        Assert.Equal(0, result.LineCount);
+        Assert.DoesNotContain(handler.Requests, request => request.Method == HttpMethod.Put);
+    }
+
+    [Fact]
+    public async Task ImportAsync_imports_only_new_lines_when_some_already_imported()
+    {
+        const string existing =
+            """[{"Details":[{"ExtTranID":{"value":"INV-ABC"},"TranDate":{"value":"2026-08-03"}}]}]""";
+        using var handler = new SequenceHandler(
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent), // sign-in
+            _ => JsonResponse(existing),                            // lookup: only INV-ABC present
+            _ => JsonResponse(CreatedJson),                         // PUT
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent)); // sign-out
+        var client = NewClient(handler);
+
+        var result = await client.ImportAsync(TwoLineStatement(), CancellationToken.None);
+
+        Assert.Equal(1, result.LineCount);
+        var put = Assert.Single(handler.Requests, request => request.Method == HttpMethod.Put);
+        using var body = JsonDocument.Parse(put.Body!);
+        var details = body.RootElement.GetProperty("Details");
+        Assert.Equal(1, details.GetArrayLength());
+        Assert.Equal("INV-DEF", details[0].GetProperty("ExtTranID").GetProperty("value").GetString());
+    }
+
+    [Fact]
     public async Task ImportAsync_signs_in_and_signs_out()
     {
         using var handler = new SequenceHandler(
-            _ => new HttpResponseMessage(HttpStatusCode.NoContent),
-            _ => JsonResponse("""{ "ReferenceNbr": { "value": "STMT1" } }"""),
-            _ => new HttpResponseMessage(HttpStatusCode.NoContent));
-        using var httpClient = new HttpClient(handler);
-        var client = new AcumaticaBankStatementClient(
-            httpClient,
-            Options.Create(DefaultAcumaticaOptions()),
-            Options.Create(new AcumaticaBankFeedOptions()));
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent),   // sign-in
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent));  // sign-out (empty -> no lookup, no PUT)
+        var client = NewClient(handler);
 
         await client.ImportAsync(EmptyStatement(), CancellationToken.None);
 
@@ -82,6 +101,26 @@ public sealed class AcumaticaBankStatementClientTests
             handler.Requests,
             request => request.Uri.AbsolutePath.EndsWith("/entity/auth/logout", StringComparison.Ordinal));
     }
+
+    private static AcumaticaBankStatementClient NewClient(HttpMessageHandler handler)
+        => new(
+            new HttpClient(handler),
+            Options.Create(DefaultAcumaticaOptions()),
+            Options.Create(new AcumaticaBankFeedOptions()));
+
+    private static BankStatementImport TwoLineStatement()
+        => new(
+            CashAccount: "INVESTEC",
+            StatementDate: new DateOnly(2026, 8, 31),
+            StartBalanceDate: new DateOnly(2026, 8, 1),
+            EndBalanceDate: new DateOnly(2026, 8, 31),
+            BeginningBalance: 1000m,
+            EndingBalance: 1070m,
+            Lines: new[]
+            {
+                new BankStatementLine("INV-ABC", new DateOnly(2026, 8, 3), "DEPOSIT", 100m, 0m, ExtRefNbr: "REF1"),
+                new BankStatementLine("INV-DEF", new DateOnly(2026, 8, 4), "FEE", 0m, 30m),
+            });
 
     private static BankStatementImport EmptyStatement()
         => new(
