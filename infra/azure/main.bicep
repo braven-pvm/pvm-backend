@@ -88,6 +88,9 @@ param shopriteContractId string = ''
 @description('Acknowledges downloaded Shoprite orders after they are stored.')
 param shopriteAcknowledgeOrders bool = false
 
+@description('Sends the Layer 7 headers to Shoprite.')
+param shopriteUseLayer7Headers bool = false
+
 @description('Acumatica invoice source mode. RealQa must be enabled explicitly after QA credentials and schema are verified.')
 @allowed([
   'Fixture'
@@ -212,6 +215,7 @@ module platform 'modules/platform.bicep' = {
     shopritePassword: shopritePassword
     shopriteContractId: shopriteContractId
     shopriteAcknowledgeOrders: shopriteAcknowledgeOrders
+    shopriteUseLayer7Headers: shopriteUseLayer7Headers
     shopriteInvoiceSubmissionMode: shopriteInvoiceSubmissionMode
     acumaticaInvoiceSourceMode: acumaticaInvoiceSourceMode
     acumaticaBaseUrl: acumaticaBaseUrl

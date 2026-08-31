@@ -22,6 +22,11 @@ public sealed class ShopriteLayer7Handler(IOptions<ShopriteOptions> options) : D
 
     internal static void Apply(HttpRequestMessage request, ShopriteOptions options)
     {
+        if (!options.UseLayer7Headers)
+        {
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(options.Username) || string.IsNullOrWhiteSpace(options.Password))
         {
             throw new InvalidOperationException("Shoprite:Username and Shoprite:Password are required.");

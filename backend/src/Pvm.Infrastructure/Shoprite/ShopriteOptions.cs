@@ -9,6 +9,14 @@ public sealed record ShopriteOptions
     public string? Password { get; init; }
 
     /// <summary>
+    /// Sends the Layer 7 headers. The Shoprite gateway host
+    /// (`externalservices.shopriteholdings.co.za/b2bservice/api`) requires them. The older
+    /// supplier-services host redirects any request that carries an Authorization header,
+    /// so this stays off for that host.
+    /// </summary>
+    public bool UseLayer7Headers { get; init; }
+
+    /// <summary>
     /// Layer 7 contract identifier. Shoprite uses the same value for QA and production.
     /// </summary>
     public string? ContractId { get; init; }

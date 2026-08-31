@@ -42,6 +42,9 @@ param shopriteContractId string = ''
 
 @description('Acknowledges downloaded Shoprite orders. Shoprite stops sending new orders without it.')
 param shopriteAcknowledgeOrders bool = false
+
+@description('Sends the Layer 7 headers. Required by the Shoprite gateway host, rejected by the supplier-services host.')
+param shopriteUseLayer7Headers bool = false
 param acumaticaInvoiceSourceMode string = 'Fixture'
 param acumaticaBaseUrl string = ''
 param acumaticaCompany string = ''
@@ -243,6 +246,10 @@ var apiEnvironment = concat([
   {
     name: 'Shoprite__AcknowledgeOrders'
     value: string(shopriteAcknowledgeOrders)
+  }
+  {
+    name: 'Shoprite__UseLayer7Headers'
+    value: string(shopriteUseLayer7Headers)
   }
   {
     name: 'Shoprite__InvoiceSubmissionMode'

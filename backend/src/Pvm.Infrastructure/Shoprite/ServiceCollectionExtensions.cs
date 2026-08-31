@@ -26,8 +26,8 @@ public static class ServiceCollectionExtensions
                 options => !string.IsNullOrWhiteSpace(options.Password),
                 "Shoprite:Password is required.")
             .Validate(
-                options => !string.IsNullOrWhiteSpace(options.ContractId),
-                "Shoprite:ContractId is required for Layer 7 calls.")
+                options => !options.UseLayer7Headers || !string.IsNullOrWhiteSpace(options.ContractId),
+                "Shoprite:ContractId is required when Shoprite:UseLayer7Headers is enabled.")
             .ValidateOnStart();
 
         services.TryAddTransient<ShopriteLayer7Handler>();
