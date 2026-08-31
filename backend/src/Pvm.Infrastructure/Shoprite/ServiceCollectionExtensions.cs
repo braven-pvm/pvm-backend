@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Pvm.Application.Shoprite;
 using Pvm.Application.Submissions;
@@ -24,14 +25,19 @@ public static class ServiceCollectionExtensions
             .Validate(
                 options => !string.IsNullOrWhiteSpace(options.Password),
                 "Shoprite:Password is required.")
+            .Validate(
+                options => !string.IsNullOrWhiteSpace(options.ContractId),
+                "Shoprite:ContractId is required for Layer 7 calls.")
             .ValidateOnStart();
+
+        services.TryAddTransient<ShopriteLayer7Handler>();
 
         services.AddHttpClient<IShopriteInvoiceClient, ShopriteInvoiceClient>((provider, client) =>
         {
             var options = provider.GetRequiredService<IOptions<ShopriteOptions>>().Value;
             client.BaseAddress = new Uri(options.BaseUrl!.TrimEnd('/') + "/");
             client.Timeout = TimeSpan.FromSeconds(300);
-        });
+        }).AddHttpMessageHandler<ShopriteLayer7Handler>();
 
         return services;
     }
@@ -41,10 +47,12 @@ public static class ServiceCollectionExtensions
         IConfiguration configuration)
     {
         services.Configure<ShopriteOptions>(configuration.GetSection("Shoprite"));
+        services.TryAddTransient<ShopriteLayer7Handler>();
         services.AddHttpClient<IShopritePurchaseOrderClient, ShopritePurchaseOrderClient>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(300);
-        });
+        }).AddHttpMessageHandler<ShopriteLayer7Handler>();
+        services.AddScoped<ShopriteOrderAcknowledgementService>();
         services.AddScoped<ShopritePurchaseOrderRefreshService>();
         services.AddScoped<ShopriteInvoiceCandidateRevalidationService>();
         services.AddScoped<ShopritePurchaseOrderRefreshMessageHandler>();

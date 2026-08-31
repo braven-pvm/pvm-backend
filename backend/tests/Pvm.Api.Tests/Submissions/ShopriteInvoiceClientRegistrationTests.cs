@@ -26,7 +26,8 @@ public sealed class ShopriteInvoiceClientRegistrationTests
             ["Shoprite:InvoiceSubmissionMode"] = "RealQa",
             ["Shoprite:BaseUrl"] = "https://shoprite.example/",
             ["Shoprite:Username"] = "api-user",
-            ["Shoprite:Password"] = "secret"
+            ["Shoprite:Password"] = "secret",
+            ["Shoprite:ContractId"] = "contract-123"
         });
 
         var client = provider.GetRequiredService<IShopriteInvoiceClient>();

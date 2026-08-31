@@ -29,6 +29,8 @@ public static class PurchaseOrderEndpoints
             .RequireAuthorization("Invoices.Write");
         group.MapPost("/{id:guid}/seed-test-invoice", SeedTestInvoiceAsync)
             .RequireAuthorization("Invoices.Write");
+        group.MapPost("/reset", ResetPurchaseOrdersAsync)
+            .RequireAuthorization("Admin");
 
         return app;
     }
@@ -127,6 +129,56 @@ public static class PurchaseOrderEndpoints
             order.Lines.Count,
             order.LastSeenAt);
 
+    private static async Task<IResult> ResetPurchaseOrdersAsync(
+        ResetPurchaseOrdersRequest request,
+        ShopriteOrderAcknowledgementService acknowledgementService,
+        PvmDbContext dbContext,
+        CurrentAppUserAccessor currentUser,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Reason))
+        {
+            return Results.BadRequest(new { message = "A reason is required to reset Shoprite orders." });
+        }
+
+        var orderNumbers = (request.PurchaseOrderNumbers ?? [])
+            .Where(number => !string.IsNullOrWhiteSpace(number))
+            .Select(number => number.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (orderNumbers.Length == 0)
+        {
+            return Results.BadRequest(new { message = "At least one Shoprite order number is required." });
+        }
+
+        var actor = currentUser.User?.Email ?? "unknown";
+        int reset;
+        try
+        {
+            reset = await acknowledgementService.ResetAsync(orderNumbers, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            return Results.Problem(exception.Message, statusCode: StatusCodes.Status502BadGateway);
+        }
+
+        dbContext.AuditEvents.Add(new AuditEventEntity
+        {
+            Id = Guid.NewGuid(),
+            EntityType = "ShopritePurchaseOrder",
+            EntityId = string.Join(",", orderNumbers.Take(20)),
+            Action = "shoprite-orders-reset",
+            Actor = actor,
+            DetailsJson = JsonSerializer.Serialize(
+                new { reason = request.Reason, orderNumbers, localOrdersUpdated = reset },
+                SerializerOptions),
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Results.Ok(new { requested = orderNumbers.Length, localOrdersUpdated = reset });
+    }
+
     private static PurchaseOrderDetailResponse ToDetailResponse(
         ShopritePurchaseOrderEntity order,
         IReadOnlyList<InvoiceCandidateEntity> linkedCandidates)
@@ -153,6 +205,9 @@ public static class PurchaseOrderEndpoints
             order.ShopriteLastUpdatedAt,
             order.FirstSeenAt,
             order.LastSeenAt,
+            order.AcknowledgedAt,
+            order.AcknowledgementAttempts,
+            order.LastAcknowledgementError,
             order.Lines.OrderBy(line => line.LineNumber).Select(ToLineResponse).ToArray(),
             linkedCandidates.Select(candidate => new LinkedInvoiceCandidateResponse(
                 candidate.Id,

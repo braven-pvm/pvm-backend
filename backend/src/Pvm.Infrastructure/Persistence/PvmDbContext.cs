@@ -210,6 +210,8 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
         modelBuilder.Entity<ShopritePurchaseOrderEntity>(entity =>
         {
             entity.ToTable("shoprite_purchase_orders");
+            entity.Property(order => order.LastAcknowledgementError).HasMaxLength(1000);
+            entity.HasIndex(order => order.AcknowledgedAt);
             entity.HasKey(order => order.Id);
             entity.HasIndex(order => order.PurchaseOrderNumber).IsUnique();
             entity.HasIndex(order => order.DeliveryGln);

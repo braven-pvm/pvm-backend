@@ -42,6 +42,9 @@ public sealed record PurchaseOrderDetailResponse(
     DateTimeOffset? ShopriteLastUpdatedAt,
     DateTimeOffset FirstSeenAt,
     DateTimeOffset LastSeenAt,
+    DateTimeOffset? AcknowledgedAt,
+    int AcknowledgementAttempts,
+    string? LastAcknowledgementError,
     IReadOnlyList<PurchaseOrderLineResponse> Lines,
     IReadOnlyList<LinkedInvoiceCandidateResponse> LinkedInvoiceCandidates,
     string? RawOrderJson);
@@ -68,3 +71,5 @@ public sealed record LinkedInvoiceCandidateResponse(
     string Status,
     DateTimeOffset UpdatedAt);
 
+
+public sealed record ResetPurchaseOrdersRequest(string[]? PurchaseOrderNumbers, string Reason);

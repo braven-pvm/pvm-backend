@@ -27,6 +27,7 @@ Use this index to orient quickly.
 
 - `docs/runbooks/shoprite-qa-submission.md`
 - `docs/runbooks/exception-operations-qa.md`
+- `docs/runbooks/shoprite-order-acknowledgement-qa.md`
 - `docs/runbooks/shoprite-po-refresh-scheduler-qa.md`
 - `docs/runbooks/acumatica-invoice-reconciliation-qa.md`
 - `docs/runbooks/acumatica-push-notifications-qa.md`
