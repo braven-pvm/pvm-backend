@@ -27,8 +27,8 @@ public sealed class ShopriteOrderAcknowledgementServiceTests : IAsyncLifetime
         var service = Service(db, client, acknowledge: true);
         var now = DateTimeOffset.UtcNow;
 
-        var first = await service.AcknowledgeStoredOrdersAsync(now, CancellationToken.None);
-        var second = await service.AcknowledgeStoredOrdersAsync(now, CancellationToken.None);
+        var first = await service.AcknowledgeFetchedOrdersAsync(["1212021109", "1215382915"], now, CancellationToken.None);
+        var second = await service.AcknowledgeFetchedOrdersAsync(["1212021109", "1215382915"], now, CancellationToken.None);
 
         Assert.True(first.Enabled);
         Assert.Equal(2, first.Acknowledged);
@@ -55,7 +55,7 @@ public sealed class ShopriteOrderAcknowledgementServiceTests : IAsyncLifetime
         var client = new RecordingPurchaseOrderClient { FailWith = "Shoprite returned HTTP 502." };
         var service = Service(db, client, acknowledge: true);
 
-        var result = await service.AcknowledgeStoredOrdersAsync(DateTimeOffset.UtcNow, CancellationToken.None);
+        var result = await service.AcknowledgeFetchedOrdersAsync(["1212021109"], DateTimeOffset.UtcNow, CancellationToken.None);
 
         Assert.Equal(0, result.Acknowledged);
         Assert.Equal(1, result.Pending);
@@ -74,10 +74,10 @@ public sealed class ShopriteOrderAcknowledgementServiceTests : IAsyncLifetime
         await SeedOrderAsync(db, "1212021109");
         var client = new RecordingPurchaseOrderClient { FailWith = "Shoprite returned HTTP 502." };
         var service = Service(db, client, acknowledge: true);
-        await service.AcknowledgeStoredOrdersAsync(DateTimeOffset.UtcNow, CancellationToken.None);
+        await service.AcknowledgeFetchedOrdersAsync(["1212021109"], DateTimeOffset.UtcNow, CancellationToken.None);
 
         client.FailWith = null;
-        var result = await service.AcknowledgeStoredOrdersAsync(DateTimeOffset.UtcNow, CancellationToken.None);
+        var result = await service.AcknowledgeFetchedOrdersAsync(["1212021109"], DateTimeOffset.UtcNow, CancellationToken.None);
 
         Assert.Equal(1, result.Acknowledged);
         var order = await db.ShopritePurchaseOrders.SingleAsync();
@@ -95,7 +95,7 @@ public sealed class ShopriteOrderAcknowledgementServiceTests : IAsyncLifetime
         var client = new RecordingPurchaseOrderClient();
         var service = Service(db, client, acknowledge: false);
 
-        var result = await service.AcknowledgeStoredOrdersAsync(DateTimeOffset.UtcNow, CancellationToken.None);
+        var result = await service.AcknowledgeFetchedOrdersAsync(["1212021109"], DateTimeOffset.UtcNow, CancellationToken.None);
 
         Assert.False(result.Enabled);
         Assert.Equal(1, result.Pending);
@@ -111,13 +111,51 @@ public sealed class ShopriteOrderAcknowledgementServiceTests : IAsyncLifetime
         await SeedOrderAsync(db, "1212021109");
         var client = new RecordingPurchaseOrderClient();
         var service = Service(db, client, acknowledge: true);
-        await service.AcknowledgeStoredOrdersAsync(DateTimeOffset.UtcNow, CancellationToken.None);
+        await service.AcknowledgeFetchedOrdersAsync(["1212021109"], DateTimeOffset.UtcNow, CancellationToken.None);
 
         var reset = await service.ResetAsync(["1212021109"], CancellationToken.None);
 
         Assert.Equal(1, reset);
         Assert.Equal(["1212021109"], client.ResetBatches.Single());
         Assert.Null((await db.ShopritePurchaseOrders.SingleAsync()).AcknowledgedAt);
+    }
+
+    [Fact]
+    public async Task An_order_that_shoprite_no_longer_offers_is_never_acknowledged()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        await SeedOrderAsync(db, "1212021109");
+        await SeedOrderAsync(db, "1299999999");
+        var client = new RecordingPurchaseOrderClient();
+        var service = Service(db, client, acknowledge: true);
+
+        var result = await service.AcknowledgeFetchedOrdersAsync(
+            ["1212021109"],
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+
+        Assert.Equal(1, result.Acknowledged);
+        Assert.Equal(["1212021109"], client.AcknowledgedBatches.Single());
+        var stale = await db.ShopritePurchaseOrders.SingleAsync(order => order.PurchaseOrderNumber == "1299999999");
+        Assert.Null(stale.AcknowledgedAt);
+        Assert.Equal(0, stale.AcknowledgementAttempts);
+    }
+
+    [Fact]
+    public async Task An_empty_fetch_acknowledges_nothing()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        await SeedOrderAsync(db, "1212021109");
+        var client = new RecordingPurchaseOrderClient();
+        var service = Service(db, client, acknowledge: true);
+
+        var result = await service.AcknowledgeFetchedOrdersAsync([], DateTimeOffset.UtcNow, CancellationToken.None);
+
+        Assert.True(result.Enabled);
+        Assert.Equal(0, result.Acknowledged);
+        Assert.Empty(client.AcknowledgedBatches);
     }
 
     private static ShopriteOrderAcknowledgementService Service(

@@ -30,7 +30,13 @@ public sealed class ShopritePurchaseOrderRefreshMessageHandler(
         {
             var batch = await purchaseOrderClient.FetchAsync(cancellationToken);
             var result = await refreshService.RefreshAsync(batch, DateTimeOffset.UtcNow, cancellationToken);
-            var acknowledgement = await acknowledgementService.AcknowledgeStoredOrdersAsync(
+            var fetchedOrderNumbers = batch.Orders
+                .Select(order => order.PurchaseOrderNumber)
+                .Where(orderNumber => !string.IsNullOrWhiteSpace(orderNumber))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var acknowledgement = await acknowledgementService.AcknowledgeFetchedOrdersAsync(
+                fetchedOrderNumbers,
                 DateTimeOffset.UtcNow,
                 cancellationToken);
             if (acknowledgement.Error is not null)
