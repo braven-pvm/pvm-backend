@@ -58,8 +58,8 @@ public sealed class AcumaticaBankStatementClient(
                 ["ExtTranID"] = Field(line.ExtTranId),
                 ["TranDate"] = Field(FormatDate(line.TranDate)),
                 ["TranDesc"] = Field(line.Description),
-                ["ReceiptAmount"] = Field(line.Receipt),
-                ["DisbursementAmount"] = Field(line.Disbursement),
+                ["Receipt"] = Field(line.Receipt),
+                ["Disbursement"] = Field(line.Disbursement),
             };
             if (line.ExtRefNbr is not null)
             {
@@ -80,8 +80,8 @@ public sealed class AcumaticaBankStatementClient(
             ["StatementDate"] = Field(FormatDate(statement.StatementDate)),
             ["StartBalanceDate"] = Field(FormatDate(statement.StartBalanceDate)),
             ["EndBalanceDate"] = Field(FormatDate(statement.EndBalanceDate)),
-            ["BeginBalance"] = Field(statement.BeginningBalance),
-            ["EndBalance"] = Field(statement.EndingBalance),
+            ["BeginningBalance"] = Field(statement.BeginningBalance),
+            ["EndingBalance"] = Field(statement.EndingBalance),
             ["Details"] = details,
         };
     }

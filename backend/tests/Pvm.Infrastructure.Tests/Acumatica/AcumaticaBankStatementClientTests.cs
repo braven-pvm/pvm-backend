@@ -50,14 +50,14 @@ public sealed class AcumaticaBankStatementClientTests
         using var body = JsonDocument.Parse(put.Body!);
         var root = body.RootElement;
         Assert.Equal("INVESTEC", root.GetProperty("CashAccount").GetProperty("value").GetString());
-        Assert.Equal(1070m, root.GetProperty("EndBalance").GetProperty("value").GetDecimal());
+        Assert.Equal(1070m, root.GetProperty("EndingBalance").GetProperty("value").GetDecimal());
 
         var details = root.GetProperty("Details");
         Assert.Equal(2, details.GetArrayLength());
         Assert.Equal("INV-ABC", details[0].GetProperty("ExtTranID").GetProperty("value").GetString());
-        Assert.Equal(100m, details[0].GetProperty("ReceiptAmount").GetProperty("value").GetDecimal());
+        Assert.Equal(100m, details[0].GetProperty("Receipt").GetProperty("value").GetDecimal());
         Assert.Equal("REF1", details[0].GetProperty("ExtRefNbr").GetProperty("value").GetString());
-        Assert.Equal(30m, details[1].GetProperty("DisbursementAmount").GetProperty("value").GetDecimal());
+        Assert.Equal(30m, details[1].GetProperty("Disbursement").GetProperty("value").GetDecimal());
     }
 
     [Fact]
