@@ -15,6 +15,7 @@
     "acumaticaParentCustomerAccounts": { "value": [ "DEB2062" ] },
     "shopriteInvoiceSubmissionMode": { "value": "LocalStub" },
     "shopriteAcknowledgeOrders": { "value": false },
+    "shopriteUseLayer7Headers": { "value": true },
     "containerAppMinReplicas": { "value": 1 }
   }
 }
