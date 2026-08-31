@@ -10,7 +10,8 @@ public static class ShopriteInvoiceClientRegistration
         IConfiguration configuration)
     {
         var mode = configuration["Shoprite:InvoiceSubmissionMode"];
-        if (string.Equals(mode, "RealQa", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(mode, "Real", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "RealQa", StringComparison.OrdinalIgnoreCase))
         {
             return services.AddShopriteClient(configuration);
         }

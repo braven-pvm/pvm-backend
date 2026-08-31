@@ -1,41 +1,45 @@
-name: Deploy QA
+name: Deploy Production
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/deploy-qa.yml"
-      - "backend/**"
-      - "frontend/workbench/**"
-      - "infra/azure/**"
+    inputs:
+      confirm:
+        description: "Type DEPLOY PRODUCTION to continue"
+        required: true
+        type: string
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: deploy-qa
+  group: deploy-prod
   cancel-in-progress: false
 
 env:
-  AZURE_RESOURCE_GROUP: rg-pvm-integrations-qa
+  AZURE_RESOURCE_GROUP: rg-pvm-integrations-prod
   AZURE_LOCATION: southafricanorth
-  ACR_NAME: acrpvmintegrationsqa
-  ACR_LOGIN_SERVER: acrpvmintegrationsqa.azurecr.io
-  KEY_VAULT_NAME: kv-pvm-intg-qa
+  ACR_NAME: acrpvmintegrationsprod
+  ACR_LOGIN_SERVER: acrpvmintegrationsprod.azurecr.io
+  KEY_VAULT_NAME: kv-pvm-intg-prod
   API_IMAGE: pvm-api
   WORKBENCH_IMAGE: pvm-workbench
   WORKER_IMAGE: pvm-worker
 
 jobs:
   deploy:
-    name: Build and deploy QA
+    name: Build and deploy production
     runs-on: ubuntu-latest
-    environment: qa
+    environment: production
 
     steps:
+      - name: Confirm the deployment target
+        run: |
+          if [ "${{ inputs.confirm }}" != "DEPLOY PRODUCTION" ]; then
+            echo "Type DEPLOY PRODUCTION to run this workflow." >&2
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v5
 
@@ -74,9 +78,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          image_tag="qa-${GITHUB_SHA::12}"
-          connection_string="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name connectionstrings--pvm --query value -o tsv)"
-          postgres_password="$(printf '%s' "$connection_string" | sed -n 's/.*Password=\([^;]*\).*/\1/p')"
+          image_tag="prod-${GITHUB_SHA::12}"
+          postgres_password="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name postgres--adminpassword --query value -o tsv)"
           auth_tenant_id="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name auth--tenantid --query value -o tsv)"
           auth_api_client_id="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name auth--api-clientid --query value -o tsv)"
           auth_workbench_client_id="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name auth--workbench-clientid --query value -o tsv)"
@@ -94,7 +97,7 @@ jobs:
           acumatica_webhook_secret="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name acumatica--webhooksecret --query value -o tsv 2>/dev/null || true)"
 
           if [ -z "$postgres_password" ]; then
-            echo "Could not extract PostgreSQL password from Key Vault connection string." >&2
+            echo "Key Vault secret postgres--adminpassword is missing." >&2
             exit 1
           fi
 
@@ -170,50 +173,49 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Apply database migrations
-        shell: bash
+      - name: Ensure the container registry exists
         run: |
           set -euo pipefail
-          connection_string="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name connectionstrings--pvm --query value -o tsv)"
-          echo "::add-mask::$connection_string"
-          export ConnectionStrings__Pvm="$connection_string"
-          dotnet run --project backend/src/Pvm.DatabaseMigrator/Pvm.DatabaseMigrator.csproj --configuration Release
+          if ! az acr show --name "$ACR_NAME" --only-show-errors >/dev/null 2>&1; then
+            az group create --name "$AZURE_RESOURCE_GROUP" --location "$AZURE_LOCATION" --only-show-errors >/dev/null
+            az acr create --name "$ACR_NAME" --resource-group "$AZURE_RESOURCE_GROUP" --location westeurope --sku Basic --only-show-errors >/dev/null
+          fi
 
       - name: Build and push API image
         run: |
           az acr login --name "$ACR_NAME"
           docker build \
             -t "$ACR_LOGIN_SERVER/$API_IMAGE:${{ steps.values.outputs.image_tag }}" \
-            -t "$ACR_LOGIN_SERVER/$API_IMAGE:qa-latest" \
+            -t "$ACR_LOGIN_SERVER/$API_IMAGE:prod-latest" \
             -f backend/src/Pvm.Api/Dockerfile .
           docker push "$ACR_LOGIN_SERVER/$API_IMAGE:${{ steps.values.outputs.image_tag }}"
-          docker push "$ACR_LOGIN_SERVER/$API_IMAGE:qa-latest"
+          docker push "$ACR_LOGIN_SERVER/$API_IMAGE:prod-latest"
 
       - name: Build and push workbench image
         run: |
           docker build \
             -t "$ACR_LOGIN_SERVER/$WORKBENCH_IMAGE:${{ steps.values.outputs.image_tag }}" \
-            -t "$ACR_LOGIN_SERVER/$WORKBENCH_IMAGE:qa-latest" \
+            -t "$ACR_LOGIN_SERVER/$WORKBENCH_IMAGE:prod-latest" \
             -f frontend/workbench/Dockerfile frontend/workbench
           docker push "$ACR_LOGIN_SERVER/$WORKBENCH_IMAGE:${{ steps.values.outputs.image_tag }}"
-          docker push "$ACR_LOGIN_SERVER/$WORKBENCH_IMAGE:qa-latest"
+          docker push "$ACR_LOGIN_SERVER/$WORKBENCH_IMAGE:prod-latest"
 
       - name: Build and push worker image
         run: |
           docker build \
             -t "$ACR_LOGIN_SERVER/$WORKER_IMAGE:${{ steps.values.outputs.image_tag }}" \
-            -t "$ACR_LOGIN_SERVER/$WORKER_IMAGE:qa-latest" \
+            -t "$ACR_LOGIN_SERVER/$WORKER_IMAGE:prod-latest" \
             -f backend/src/Pvm.Worker/Dockerfile .
           docker push "$ACR_LOGIN_SERVER/$WORKER_IMAGE:${{ steps.values.outputs.image_tag }}"
-          docker push "$ACR_LOGIN_SERVER/$WORKER_IMAGE:qa-latest"
+          docker push "$ACR_LOGIN_SERVER/$WORKER_IMAGE:prod-latest"
 
       - name: Deploy Bicep
         run: |
           az deployment sub create \
-            --name "pvm-integrations-qa-${{ github.run_number }}" \
+            --name "pvm-integrations-prod-${{ github.run_number }}" \
             --location "$AZURE_LOCATION" \
             --template-file infra/azure/main.bicep \
-            --parameters infra/azure/main.parameters.qa.json \
+            --parameters infra/azure/main.parameters.prod.json \
             --parameters postgresAdminPassword='${{ steps.values.outputs.postgres_password }}' \
             --parameters apiImageTag='${{ steps.values.outputs.image_tag }}' \
             --parameters workbenchImageTag='${{ steps.values.outputs.image_tag }}' \
@@ -227,25 +229,34 @@ jobs:
             --parameters authNextAuthSecret='${{ steps.values.outputs.auth_nextauth_secret }}' \
             --parameters authBootstrapAdminEmail='${{ steps.values.outputs.auth_bootstrap_admin_email }}' \
             --parameters authBootstrapAdminObjectId='${{ steps.values.outputs.auth_bootstrap_admin_object_id }}' \
-            --parameters workbenchPublicUrl="https://ca-pvm-workbench-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io" \
+            --parameters workbenchPublicUrl='${{ vars.PROD_WORKBENCH_URL }}' \
             --parameters shopriteBaseUrl='${{ steps.values.outputs.shoprite_base_url }}' \
             --parameters shopriteUsername='${{ steps.values.outputs.shoprite_username }}' \
             --parameters shopritePassword='${{ steps.values.outputs.shoprite_password }}' \
             --parameters shopriteContractId='${{ steps.values.outputs.shoprite_contract_id }}' \
-            --parameters shopriteAcknowledgeOrders=true \
-            --parameters shopriteInvoiceSubmissionMode=RealQa \
+            --parameters shopriteAcknowledgeOrders='${{ vars.PROD_SHOPRITE_ACKNOWLEDGE_ORDERS }}' \
+            --parameters shopriteInvoiceSubmissionMode='${{ vars.PROD_SHOPRITE_SUBMISSION_MODE }}' \
             --parameters acumaticaUsername='${{ steps.values.outputs.acumatica_username }}' \
             --parameters acumaticaPassword='${{ steps.values.outputs.acumatica_password }}' \
             --parameters acumaticaWebhookSecret='${{ steps.values.outputs.acumatica_webhook_secret }}' \
             --parameters containerAppMinReplicas=1 \
             --only-show-errors
 
+      - name: Apply database migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          connection_string="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name connectionstrings--pvm --query value -o tsv)"
+          echo "::add-mask::$connection_string"
+          export ConnectionStrings__Pvm="$connection_string"
+          dotnet run --project backend/src/Pvm.DatabaseMigrator/Pvm.DatabaseMigrator.csproj --configuration Release
+
       - name: Smoke test
         shell: bash
         run: |
           set -euo pipefail
-          api_url="$(az containerapp show -g "$AZURE_RESOURCE_GROUP" -n ca-pvm-api-qa --query "properties.configuration.ingress.fqdn" -o tsv)"
-          workbench_url="$(az containerapp show -g "$AZURE_RESOURCE_GROUP" -n ca-pvm-workbench-qa --query "properties.configuration.ingress.fqdn" -o tsv)"
+          api_url="$(az containerapp show -g "$AZURE_RESOURCE_GROUP" -n ca-pvm-api-prod --query "properties.configuration.ingress.fqdn" -o tsv)"
+          workbench_url="$(az containerapp show -g "$AZURE_RESOURCE_GROUP" -n ca-pvm-workbench-prod --query "properties.configuration.ingress.fqdn" -o tsv)"
 
           retry_status() {
             local url="$1"
@@ -297,7 +308,7 @@ jobs:
             exit 1
           fi
 
-          worker_state="$(az containerapp show -g "$AZURE_RESOURCE_GROUP" -n ca-pvm-worker-qa --query properties.provisioningState -o tsv)"
+          worker_state="$(az containerapp show -g "$AZURE_RESOURCE_GROUP" -n ca-pvm-worker-prod --query properties.provisioningState -o tsv)"
           if [ "$worker_state" != "Succeeded" ]; then
             echo "Expected worker provisioning state Succeeded, got $worker_state." >&2
             exit 1
@@ -305,4 +316,4 @@ jobs:
 
           echo "API: https://$api_url"
           echo "Workbench: https://$workbench_url"
-          echo "Worker: ca-pvm-worker-qa ($worker_state)"
+          echo "Worker: ca-pvm-worker-prod ($worker_state)"

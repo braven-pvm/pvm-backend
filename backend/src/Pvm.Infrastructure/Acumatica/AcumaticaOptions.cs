@@ -31,6 +31,12 @@ public sealed record AcumaticaOptions
 
 public enum AcumaticaInvoiceSourceMode
 {
-    Fixture,
-    RealQa
+    Fixture = 0,
+
+    /// <summary>
+    /// Reads invoices from the configured live Acumatica instance. `RealQa` is the original
+    /// name and stays valid so existing configuration keeps working.
+    /// </summary>
+    Real = 1,
+    RealQa = 1
 }
