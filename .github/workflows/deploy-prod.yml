@@ -236,6 +236,8 @@ jobs:
             --parameters shopriteContractId='${{ steps.values.outputs.shoprite_contract_id }}' \
             --parameters shopriteAcknowledgeOrders='${{ vars.PROD_SHOPRITE_ACKNOWLEDGE_ORDERS }}' \
             --parameters shopriteInvoiceSubmissionMode='${{ vars.PROD_SHOPRITE_SUBMISSION_MODE }}' \
+            --parameters acumaticaInvoiceSourceMode='${{ vars.PROD_ACUMATICA_SOURCE_MODE }}' \
+            --parameters acumaticaInvoiceDateFrom='${{ vars.PROD_ACUMATICA_INVOICE_DATE_FROM }}' \
             --parameters acumaticaUsername='${{ steps.values.outputs.acumatica_username }}' \
             --parameters acumaticaPassword='${{ steps.values.outputs.acumatica_password }}' \
             --parameters acumaticaWebhookSecret='${{ steps.values.outputs.acumatica_webhook_secret }}' \
