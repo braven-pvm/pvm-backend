@@ -17,6 +17,9 @@ using Pvm.Infrastructure.Acumatica;
 using Pvm.Infrastructure.PayloadArchive;
 using Pvm.Infrastructure.Persistence;
 using Pvm.Infrastructure.Shoprite;
+using Pvm.Api.Features.Banking;
+using Pvm.Infrastructure.Investec;
+using Pvm.Infrastructure.Nedbank;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -44,6 +47,8 @@ builder.Services.AddPvmPersistence(builder.Configuration);
 builder.Services.AddPayloadArchive(builder.Configuration);
 builder.Services.AddPvmAuth(builder.Configuration, builder.Environment);
 builder.Services.AddAcumaticaInvoiceSource(builder.Configuration);
+builder.Services.AddNedbankStatementImport(builder.Configuration);
+builder.Services.AddInvestecBankFeed(builder.Configuration);
 builder.Services.AddShopritePurchaseOrderClient(builder.Configuration);
 builder.Services.AddScoped<SubmitShopriteInvoiceHandler>();
 builder.Services.AddConfiguredShopriteInvoiceClient(builder.Configuration);
@@ -64,6 +69,7 @@ app.UseMiddleware<AppUserClaimsMiddleware>();
 app.UseAuthorization();
 
 app.MapInvoiceEndpoints();
+app.MapBankImportEndpoints();
 app.MapSubmissionEndpoints();
 app.MapPurchaseOrderEndpoints();
 app.MapAdminUserEndpoints();
