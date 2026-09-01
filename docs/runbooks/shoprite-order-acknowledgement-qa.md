@@ -1,5 +1,13 @@
 # Shoprite Layer 7 Headers and Order Acknowledgement QA Runbook
 
+> **Acknowledgement is switched off, in QA and in production.**
+> PVM accepts each Shoprite order on the Shoprite portal, and that acceptance
+> changes the order status at Shoprite. A second acknowledgement from the API is
+> redundant, and it could interfere with the people who work the portal. The
+> code stays behind `Shoprite:AcknowledgeOrders` in case Shoprite ever stops
+> providing new orders without an API acknowledgement. Confirmed with PVM
+> operations on 2026-09-01.
+
 Purpose: verify the two production requirements that Shoprite confirmed on
 2026-08-24.
 

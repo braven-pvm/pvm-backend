@@ -232,7 +232,7 @@ jobs:
             --parameters shopriteUsername='${{ steps.values.outputs.shoprite_username }}' \
             --parameters shopritePassword='${{ steps.values.outputs.shoprite_password }}' \
             --parameters shopriteContractId='${{ steps.values.outputs.shoprite_contract_id }}' \
-            --parameters shopriteAcknowledgeOrders=true \
+            --parameters shopriteAcknowledgeOrders=false \
             --parameters shopriteInvoiceSubmissionMode=RealQa \
             --parameters acumaticaUsername='${{ steps.values.outputs.acumatica_username }}' \
             --parameters acumaticaPassword='${{ steps.values.outputs.acumatica_password }}' \
