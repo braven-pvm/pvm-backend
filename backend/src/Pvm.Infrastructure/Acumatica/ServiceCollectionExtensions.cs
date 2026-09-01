@@ -13,7 +13,13 @@ public static class ServiceCollectionExtensions
         IConfiguration configuration)
     {
         services.AddOptions<AcumaticaOptions>()
-            .Bind(configuration.GetSection("Acumatica"));
+            .Bind(configuration.GetSection("Acumatica"))
+            .Validate(
+                options => options.InvoiceSourceMode != AcumaticaInvoiceSourceMode.Real
+                    || options.InvoiceDateFrom is not null,
+                "Acumatica:InvoiceDateFrom is required when reading live invoices. Without a "
+                    + "cutover date the integration would import the whole invoice history.")
+            .ValidateOnStart();
         services.AddOptions<AcumaticaReconciliationOptions>()
             .Bind(configuration.GetSection(AcumaticaReconciliationOptions.SectionName))
             .Validate(
