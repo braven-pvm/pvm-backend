@@ -1052,7 +1052,7 @@ resource stalePurchaseOrderRefreshAlert 'Microsoft.Insights/scheduledQueryRules@
       logAnalytics.id
     ]
     autoMitigate: true
-    skipQueryValidation: false
+    skipQueryValidation: true
     criteria: {
       allOf: [
         {
@@ -1092,7 +1092,7 @@ resource staleAcumaticaReconciliationAlert 'Microsoft.Insights/scheduledQueryRul
       logAnalytics.id
     ]
     autoMitigate: true
-    skipQueryValidation: false
+    skipQueryValidation: true
     criteria: {
       allOf: [
         {
