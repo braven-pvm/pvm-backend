@@ -118,6 +118,26 @@ az containerapp ingress traffic set -g rg-pvm-integrations-prod -n ca-pvm-api-pr
 
 3. Never purge a queue and never delete a submission attempt during a rollback.
 
+## First deployment of a new environment
+
+Three template settings only matter the first time an environment is built. All
+three were found on the production deployment of 2026-09-03.
+
+1. **Alert queries.** A new Log Analytics workspace has no
+   `ContainerAppConsoleLogs_CL` table until the first container writes a log, so
+   query validation fails. The alert rules therefore set
+   `skipQueryValidation: true`.
+2. **Budget period.** Azure refuses a start date before the current month. The
+   start date now defaults to the first day of the current month. QA pins its
+   original date, so its budget is not moved.
+3. **Container Apps jobs.** A job can fail with `IdentityDoesNotExist` while the
+   user-assigned identity is still propagating. The identity exists after the
+   first run, so run the deployment again. It is idempotent.
+
+Do not create a Key Vault role assignment by hand for a principal that the
+template also assigns. Azure reports `RoleAssignmentExists` and the deployment
+fails, because the template uses its own deterministic name.
+
 ## Known debt
 
 `deploy-prod.yml` duplicates `deploy-qa.yml` rather than sharing a reusable

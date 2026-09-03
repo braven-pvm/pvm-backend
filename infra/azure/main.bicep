@@ -63,6 +63,9 @@ param authBootstrapAdminObjectId string = ''
 @description('Public workbench URL used by the auth callback.')
 param workbenchPublicUrl string = 'https://ca-pvm-workbench-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io'
 
+@description('First day of the budget period. Azure refuses a start date before the current month.')
+param budgetStartDate string = '${utcNow('yyyy-MM')}-01T00:00:00Z'
+
 @description('Shoprite API base URL for the deployed API.')
 param shopriteBaseUrl string = ''
 
@@ -249,7 +252,7 @@ resource budget 'Microsoft.Consumption/budgets@2023-11-01' = {
     amount: monthlyBudgetAmountUsd
     timeGrain: 'Monthly'
     timePeriod: {
-      startDate: '2026-07-01T00:00:00Z'
+      startDate: budgetStartDate
       endDate: '2036-05-01T00:00:00Z'
     }
     notifications: {
