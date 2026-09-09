@@ -21,8 +21,10 @@ import {
   retrySubmission,
   replayDeadLetter,
   resolveDeadLetters,
+  importNedbankStatement,
   type AutomationMode,
 } from "../src/api/client";
+import { describeNedbankImport } from "../src/formatters.mjs";
 
 export async function refreshCandidatesAction() {
   await refreshInvoiceCandidates();
@@ -256,6 +258,25 @@ export async function resolveDeadLettersAction(formData: FormData) {
   const queueName = optionalString(formData, "queueName") ?? null;
   const olderThanDays = requiredInteger(formData, "olderThanDays");
   await runExceptionAction(() => resolveDeadLetters(reason, queueName, olderThanDays));
+}
+
+export async function importNedbankStatementAction(formData: FormData) {
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    redirect(`/banking?importError=${encodeURIComponent("Choose an OFX file before you import.")}`);
+  }
+
+  let summary: string;
+  try {
+    summary = describeNedbankImport(await importNedbankStatement(file));
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "The Nedbank statement could not be imported.";
+    redirect(`/banking?importError=${encodeURIComponent(message)}`);
+  }
+
+  revalidatePath("/banking");
+  redirect(`/banking?importStatus=${encodeURIComponent(summary)}`);
 }
 
 function requiredString(formData: FormData, key: string) {

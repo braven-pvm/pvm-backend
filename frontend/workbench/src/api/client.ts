@@ -937,3 +937,47 @@ export function resolveDeadLetters(
 ): Promise<void> {
   return postException("dead-letters/resolve", { reason, queueName, olderThanDays });
 }
+
+export type NedbankImportResult = {
+  fileName: string;
+  linesImported: number;
+  statementReference?: string;
+};
+
+export async function importNedbankStatement(file: File): Promise<NedbankImportResult> {
+  const headers = await getApiAuthHeaders();
+  const body = new FormData();
+  body.append("file", file);
+
+  // Do not set Content-Type here. fetch must set it, so that it carries the multipart boundary.
+  const response = await fetch(`${apiBaseUrl}/api/banking/import/nedbank`, {
+    method: "POST",
+    headers,
+    body,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(await readBankImportError(response));
+  }
+
+  return response.json();
+}
+
+async function readBankImportError(response: Response): Promise<string> {
+  try {
+    const problem = (await response.json()) as {
+      message?: string;
+      detail?: string;
+      title?: string;
+    };
+    const message = problem.message ?? problem.detail ?? problem.title;
+    if (message) {
+      return message;
+    }
+  } catch {
+    // The failure body was not JSON, so fall back to the status code.
+  }
+
+  return `Failed to import the Nedbank statement: ${response.status}`;
+}

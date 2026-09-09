@@ -31,6 +31,7 @@ export default async function RootLayout({
             <Link href="/invoices">Invoices</Link>
             <Link href="/purchase-orders">PO Inbox</Link>
             <Link href="/runs">Runs</Link>
+            <Link href="/banking">Bank import</Link>
             <Link href="/admin/messages">Messages</Link>
             <Link href="/admin/acumatica-events">Webhook Events</Link>
             <Link href="/admin/inventory-mappings">Inventory mappings</Link>
