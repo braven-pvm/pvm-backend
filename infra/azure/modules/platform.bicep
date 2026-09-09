@@ -945,6 +945,9 @@ var acumaticaScheduleJobs = [
   }
 ]
 
+// Create the jobs one at a time. Parallel creation raced the user-assigned
+// identity association and failed the first production deployment.
+@batchSize(1)
 resource acumaticaScheduleJob 'Microsoft.App/jobs@2025-01-01' = [for job in acumaticaScheduleJobs: {
   name: job.name
   location: location
