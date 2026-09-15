@@ -94,5 +94,23 @@ public sealed class InvestecBankFeedRefreshServiceTests
             LastStatement = statement;
             return Task.FromResult(result);
         }
+
+        public Task<BankStatementSummary?> GetLatestStatementAsync(
+            string cashAccount,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<BankStatementSummary?>(null);
+
+        public Task<IReadOnlyList<BankStatementSummary>> GetRecentStatementsAsync(
+            string cashAccount,
+            int count,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<BankStatementSummary>>([]);
+
+        public Task<IReadOnlySet<string>> GetImportedTransactionIdsAsync(
+            string cashAccount,
+            DateOnly fromDate,
+            DateOnly toDate,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlySet<string>>(new HashSet<string>(StringComparer.Ordinal));
     }
 }

@@ -334,4 +334,123 @@ public sealed class AcumaticaBankStatementClient(
 
     private static string FormatDate(DateOnly date) =>
         date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    public async Task<BankStatementSummary?> GetLatestStatementAsync(
+        string cashAccount,
+        CancellationToken cancellationToken = default)
+    {
+        var statements = await GetRecentStatementsAsync(cashAccount, 1, cancellationToken);
+        return statements.Count == 0 ? null : statements[0];
+    }
+
+    public async Task<IReadOnlyList<BankStatementSummary>> GetRecentStatementsAsync(
+        string cashAccount,
+        int count,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(cashAccount);
+        ValidateOptions();
+
+        return await WithSessionAsync(async sessionCookie =>
+        {
+            using var document = await FetchStatementsAsync(
+                cashAccount, count, sessionCookie, cancellationToken);
+            if (document is null || document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return (IReadOnlyList<BankStatementSummary>)[];
+            }
+
+            var summaries = new List<BankStatementSummary>();
+            foreach (var element in document.RootElement.EnumerateArray())
+            {
+                var summary = MapSummary(element);
+                if (summary is not null)
+                {
+                    summaries.Add(summary);
+                }
+            }
+
+            return (IReadOnlyList<BankStatementSummary>)summaries;
+        }, cancellationToken);
+    }
+
+    public async Task<IReadOnlySet<string>> GetImportedTransactionIdsAsync(
+        string cashAccount,
+        DateOnly fromDate,
+        DateOnly toDate,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(cashAccount);
+        ValidateOptions();
+
+        return await WithSessionAsync(
+            async sessionCookie => (IReadOnlySet<string>)await FetchExistingExtTranIdsAsync(
+                cashAccount, fromDate, toDate, sessionCookie, cancellationToken),
+            cancellationToken);
+    }
+
+    private async Task<JsonDocument?> FetchStatementsAsync(
+        string cashAccount,
+        int count,
+        string? sessionCookie,
+        CancellationToken cancellationToken)
+    {
+        var query =
+            $"?$filter={Uri.EscapeDataString($"CashAccount eq '{cashAccount}'")}" +
+            "&$orderby=EndBalanceDate desc&$expand=Details" +
+            $"&$top={count.ToString(CultureInfo.InvariantCulture)}";
+        var uri = BuildUri(
+            $"entity/{_bankFeed.EndpointName}/{_bankFeed.EndpointVersion}/{_bankFeed.TopLevelEntity}{query}");
+
+        using var request = CreateSessionRequest(HttpMethod.Get, uri, sessionCookie);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+        return string.IsNullOrWhiteSpace(json) ? null : JsonDocument.Parse(json);
+    }
+
+    private static BankStatementSummary? MapSummary(JsonElement element)
+    {
+        var reference = ValueString(element, "ReferenceNbr");
+        var start = ValueDate(element, "StartBalanceDate");
+        var end = ValueDate(element, "EndBalanceDate");
+        if (reference is null || end is null)
+        {
+            return null;
+        }
+
+        var lineCount = element.TryGetProperty("Details", out var details)
+            && details.ValueKind == JsonValueKind.Array
+            ? details.GetArrayLength()
+            : 0;
+
+        return new BankStatementSummary(
+            reference,
+            start ?? end.Value,
+            end.Value,
+            ValueDecimal(element, "BeginningBalance") ?? 0m,
+            ValueDecimal(element, "EndingBalance") ?? 0m,
+            lineCount);
+    }
+
+    private static DateOnly? ValueDate(JsonElement element, string name)
+    {
+        var text = ValueString(element, name);
+        return DateOnly.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+            ? date
+            : null;
+    }
+
+    private static decimal? ValueDecimal(JsonElement element, string name)
+        => element.TryGetProperty(name, out var field)
+            && field.ValueKind == JsonValueKind.Object
+            && field.TryGetProperty("value", out var value)
+            && value.ValueKind == JsonValueKind.Number
+            && value.TryGetDecimal(out var number)
+            ? number
+            : null;
 }

@@ -938,19 +938,94 @@ export function resolveDeadLetters(
   return postException("dead-letters/resolve", { reason, queueName, olderThanDays });
 }
 
+export type BankStatementSummary = {
+  referenceNbr: string;
+  startBalanceDate: string;
+  endBalanceDate: string;
+  beginningBalance: number;
+  endingBalance: number;
+  lineCount: number;
+};
+
+export type BankAccountStatus = {
+  bank: string;
+  cashAccount: string;
+  mode: string;
+  available: boolean;
+  importedThrough?: string | null;
+  closingBalance?: number | null;
+  recentStatements: BankStatementSummary[];
+};
+
+export type BankingStatus = {
+  accounts: BankAccountStatus[];
+};
+
+export type BankStatementPreviewLine = {
+  date: string;
+  description: string;
+  receipt: number;
+  disbursement: number;
+  alreadyImported: boolean;
+};
+
+export type BankStatementPreview = {
+  cashAccount: string;
+  sourceAccountNumber?: string | null;
+  periodStart: string;
+  periodEnd: string;
+  transactionCount: number;
+  moneyIn: number;
+  moneyOut: number;
+  openingBalance: number;
+  closingBalance: number;
+  importedThrough?: string | null;
+  importedThroughBalance?: number | null;
+  balancesCarryForward: boolean;
+  overlapsImportedPeriod: boolean;
+  alreadyImportedCount: number;
+  newCount: number;
+  nothingToImport: boolean;
+  uncoveredDates: string[];
+  lines: BankStatementPreviewLine[];
+};
+
 export type NedbankImportResult = {
   fileName: string;
   linesImported: number;
   statementReference?: string;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  openingBalance: number;
+  closingBalance: number;
+  alreadyImportedCount: number;
 };
 
-export async function importNedbankStatement(file: File): Promise<NedbankImportResult> {
+export async function getBankingStatus(): Promise<BankingStatus> {
+  const headers = await getApiAuthHeaders();
+  const response = await fetch(`${apiBaseUrl}/api/banking/status`, {
+    headers,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load the bank import status: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function previewNedbankStatement(file: File): Promise<BankStatementPreview> {
+  return postStatementFile("/api/banking/import/nedbank/preview", file);
+}
+
+async function postStatementFile<T>(path: string, file: File): Promise<T> {
   const headers = await getApiAuthHeaders();
   const body = new FormData();
   body.append("file", file);
 
   // Do not set Content-Type here. fetch must set it, so that it carries the multipart boundary.
-  const response = await fetch(`${apiBaseUrl}/api/banking/import/nedbank`, {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
     method: "POST",
     headers,
     body,
@@ -962,6 +1037,10 @@ export async function importNedbankStatement(file: File): Promise<NedbankImportR
   }
 
   return response.json();
+}
+
+export async function importNedbankStatement(file: File): Promise<NedbankImportResult> {
+  return postStatementFile("/api/banking/import/nedbank", file);
 }
 
 async function readBankImportError(response: Response): Promise<string> {

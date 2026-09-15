@@ -22,9 +22,9 @@ import {
   replayDeadLetter,
   resolveDeadLetters,
   importNedbankStatement,
+  previewNedbankStatement,
   type AutomationMode,
 } from "../src/api/client";
-import { describeNedbankImport } from "../src/formatters.mjs";
 
 export async function refreshCandidatesAction() {
   await refreshInvoiceCandidates();
@@ -260,23 +260,43 @@ export async function resolveDeadLettersAction(formData: FormData) {
   await runExceptionAction(() => resolveDeadLetters(reason, queueName, olderThanDays));
 }
 
-export async function importNedbankStatementAction(formData: FormData) {
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    redirect(`/banking?importError=${encodeURIComponent("Choose an OFX file before you import.")}`);
+// The bank import screens keep the chosen file in the browser and render the outcome in
+// place, so these two actions return a result instead of redirecting.
+export async function previewNedbankStatementAction(formData: FormData) {
+  const file = readStatementFile(formData);
+  if (!file) {
+    return { ok: false as const, message: "Choose a statement file first." };
   }
 
-  let summary: string;
   try {
-    summary = describeNedbankImport(await importNedbankStatement(file));
+    return { ok: true as const, preview: await previewNedbankStatement(file) };
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "The Nedbank statement could not be imported.";
-    redirect(`/banking?importError=${encodeURIComponent(message)}`);
+    return { ok: false as const, message: describeBankImportFailure(error) };
+  }
+}
+
+export async function importNedbankStatementAction(formData: FormData) {
+  const file = readStatementFile(formData);
+  if (!file) {
+    return { ok: false as const, message: "Choose a statement file first." };
   }
 
-  revalidatePath("/banking");
-  redirect(`/banking?importStatus=${encodeURIComponent(summary)}`);
+  try {
+    const result = await importNedbankStatement(file);
+    revalidatePath("/banking");
+    return { ok: true as const, result };
+  } catch (error) {
+    return { ok: false as const, message: describeBankImportFailure(error) };
+  }
+}
+
+function readStatementFile(formData: FormData) {
+  const file = formData.get("file");
+  return file instanceof File && file.size > 0 ? file : null;
+}
+
+function describeBankImportFailure(error: unknown) {
+  return error instanceof Error ? error.message : "The statement could not be read.";
 }
 
 function requiredString(formData: FormData, key: string) {
