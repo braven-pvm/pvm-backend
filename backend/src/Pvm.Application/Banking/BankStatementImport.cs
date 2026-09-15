@@ -13,7 +13,8 @@ public sealed record BankStatementImport(
     DateOnly EndBalanceDate,
     decimal BeginningBalance,
     decimal EndingBalance,
-    IReadOnlyList<BankStatementLine> Lines);
+    IReadOnlyList<BankStatementLine> Lines,
+    string? SourceAccountNumber = null);
 
 /// <summary>
 /// A single bank transaction line on an imported statement. <see cref="ExtTranId"/> is the

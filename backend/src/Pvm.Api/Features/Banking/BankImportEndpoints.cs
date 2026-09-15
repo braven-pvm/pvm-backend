@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+using Pvm.Application.Banking;
 using Pvm.Infrastructure.Investec;
 using Pvm.Infrastructure.Nedbank;
 
@@ -6,21 +8,31 @@ namespace Pvm.Api.Features.Banking;
 /// <summary>
 /// Bank-statement import endpoints:
 /// <list type="bullet">
+///   <item><c>GET /api/banking/status</c> — how far each cash account is imported, and its
+///   recent statements. The workbench shows this before anyone uploads, so the same days are
+///   never imported twice.</item>
+///   <item><c>POST /api/banking/import/nedbank/preview</c> — parse an uploaded Nedbank OFX file
+///   and report what it would do. Writes nothing.</item>
 ///   <item><c>POST /api/banking/import/nedbank</c> — upload a Nedbank OFX file; it is parsed,
 ///   renumbered, and pushed into Acumatica (PVMBankFeed).</item>
 ///   <item><c>POST /api/banking/investec/refresh</c> — pull Investec transactions for a date
 ///   window and import them into Acumatica.</item>
-///   <item><c>GET /api/banking/import</c> — a minimal drag-and-drop upload page.</item>
 /// </list>
 /// </summary>
 public static class BankImportEndpoints
 {
+    private const int RecentStatementCount = 5;
+
     public static IEndpointRouteBuilder MapBankImportEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/banking");
 
-        group.MapGet("/import", () => Results.Content(UploadPageHtml, "text/html"))
-            .RequireAuthorization("Invoices.Write");
+        group.MapGet("/status", GetStatusAsync)
+            .RequireAuthorization();
+
+        group.MapPost("/import/nedbank/preview", PreviewNedbankAsync)
+            .RequireAuthorization("Invoices.Write")
+            .DisableAntiforgery();
 
         group.MapPost("/import/nedbank", ImportNedbankAsync)
             .RequireAuthorization("Invoices.Write")
@@ -32,9 +44,95 @@ public static class BankImportEndpoints
         return app;
     }
 
+    private static async Task<IResult> GetStatusAsync(
+        IAcumaticaBankStatementClient acumaticaClient,
+        IOptions<NedbankOptions> nedbankOptions,
+        IOptions<InvestecOptions> investecOptions,
+        CancellationToken cancellationToken)
+    {
+        var accounts = new List<BankAccountStatus>
+        {
+            await ReadAccountAsync(
+                acumaticaClient, "Nedbank", nedbankOptions.Value.CashAccount, "Upload", cancellationToken),
+            await ReadAccountAsync(
+                acumaticaClient, "Investec", investecOptions.Value.CashAccount, "Automatic", cancellationToken),
+        };
+
+        return Results.Ok(new BankingStatusResponse(accounts));
+    }
+
+    private static async Task<BankAccountStatus> ReadAccountAsync(
+        IAcumaticaBankStatementClient acumaticaClient,
+        string bank,
+        string? cashAccount,
+        string mode,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(cashAccount))
+        {
+            return new BankAccountStatus(bank, string.Empty, mode, false, null, null, []);
+        }
+
+        try
+        {
+            var recent = await acumaticaClient.GetRecentStatementsAsync(
+                cashAccount, RecentStatementCount, cancellationToken);
+            var latest = recent.Count == 0 ? null : recent[0];
+
+            return new BankAccountStatus(
+                bank,
+                cashAccount,
+                mode,
+                true,
+                latest?.EndBalanceDate,
+                latest?.EndingBalance,
+                recent);
+        }
+        catch (InvalidOperationException)
+        {
+            // Acumatica is unreachable or misconfigured. The page still renders, and says so,
+            // rather than failing whole. The import path reports the real error if it is tried.
+            return new BankAccountStatus(bank, cashAccount, mode, false, null, null, []);
+        }
+        catch (HttpRequestException)
+        {
+            return new BankAccountStatus(bank, cashAccount, mode, false, null, null, []);
+        }
+    }
+
+    private static async Task<IResult> PreviewNedbankAsync(
+        IFormFile file,
+        NedbankStatementImportService importer,
+        CancellationToken cancellationToken)
+        => await ReadAndRunAsync(
+            file,
+            async ofx => Results.Ok(await importer.PreviewAsync(ofx, cancellationToken)),
+            cancellationToken);
+
     private static async Task<IResult> ImportNedbankAsync(
         IFormFile file,
         NedbankStatementImportService importer,
+        CancellationToken cancellationToken)
+        => await ReadAndRunAsync(
+            file,
+            async ofx =>
+            {
+                var result = await importer.ImportAsync(ofx, cancellationToken);
+                return Results.Ok(new NedbankImportResponse(
+                    file.FileName,
+                    result.LinesImported,
+                    result.StatementReference,
+                    result.PeriodStart,
+                    result.PeriodEnd,
+                    result.OpeningBalance,
+                    result.ClosingBalance,
+                    result.AlreadyImportedCount));
+            },
+            cancellationToken);
+
+    private static async Task<IResult> ReadAndRunAsync(
+        IFormFile file,
+        Func<string, Task<IResult>> run,
         CancellationToken cancellationToken)
     {
         if (file.Length == 0)
@@ -50,11 +148,7 @@ public static class BankImportEndpoints
 
         try
         {
-            var result = await importer.ImportAsync(ofx, cancellationToken);
-            return Results.Ok(new NedbankImportResponse(
-                file.FileName,
-                result.LinesImported,
-                result.StatementReference));
+            return await run(ofx);
         }
         catch (FormatException exception)
         {
@@ -62,7 +156,7 @@ public static class BankImportEndpoints
         }
         catch (InvalidOperationException exception)
         {
-            // Configuration or Acumatica-side failure (e.g. missing CashAccount / endpoint).
+            // Configuration or Acumatica-side failure (for example a missing cash account).
             return Results.Problem(exception.Message);
         }
     }
@@ -90,63 +184,31 @@ public static class BankImportEndpoints
             return Results.Problem(exception.Message);
         }
     }
-
-    private const string UploadPageHtml =
-        """
-        <!doctype html>
-        <html lang="en">
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>Bank statement import</title>
-          <style>
-            body { font-family: system-ui, sans-serif; max-width: 640px; margin: 3rem auto; padding: 0 1rem; color: #1a1a1a; }
-            h1 { font-size: 1.3rem; }
-            #drop { border: 2px dashed #9aa4b2; border-radius: 10px; padding: 2.5rem 1rem; text-align: center; color: #4b5563; cursor: pointer; }
-            #drop.over { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; }
-            button { background: #2563eb; color: #fff; border: 0; border-radius: 6px; padding: .6rem 1.1rem; font-size: 1rem; cursor: pointer; }
-            button:disabled { opacity: .5; cursor: default; }
-            pre { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; }
-            .ok { color: #15803d; } .err { color: #b91c1c; }
-          </style>
-        </head>
-        <body>
-          <h1>Nedbank statement import</h1>
-          <p>Download the statement from Netbank as <strong>OFX</strong>, then drop it here. It is cleaned, renumbered, and imported into Acumatica.</p>
-          <div id="drop">Drag an OFX file here, or click to choose</div>
-          <input id="file" type="file" accept=".ofx,application/x-ofx,text/plain" hidden>
-          <p><button id="go" disabled>Import</button> <span id="name"></span></p>
-          <pre id="out" hidden></pre>
-          <script>
-            const drop = document.getElementById('drop'), input = document.getElementById('file'),
-                  go = document.getElementById('go'), name = document.getElementById('name'), out = document.getElementById('out');
-            let chosen = null;
-            function pick(f) { chosen = f; name.textContent = f ? f.name : ''; go.disabled = !f; }
-            drop.addEventListener('click', () => input.click());
-            input.addEventListener('change', () => pick(input.files[0]));
-            ['dragover','dragenter'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('over'); }));
-            ['dragleave','drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('over'); }));
-            drop.addEventListener('drop', ev => pick(ev.dataTransfer.files[0]));
-            go.addEventListener('click', async () => {
-              if (!chosen) return;
-              go.disabled = true; out.hidden = false; out.className = ''; out.textContent = 'Importing ' + chosen.name + ' ...';
-              const body = new FormData(); body.append('file', chosen);
-              try {
-                const res = await fetch('/api/banking/import/nedbank', { method: 'POST', body });
-                const text = await res.text();
-                out.className = res.ok ? 'ok' : 'err';
-                out.textContent = (res.ok ? 'Imported OK\n' : 'Failed (' + res.status + ')\n') + text;
-              } catch (e) {
-                out.className = 'err'; out.textContent = 'Request failed: ' + e;
-              } finally {
-                go.disabled = false;
-              }
-            });
-          </script>
-        </body>
-        </html>
-        """;
 }
 
+/// <summary>How far each cash account is imported.</summary>
+public sealed record BankingStatusResponse(IReadOnlyList<BankAccountStatus> Accounts);
+
+/// <summary>
+/// One cash account on the bank import page. <paramref name="Available"/> is false when
+/// Acumatica could not be read, so the page can say so instead of showing a wrong date.
+/// </summary>
+public sealed record BankAccountStatus(
+    string Bank,
+    string CashAccount,
+    string Mode,
+    bool Available,
+    DateOnly? ImportedThrough,
+    decimal? ClosingBalance,
+    IReadOnlyList<BankStatementSummary> RecentStatements);
+
 /// <summary>Response for a Nedbank OFX import.</summary>
-public sealed record NedbankImportResponse(string FileName, int LinesImported, string? StatementReference);
+public sealed record NedbankImportResponse(
+    string FileName,
+    int LinesImported,
+    string? StatementReference,
+    DateOnly? PeriodStart,
+    DateOnly? PeriodEnd,
+    decimal OpeningBalance,
+    decimal ClosingBalance,
+    int AlreadyImportedCount);

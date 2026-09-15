@@ -60,7 +60,8 @@ public sealed class NedbankOfxParser
             EndBalanceDate: statementDate,
             BeginningBalance: beginning,
             EndingBalance: ending,
-            Lines: lines);
+            Lines: lines,
+            SourceAccountNumber: accountId);
     }
 
     private static List<BankStatementLine> BuildLines(XElement root, string accountId)

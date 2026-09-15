@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { describeNedbankImport, formatMoney } from "./formatters.mjs";
+import {
+  formatDayAndDate,
+  formatMoney,
+  formatMoneyZar,
+  formatStatementDate,
+} from "./formatters.mjs";
 
 test("formatMoney renders missing money values as a dash", () => {
   assert.equal(formatMoney("ZAR", null), "-");
@@ -11,30 +16,36 @@ test("formatMoney renders present money values with two decimals", () => {
   assert.equal(formatMoney("ZAR", 12), "ZAR 12.00");
 });
 
-test("describeNedbankImport reports that nothing changed when no line is new", () => {
-  assert.equal(
-    describeNedbankImport({ fileName: "aug.ofx", linesImported: 0 }),
-    "aug.ofx contained no new transactions. Acumatica was not changed.",
-  );
+
+
+
+
+test("formatMoneyZar groups thousands with a space and keeps two decimals", () => {
+  assert.equal(formatMoneyZar(66465.58), "R 66 465.58");
+  assert.equal(formatMoneyZar(1915.9), "R 1 915.90");
+  assert.equal(formatMoneyZar(0), "R 0.00");
+  assert.equal(formatMoneyZar(1234567.05), "R 1 234 567.05");
 });
 
-test("describeNedbankImport reports the line count and the statement reference", () => {
-  assert.equal(
-    describeNedbankImport({ fileName: "aug.ofx", linesImported: 12, statementReference: "000123" }),
-    "aug.ofx: imported 12 transactions as statement 000123.",
-  );
+test("formatMoneyZar keeps the sign outside the currency symbol", () => {
+  assert.equal(formatMoneyZar(-336.4), "-R 336.40");
 });
 
-test("describeNedbankImport uses the singular for one transaction", () => {
-  assert.equal(
-    describeNedbankImport({ fileName: "aug.ofx", linesImported: 1, statementReference: "000123" }),
-    "aug.ofx: imported 1 transaction as statement 000123.",
-  );
+test("formatMoneyZar renders a missing amount as a dash", () => {
+  assert.equal(formatMoneyZar(null), "—");
+  assert.equal(formatMoneyZar(undefined), "—");
 });
 
-test("describeNedbankImport omits the reference when Acumatica returned none", () => {
-  assert.equal(
-    describeNedbankImport({ fileName: "aug.ofx", linesImported: 3 }),
-    "aug.ofx: imported 3 transactions.",
-  );
+test("formatStatementDate writes the month in full", () => {
+  assert.equal(formatStatementDate("2026-09-14"), "14 September 2026");
+  assert.equal(formatStatementDate("2026-01-01"), "1 January 2026");
+});
+
+test("formatStatementDate renders a missing date as a dash", () => {
+  assert.equal(formatStatementDate(null), "—");
+});
+
+test("formatDayAndDate names the weekday, so a weekend gap explains itself", () => {
+  assert.equal(formatDayAndDate("2026-09-13"), "Sunday 13 September");
+  assert.equal(formatDayAndDate("2026-09-14"), "Monday 14 September");
 });
