@@ -17,7 +17,7 @@
     "acumaticaCompany": { "value": "PVM" },
     "investecAccountId": { "value": "29559" },
     "investecCashAccount": { "value": "PVMINVEST" },
-    "investecFeedStartDate": { "value": "2026-09-15" },
+    "investecFeedStartDate": { "value": "2026-09-13" },
     "acumaticaParentCustomerAccounts": { "value": [ "DEB2062" ] },
     "shopriteInvoiceSubmissionMode": { "value": "LocalStub" },
     "shopriteAcknowledgeOrders": { "value": false },
