@@ -7,6 +7,7 @@ using Pvm.Infrastructure.Acumatica;
 using Pvm.Infrastructure.Messaging;
 using Pvm.Infrastructure.Operations;
 using Pvm.Infrastructure.PayloadArchive;
+using Pvm.Infrastructure.Investec;
 using Pvm.Infrastructure.Persistence;
 using Pvm.Infrastructure.Shoprite;
 using Pvm.Worker;
@@ -21,6 +22,9 @@ var enqueueAcumaticaReconciliation = args.Contains(
     StringComparer.OrdinalIgnoreCase);
 var enqueueAcumaticaLookback = args.Contains(
     "--enqueue-acumatica-invoice-lookback",
+    StringComparer.OrdinalIgnoreCase);
+var refreshInvestecFeed = args.Contains(
+    "--refresh-investec-bank-feed",
     StringComparer.OrdinalIgnoreCase);
 
 if (enqueueShopriteRefresh || enqueueAcumaticaReconciliation || enqueueAcumaticaLookback)
@@ -81,6 +85,52 @@ if (enqueueShopriteRefresh || enqueueAcumaticaReconciliation || enqueueAcumatica
             IntegrationRunTypes.AcumaticaInvoiceReconciliation,
             queued,
             scheduleKey);
+    }
+
+    return;
+}
+
+if (refreshInvestecFeed)
+{
+    // The Investec pull runs inline. It happens once a day, so it needs no queue and no consumer.
+    builder.Services.AddAcumaticaInvoiceSource(builder.Configuration);
+    builder.Services.AddInvestecBankFeed(builder.Configuration);
+
+    using var feedHost = builder.Build();
+    await using var feedScope = feedHost.Services.CreateAsyncScope();
+    var feedLogger = feedScope.ServiceProvider
+        .GetRequiredService<ILoggerFactory>()
+        .CreateLogger("InvestecBankFeedScheduler");
+    var refreshService = feedScope.ServiceProvider.GetRequiredService<InvestecBankFeedRefreshService>();
+    var investecOptions = feedScope.ServiceProvider.GetRequiredService<IOptions<InvestecOptions>>().Value;
+
+    // The window overlaps earlier runs on purpose, so a missed run is collected by the next one.
+    // It never reaches before the date the feed took ownership of the account.
+    var (fromDate, toDate) = InvestecRefreshWindow.Resolve(
+        DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime),
+        investecOptions.RefreshLookbackDays,
+        investecOptions.FeedStartDate);
+
+    try
+    {
+        var result = await refreshService.RefreshAsync(fromDate, toDate, CancellationToken.None);
+        feedLogger.LogInformation(
+            "integration.run.completed RunType=investec-bank-feed From={From} To={To} Retrieved={Retrieved} Imported={Imported} Statement={Statement}",
+            fromDate,
+            toDate,
+            result.TransactionsRetrieved,
+            result.LinesImported,
+            result.StatementReference ?? "(none)");
+    }
+    catch (Exception exception)
+    {
+        // Rethrow so that the Container Apps job reports a failed replica.
+        feedLogger.LogError(
+            exception,
+            "integration.run.failed RunType=investec-bank-feed From={From} To={To}",
+            fromDate,
+            toDate);
+        throw;
     }
 
     return;
