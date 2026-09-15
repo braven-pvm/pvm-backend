@@ -95,6 +95,9 @@ jobs:
           acumatica_username="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name acumatica--username --query value -o tsv 2>/dev/null || true)"
           acumatica_password="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name acumatica--password --query value -o tsv 2>/dev/null || true)"
           acumatica_webhook_secret="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name acumatica--webhooksecret --query value -o tsv 2>/dev/null || true)"
+          investec_client_id="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name investec--clientid --query value -o tsv 2>/dev/null || true)"
+          investec_client_secret="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name investec--clientsecret --query value -o tsv 2>/dev/null || true)"
+          investec_api_key="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name investec--apikey --query value -o tsv 2>/dev/null || true)"
 
           if [ -z "$postgres_password" ]; then
             echo "Key Vault secret postgres--adminpassword is missing." >&2
@@ -134,6 +137,9 @@ jobs:
           if [ -n "$acumatica_username" ]; then echo "::add-mask::$acumatica_username"; fi
           if [ -n "$acumatica_password" ]; then echo "::add-mask::$acumatica_password"; fi
           if [ -n "$acumatica_webhook_secret" ]; then echo "::add-mask::$acumatica_webhook_secret"; fi
+          if [ -n "$investec_client_id" ]; then echo "::add-mask::$investec_client_id"; fi
+          if [ -n "$investec_client_secret" ]; then echo "::add-mask::$investec_client_secret"; fi
+          if [ -n "$investec_api_key" ]; then echo "::add-mask::$investec_api_key"; fi
 
           {
             echo "image_tag=$image_tag"
@@ -170,6 +176,15 @@ jobs:
             echo "EOF"
             echo "acumatica_webhook_secret<<EOF"
             echo "$acumatica_webhook_secret"
+            echo "EOF"
+            echo "investec_client_id<<EOF"
+            echo "$investec_client_id"
+            echo "EOF"
+            echo "investec_client_secret<<EOF"
+            echo "$investec_client_secret"
+            echo "EOF"
+            echo "investec_api_key<<EOF"
+            echo "$investec_api_key"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -241,6 +256,9 @@ jobs:
             --parameters acumaticaUsername='${{ steps.values.outputs.acumatica_username }}' \
             --parameters acumaticaPassword='${{ steps.values.outputs.acumatica_password }}' \
             --parameters acumaticaWebhookSecret='${{ steps.values.outputs.acumatica_webhook_secret }}' \
+            --parameters investecClientId='${{ steps.values.outputs.investec_client_id }}' \
+            --parameters investecClientSecret='${{ steps.values.outputs.investec_client_secret }}' \
+            --parameters investecApiKey='${{ steps.values.outputs.investec_api_key }}' \
             --parameters containerAppMinReplicas=1 \
             --only-show-errors
 

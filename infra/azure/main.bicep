@@ -118,6 +118,33 @@ param acumaticaUsername string = ''
 @description('Acumatica integration password.')
 param acumaticaPassword string = ''
 
+@description('Investec API client id for the scheduled bank feed.')
+@secure()
+param investecClientId string = ''
+
+@description('Investec API client secret for the scheduled bank feed.')
+@secure()
+param investecClientSecret string = ''
+
+@description('Investec x-api-key issued with the client credentials.')
+@secure()
+param investecApiKey string = ''
+
+@description('Investec gateway base URL.')
+param investecBaseUrl string = 'https://openapi.investec.com'
+
+@description('Investec system-assigned account id the feed reads.')
+param investecAccountId string = ''
+
+@description('Acumatica cash account the Investec transactions import into.')
+param investecCashAccount string = ''
+
+@description('Days each scheduled Investec refresh reaches back.')
+param investecRefreshLookbackDays int = 7
+
+@description('First date the Investec feed owns. It never reads earlier, so the manual import is not duplicated.')
+param investecFeedStartDate string = ''
+
 @description('Acumatica contract REST endpoint name.')
 param acumaticaEndpointName string = 'Default'
 
@@ -226,6 +253,14 @@ module platform 'modules/platform.bicep' = {
     acumaticaBranch: acumaticaBranch
     acumaticaUsername: acumaticaUsername
     acumaticaPassword: acumaticaPassword
+    investecClientId: investecClientId
+    investecClientSecret: investecClientSecret
+    investecApiKey: investecApiKey
+    investecBaseUrl: investecBaseUrl
+    investecAccountId: investecAccountId
+    investecCashAccount: investecCashAccount
+    investecRefreshLookbackDays: investecRefreshLookbackDays
+    investecFeedStartDate: investecFeedStartDate
     acumaticaEndpointName: acumaticaEndpointName
     acumaticaEndpointVersion: acumaticaEndpointVersion
     acumaticaCustomerAccounts: acumaticaCustomerAccounts

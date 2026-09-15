@@ -26,4 +26,18 @@ public sealed record InvestecOptions
 
     /// <summary>Safety cap on pages walked per pull to avoid an unbounded loop.</summary>
     public int MaxPages { get; init; } = 200;
+
+    /// <summary>
+    /// How many days back each scheduled refresh reaches. The window overlaps previous runs on
+    /// purpose, so a missed or failed run is collected by the next one. Re-importing a day costs
+    /// nothing, because the write client drops transactions Acumatica already holds.
+    /// </summary>
+    public int RefreshLookbackDays { get; init; } = 7;
+
+    /// <summary>
+    /// The first date this feed owns. A scheduled refresh never reaches earlier, however far the
+    /// lookback would otherwise go. Transactions before this date belong to the manual import,
+    /// which numbers them differently, so pulling them would create duplicates in Acumatica.
+    /// </summary>
+    public DateOnly? FeedStartDate { get; init; }
 }

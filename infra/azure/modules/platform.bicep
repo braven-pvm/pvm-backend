@@ -56,6 +56,36 @@ param acumaticaUsername string = ''
 @secure()
 param acumaticaPassword string = ''
 
+@description('Investec API client id for the scheduled bank feed.')
+@secure()
+param investecClientId string = ''
+
+@description('Investec API client secret for the scheduled bank feed.')
+@secure()
+param investecClientSecret string = ''
+
+@description('Investec x-api-key issued with the client credentials.')
+@secure()
+param investecApiKey string = ''
+
+@description('Investec gateway base URL.')
+param investecBaseUrl string = 'https://openapi.investec.com'
+
+@description('Investec system-assigned account id the feed reads.')
+param investecAccountId string = ''
+
+@description('Acumatica cash account the Investec transactions import into.')
+param investecCashAccount string = ''
+
+@description('Days each scheduled Investec refresh reaches back. Overlap is safe and self-healing.')
+param investecRefreshLookbackDays int = 7
+
+@description('First date the Investec feed owns. It never reads earlier, so the manual import is not duplicated. Empty means no floor.')
+param investecFeedStartDate string = ''
+
+@description('Cron expression for the Investec feed. The default is 03:00 UTC, which is 05:00 in South Africa.')
+param investecFeedCron string = '0 3 * * *'
+
 param acumaticaEndpointName string = 'Default'
 param acumaticaEndpointVersion string = '24.200.001'
 param acumaticaCustomerAccounts array = []
@@ -84,6 +114,7 @@ var workerContainerAppName = 'ca-pvm-worker-${suffix}'
 var purchaseOrderRefreshJobName = 'job-pvm-po-refresh-${suffix}'
 var acumaticaInvoiceReconciliationJobName = 'job-pvm-invoice-reconcile-${suffix}'
 var acumaticaInvoiceLookbackJobName = 'job-pvm-invoice-lookback-${suffix}'
+var investecBankFeedJobName = 'job-pvm-investec-feed-${suffix}'
 var logName = 'log-pvm-integrations-${suffix}'
 var appInsightsName = 'appi-pvm-integrations-${suffix}'
 var containerAppsEnvironmentName = 'cae-pvm-integrations-${suffix}'
@@ -99,6 +130,21 @@ var postgresAdminUser = 'pvmadmin'
 var databaseName = 'pvm'
 var pvmConnectionString = 'Host=${postgres.properties.fullyQualifiedDomainName};Port=5432;Database=${databaseName};Username=${postgresAdminUser};Password=${postgresAdminPassword};Ssl Mode=Require;Trust Server Certificate=true'
 var hasAcumaticaCredentials = !empty(acumaticaUsername) && !empty(acumaticaPassword)
+var hasInvestecCredentials = !empty(investecClientId) && !empty(investecClientSecret) && !empty(investecApiKey)
+var investecCredentialSecrets = hasInvestecCredentials ? [
+  {
+    name: 'investec-clientid'
+    value: investecClientId
+  }
+  {
+    name: 'investec-clientsecret'
+    value: investecClientSecret
+  }
+  {
+    name: 'investec-apikey'
+    value: investecApiKey
+  }
+] : []
 var acumaticaCredentialSecrets = hasAcumaticaCredentials ? [
   {
     name: 'acumatica-username'
@@ -126,7 +172,7 @@ var commonRuntimeSecrets = concat([
     name: 'shoprite-contractid'
     value: shopriteContractId
   }
-], acumaticaCredentialSecrets)
+], acumaticaCredentialSecrets, investecCredentialSecrets)
 var hasAcumaticaWebhookSecret = !empty(acumaticaWebhookSecret)
 var apiSecrets = concat(commonRuntimeSecrets, hasAcumaticaWebhookSecret ? [
   {
@@ -134,6 +180,42 @@ var apiSecrets = concat(commonRuntimeSecrets, hasAcumaticaWebhookSecret ? [
     value: acumaticaWebhookSecret
   }
 ] : [])
+var investecEnvironment = concat(hasInvestecCredentials ? [
+  {
+    name: 'Investec__ClientId'
+    secretRef: 'investec-clientid'
+  }
+  {
+    name: 'Investec__ClientSecret'
+    secretRef: 'investec-clientsecret'
+  }
+  {
+    name: 'Investec__ApiKey'
+    secretRef: 'investec-apikey'
+  }
+] : [], [
+  {
+    name: 'Investec__BaseUrl'
+    value: investecBaseUrl
+  }
+  {
+    name: 'Investec__AccountId'
+    value: investecAccountId
+  }
+  {
+    name: 'Investec__CashAccount'
+    value: investecCashAccount
+  }
+  {
+    name: 'Investec__RefreshLookbackDays'
+    value: string(investecRefreshLookbackDays)
+  }
+], empty(investecFeedStartDate) ? [] : [
+  {
+    name: 'Investec__FeedStartDate'
+    value: investecFeedStartDate
+  }
+])
 var acumaticaCredentialEnvironment = hasAcumaticaCredentials ? [
   {
     name: 'Acumatica__Username'
@@ -307,7 +389,7 @@ var apiEnvironment = concat([
     name: 'AcumaticaReconciliation__StaleAfterMinutes'
     value: string(acumaticaReconciliationStaleAfterMinutes)
   }
-], acumaticaCredentialEnvironment, acumaticaCustomerEnvironment, acumaticaParentCustomerEnvironment)
+], acumaticaCredentialEnvironment, acumaticaCustomerEnvironment, acumaticaParentCustomerEnvironment, investecEnvironment)
 var apiRuntimeEnvironment = concat(apiEnvironment, [
   {
     name: 'AcumaticaPushNotifications__EnvironmentName'
@@ -1021,6 +1103,59 @@ resource acumaticaScheduleJob 'Microsoft.App/jobs@2025-01-01' = [for job in acum
   ]
 }]
 
+// The Investec feed pulls once a day and writes straight into Acumatica. It deploys only when
+// the credentials are supplied, so an environment without them does not get a job that must fail.
+resource investecBankFeedJob 'Microsoft.App/jobs@2025-01-01' = if (hasInvestecCredentials) {
+  name: investecBankFeedJobName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identity.id}': {}
+    }
+  }
+  properties: {
+    environmentId: containerAppsEnvironment.id
+    configuration: {
+      triggerType: 'Schedule'
+      replicaTimeout: 1800
+      replicaRetryLimit: 1
+      scheduleTriggerConfig: {
+        cronExpression: investecFeedCron
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      registries: [
+        {
+          server: acr.properties.loginServer
+          identity: identity.id
+        }
+      ]
+      secrets: commonRuntimeSecrets
+    }
+    template: {
+      containers: [
+        {
+          name: investecBankFeedJobName
+          image: '${acr.properties.loginServer}/pvm-worker:${workerImageTag}'
+          args: [
+            '--refresh-investec-bank-feed'
+          ]
+          env: workerEnvironment
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    identityAcrPullRole
+  ]
+}
+
 resource operationsActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   name: 'ag-pvm-integrations-${suffix}'
   location: 'global'
@@ -1135,3 +1270,4 @@ output workerContainerAppName string = workerContainerApp.name
 output purchaseOrderRefreshJobName string = purchaseOrderRefreshJob.name
 output invoiceReconciliationJobName string = acumaticaInvoiceReconciliationJobName
 output invoiceLookbackJobName string = acumaticaInvoiceLookbackJobName
+output investecBankFeedJobName string = investecBankFeedJobName

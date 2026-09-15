@@ -6,8 +6,10 @@ namespace Pvm.Infrastructure.Investec;
 
 /// <summary>
 /// Orchestrates one bank-feed refresh: pull Investec transactions for the configured account
-/// and window, map them to an Acumatica bank statement, and import it (Acumatica de-duplicates
-/// on Ext. Tran. ID, so overlapping windows are safe). Skips the import when there are no lines.
+/// and window, map them to an Acumatica bank statement, and import it. Overlapping windows are
+/// safe because <see cref="Pvm.Application.Banking.IAcumaticaBankStatementClient"/> drops
+/// transactions Acumatica already holds. Acumatica itself does NOT de-duplicate this import.
+/// Skips the import when there are no lines.
 /// </summary>
 public sealed class InvestecBankFeedRefreshService(
     IInvestecTransactionClient investecClient,
