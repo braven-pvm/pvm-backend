@@ -13,6 +13,7 @@ Use this index to orient quickly.
 - `docs/spec-slices/shoprite-po-pivot-invoice-submission.md`
 - `docs/shoprite-rest-v9.3-discovery.md`
 - `docs/acumatica-2025-r2-integration-research.md`
+- `docs/acumatica-integration-guide.md` - how to integrate any Acumatica instance; start here for a new site
 - `docs/architecture-stack-options.md`
 
 ## Implementation Plans
