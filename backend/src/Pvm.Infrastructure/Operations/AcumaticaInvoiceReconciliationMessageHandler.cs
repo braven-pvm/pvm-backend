@@ -44,6 +44,23 @@ public sealed class AcumaticaInvoiceReconciliationMessageHandler(
             queryFrom,
             cancellationToken);
 
+        if (acumaticaOptions.Value.InvoiceSourceMode == AcumaticaInvoiceSourceMode.Fixture)
+        {
+            // No live source is configured, so there is nothing to reconcile. Record an
+            // empty, successful run rather than a failure every ten minutes.
+            await runService.CompleteAcumaticaInvoiceReconciliationAsync(
+                command.RunId,
+                command.QueryTo,
+                new AcumaticaInvoiceRefreshResult(0, 0, 0, 0),
+                cancellationToken);
+            logger.LogInformation(
+                "integration.run.skipped RunType={RunType} RunId={RunId} Reason={Reason}",
+                IntegrationRunTypes.AcumaticaInvoiceReconciliation,
+                command.RunId,
+                "source-mode-fixture");
+            return;
+        }
+
         try
         {
             var result = await refreshService.RefreshAsync(
@@ -66,9 +83,21 @@ public sealed class AcumaticaInvoiceReconciliationMessageHandler(
         }
         catch (Exception exception)
         {
+            var errorCode = exception is IntegrationCredentialsRejectedException
+                ? "acumatica-credentials-rejected"
+                : "acumatica-reconciliation-failed";
+            if (exception is IntegrationCredentialsRejectedException rejected)
+            {
+                logger.LogError(
+                    IntegrationCredentialsRejectedException.LogEvent + " System={System} StatusCode={StatusCode} RunId={RunId}",
+                    rejected.System,
+                    rejected.StatusCode,
+                    command.RunId);
+            }
+
             await runService.FailAsync(
                 command.RunId,
-                "acumatica-reconciliation-failed",
+                errorCode,
                 exception.Message,
                 CancellationToken.None);
             logger.LogError(

@@ -772,6 +772,14 @@ public sealed class AcumaticaInvoiceClient(
 
     private static void EnsureSuccess(HttpResponseMessage response, string operation)
     {
+        if (operation == "sign-in"
+            && Pvm.Infrastructure.Operations.IntegrationCredentialsRejectedException.IsCredentialStatus((int)response.StatusCode))
+        {
+            throw new Pvm.Infrastructure.Operations.IntegrationCredentialsRejectedException(
+                "Acumatica",
+                (int)response.StatusCode);
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(

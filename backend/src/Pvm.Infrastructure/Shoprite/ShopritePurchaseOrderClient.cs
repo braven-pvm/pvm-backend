@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
 using Pvm.Application.Shoprite;
+using Pvm.Infrastructure.Operations;
 
 namespace Pvm.Infrastructure.Shoprite;
 
@@ -16,6 +17,11 @@ public sealed class ShopritePurchaseOrderClient(
         var endpoint = BuildVendorOrderUri(_options, action: null);
         using var response = await httpClient.GetAsync(endpoint, cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (IntegrationCredentialsRejectedException.IsCredentialStatus((int)response.StatusCode))
+        {
+            throw new IntegrationCredentialsRejectedException("Shoprite", (int)response.StatusCode);
+        }
 
         if (!response.IsSuccessStatusCode)
         {
@@ -102,14 +108,21 @@ public sealed class ShopritePurchaseOrderClient(
         }
 
         var baseWithTrailingSlash = new Uri(options.BaseUrl.TrimEnd('/') + "/");
-        var userName = Uri.EscapeDataString(options.Username);
-        var password = Uri.EscapeDataString(options.Password);
-        var query = $"VendorOrder?userName={userName}&password={password}";
-        if (!string.IsNullOrWhiteSpace(action))
+        var parameters = new List<string>();
+        // The Shoprite gateway rejects a request that carries the credentials in the query
+        // string as well as in the Layer 7 headers. Send them in one place only.
+        if (!options.UseLayer7Headers)
         {
-            query += $"&action={Uri.EscapeDataString(action)}";
+            parameters.Add($"userName={Uri.EscapeDataString(options.Username)}");
+            parameters.Add($"password={Uri.EscapeDataString(options.Password)}");
         }
 
+        if (!string.IsNullOrWhiteSpace(action))
+        {
+            parameters.Add($"action={Uri.EscapeDataString(action)}");
+        }
+
+        var query = parameters.Count == 0 ? "VendorOrder" : "VendorOrder?" + string.Join("&", parameters);
         return new Uri(baseWithTrailingSlash, query);
     }
 }
