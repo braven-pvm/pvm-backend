@@ -209,6 +209,7 @@ public sealed class AcumaticaInvoiceReconciliationRunTests : IAsyncLifetime
             new IntegrationRunService(db, Configuration()),
             Options.Create(new AcumaticaOptions
             {
+                InvoiceSourceMode = AcumaticaInvoiceSourceMode.Real,
                 InvoiceDateFrom = new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero)
             }),
             Options.Create(new AcumaticaReconciliationOptions

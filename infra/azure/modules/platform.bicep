@@ -1213,6 +1213,48 @@ resource stalePurchaseOrderRefreshAlert 'Microsoft.Insights/scheduledQueryRules@
   }
 }
 
+// Rejected credentials never heal by retry, so this alert repeats every hour until a person
+// renews them. autoMitigate is false on purpose: a stateful alert sends one email and then
+// stays silent, which is how four weeks of production failures went unnoticed.
+resource credentialsRejectedAlert 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
+  name: 'alert-pvm-credentials-rejected-${suffix}'
+  location: location
+  tags: tags
+  kind: 'LogAlert'
+  properties: {
+    displayName: 'PVM integration credentials rejected (${toUpper(environmentName)})'
+    description: 'Shoprite or Acumatica refused the integration credentials. Renew them and update Key Vault. This alert repeats every hour until a run succeeds.'
+    enabled: true
+    severity: 1
+    evaluationFrequency: 'PT1H'
+    windowSize: 'PT1H'
+    scopes: [
+      logAnalytics.id
+    ]
+    autoMitigate: false
+    skipQueryValidation: true
+    criteria: {
+      allOf: [
+        {
+          query: 'ContainerAppConsoleLogs_CL | where ContainerAppName_s == \'${workerContainerAppName}\' | where Log_s contains "integration.credentials.rejected" | extend System = extract("System=([A-Za-z]+)", 1, Log_s) | summarize Rejections = count() by System'
+          timeAggregation: 'Count'
+          operator: 'GreaterThan'
+          threshold: 0
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    actions: {
+      actionGroups: [
+        operationsActionGroup.id
+      ]
+    }
+  }
+}
+
 resource staleAcumaticaReconciliationAlert 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
   name: 'alert-pvm-invoice-reconciliation-stale-${suffix}'
   location: location

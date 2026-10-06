@@ -55,6 +55,13 @@ public sealed class ShopriteInvoiceClient(
 
     private Uri BuildVendorInvoiceUri()
     {
+        // The Shoprite gateway rejects credentials in the query string when the Layer 7
+        // headers already carry them.
+        if (_options.UseLayer7Headers)
+        {
+            return new Uri("VendorInvoice", UriKind.Relative);
+        }
+
         var userName = Uri.EscapeDataString(_options.Username!);
         var password = Uri.EscapeDataString(_options.Password!);
         return new Uri($"VendorInvoice?userName={userName}&password={password}", UriKind.Relative);

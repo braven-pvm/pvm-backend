@@ -28,7 +28,7 @@ public sealed class ShopritePurchaseOrderClientTests
     [Fact]
     public async Task FetchAsync_NonSuccessThrowsWithoutLeakingResponseBody()
     {
-        using var handler = new CaptureHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden)
+        using var handler = new CaptureHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)
         {
             Content = new StringContent("credential failure body")
         });
@@ -38,7 +38,7 @@ public sealed class ShopritePurchaseOrderClientTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => client.FetchAsync(CancellationToken.None));
 
-        Assert.Contains("HTTP 403", exception.Message);
+        Assert.Contains("HTTP 500", exception.Message);
         Assert.DoesNotContain("credential failure body", exception.Message);
     }
 

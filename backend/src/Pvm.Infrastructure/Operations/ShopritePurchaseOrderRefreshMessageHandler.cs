@@ -74,9 +74,21 @@ public sealed class ShopritePurchaseOrderRefreshMessageHandler(
         }
         catch (Exception exception)
         {
+            var errorCode = exception is IntegrationCredentialsRejectedException
+                ? "shoprite-credentials-rejected"
+                : "shoprite-po-refresh-failed";
+            if (exception is IntegrationCredentialsRejectedException rejected)
+            {
+                logger.LogError(
+                    IntegrationCredentialsRejectedException.LogEvent + " System={System} StatusCode={StatusCode} RunId={RunId}",
+                    rejected.System,
+                    rejected.StatusCode,
+                    runId);
+            }
+
             await runService.FailAsync(
                 runId,
-                "shoprite-po-refresh-failed",
+                errorCode,
                 exception.Message,
                 CancellationToken.None);
             logger.LogError(
