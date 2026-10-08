@@ -1,17 +1,15 @@
 import Link from "next/link";
-import { refreshPurchaseOrdersAction } from "../actions";
 import { getPurchaseOrderFreshness, getPurchaseOrders } from "../../src/api/client";
-import { hasAnyRole, requireWorkbenchUser } from "../../src/auth/session";
+import { requireWorkbenchUser } from "../../src/auth/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function PurchaseOrdersPage() {
-  const user = await requireWorkbenchUser("/purchase-orders");
+  await requireWorkbenchUser("/purchase-orders");
   const [purchaseOrders, freshness] = await Promise.all([
     getPurchaseOrders(),
     getPurchaseOrderFreshness(),
   ]);
-  const canWrite = hasAnyRole(user, ["Admin", "Operator"]);
   const normalCount = purchaseOrders.filter((order) => order.orderTypeCode === "220").length;
   const allocationCount = purchaseOrders.filter((order) => order.orderTypeCode === "258").length;
 
@@ -21,22 +19,19 @@ export default async function PurchaseOrdersPage() {
         <div>
           <h1>Shoprite PO Inbox</h1>
           <p>
-            Refresh and inspect Shoprite QA purchase orders used as the delivery
-            location and item context for invoice submission.
+            Shoprite orders received before order reading was switched off. Invoices no longer
+            need them: the store GLN and item GTINs come from Shoprite reference data.
           </p>
         </div>
-        {canWrite ? (
-          <form action={refreshPurchaseOrdersAction}>
-            <button className="button" type="submit">
-              Refresh POs
-            </button>
-          </form>
-        ) : (
-          <button className="button" type="button" disabled>
-            Read-only
-          </button>
-        )}
       </section>
+
+      <div className="alert-banner" role="status">
+        <strong>Reading Shoprite orders is switched off</strong>
+        <span>
+          Shoprite marks an order as downloaded the moment anything reads it, which removes it
+          from the people who work orders on the Shoprite portal. This list no longer refreshes.
+        </span>
+      </div>
 
       <section className="metric-strip" aria-label="Purchase order summary">
         <div>
@@ -48,20 +43,18 @@ export default async function PurchaseOrdersPage() {
           <strong>{normalCount}</strong>
         </div>
         <div>
-          <span>PO data freshness</span>
-          <strong className="metric-text">{freshness.status}</strong>
-          <small>
+          <span>Last received</span>
+          <strong className="metric-text">
             {freshness.lastSuccessfulRefreshAt
-              ? new Date(freshness.lastSuccessfulRefreshAt).toLocaleString()
-              : "No successful refresh"}
-          </small>
+              ? new Date(freshness.lastSuccessfulRefreshAt).toLocaleDateString()
+              : "Never"}
+          </strong>
         </div>
       </section>
 
       <section className="compact-stats" aria-label="Purchase order type counts">
         <span>Normal: <strong>{normalCount}</strong></span>
         <span>Allocation: <strong>{allocationCount}</strong></span>
-        <span>Stale threshold: <strong>{freshness.staleAfterMinutes} min</strong></span>
       </section>
 
       <section className="table-panel" aria-label="Shoprite purchase orders">
@@ -73,8 +66,7 @@ export default async function PurchaseOrdersPage() {
           <div className="empty-state">
             <strong>No Shoprite purchase orders loaded</strong>
             <p>
-              Refresh pulls the current QA VendorOrder batch into the local
-              inbox for invoice matching.
+              Invoices are completed from Shoprite reference data, so this list can stay empty.
             </p>
           </div>
         ) : (

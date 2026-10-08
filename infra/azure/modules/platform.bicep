@@ -43,6 +43,9 @@ param shopriteContractId string = ''
 @description('Acknowledges downloaded Shoprite orders. Shoprite stops sending new orders without it.')
 param shopriteAcknowledgeOrders bool = false
 
+@description('Reads Shoprite orders on a schedule. Off: Shoprite marks an order as downloaded when it is read, which takes it away from the people who work orders on the portal.')
+param shopritePoRefreshEnabled bool = false
+
 @description('Sends the Layer 7 headers. Required by the Shoprite gateway host, rejected by the supplier-services host.')
 param shopriteUseLayer7Headers bool = false
 param acumaticaInvoiceSourceMode string = 'Fixture'
@@ -256,6 +259,10 @@ var apiEnvironment = concat([
   {
     name: 'Pvm__EnvironmentName'
     value: toUpper(environmentName)
+  }
+  {
+    name: 'ShopritePoRefresh__Enabled'
+    value: string(shopritePoRefreshEnabled)
   }
   {
     name: 'ShopritePoRefresh__ScheduleIntervalMinutes'
@@ -945,7 +952,7 @@ resource workerContainerApp 'Microsoft.App/containerApps@2025-01-01' = {
   ]
 }
 
-resource purchaseOrderRefreshJob 'Microsoft.App/jobs@2025-01-01' = {
+resource purchaseOrderRefreshJob 'Microsoft.App/jobs@2025-01-01' = if (shopritePoRefreshEnabled) {
   name: purchaseOrderRefreshJobName
   location: location
   tags: tags
@@ -1173,7 +1180,7 @@ resource operationsActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   }
 }
 
-resource stalePurchaseOrderRefreshAlert 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
+resource stalePurchaseOrderRefreshAlert 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = if (shopritePoRefreshEnabled) {
   name: 'alert-pvm-po-refresh-stale-${suffix}'
   location: location
   tags: tags
@@ -1309,7 +1316,7 @@ output userAssignedIdentityClientId string = identity.properties.clientId
 output apiUrl string = 'https://${apiContainerApp.properties.configuration.ingress.fqdn}'
 output workbenchUrl string = 'https://${workbenchContainerApp.properties.configuration.ingress.fqdn}'
 output workerContainerAppName string = workerContainerApp.name
-output purchaseOrderRefreshJobName string = purchaseOrderRefreshJob.name
+output purchaseOrderRefreshJobName string = shopritePoRefreshEnabled ? purchaseOrderRefreshJobName : ''
 output invoiceReconciliationJobName string = acumaticaInvoiceReconciliationJobName
 output invoiceLookbackJobName string = acumaticaInvoiceLookbackJobName
 output investecBankFeedJobName string = investecBankFeedJobName

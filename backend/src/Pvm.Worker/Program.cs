@@ -33,7 +33,13 @@ if (enqueueShopriteRefresh || enqueueAcumaticaReconciliation || enqueueAcumatica
     await using var scope = schedulerHost.Services.CreateAsyncScope();
     var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
 
-    if (enqueueShopriteRefresh)
+    if (enqueueShopriteRefresh
+        && !builder.Configuration.GetValue<bool>($"{ShopritePurchaseOrderRefreshOptions.SectionName}:Enabled"))
+    {
+        loggerFactory.CreateLogger("Pvm.Worker.Scheduler").LogWarning(
+            "shoprite.po.refresh.refused Reason=switched-off Detail=Reading Shoprite orders is switched off");
+    }
+    else if (enqueueShopriteRefresh)
     {
         var runQueue = scope.ServiceProvider.GetRequiredService<ShopritePurchaseOrderRefreshRunQueue>();
         var intervalMinutes = Math.Max(

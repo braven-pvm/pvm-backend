@@ -91,6 +91,9 @@ param shopriteContractId string = ''
 @description('Acknowledges downloaded Shoprite orders after they are stored.')
 param shopriteAcknowledgeOrders bool = false
 
+@description('Reads Shoprite orders on a schedule. Leave off: reading an order takes it away from the people who work orders on the Shoprite portal.')
+param shopritePoRefreshEnabled bool = false
+
 @description('Sends the Layer 7 headers to Shoprite.')
 param shopriteUseLayer7Headers bool = false
 
@@ -245,6 +248,7 @@ module platform 'modules/platform.bicep' = {
     shopritePassword: shopritePassword
     shopriteContractId: shopriteContractId
     shopriteAcknowledgeOrders: shopriteAcknowledgeOrders
+    shopritePoRefreshEnabled: shopritePoRefreshEnabled
     shopriteUseLayer7Headers: shopriteUseLayer7Headers
     shopriteInvoiceSubmissionMode: shopriteInvoiceSubmissionMode
     acumaticaInvoiceSourceMode: acumaticaInvoiceSourceMode

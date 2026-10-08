@@ -24,6 +24,10 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<ShopriteUomMappingEntity> ShopriteUomMappings => Set<ShopriteUomMappingEntity>();
 
+    public DbSet<ShopriteDeliveryLocationEntity> ShopriteDeliveryLocations => Set<ShopriteDeliveryLocationEntity>();
+
+    public DbSet<ShopriteTradeItemEntity> ShopriteTradeItems => Set<ShopriteTradeItemEntity>();
+
     public DbSet<AuditEventEntity> AuditEvents => Set<AuditEventEntity>();
 
     public DbSet<AppUserEntity> AppUsers => Set<AppUserEntity>();
@@ -264,6 +268,43 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(mapping => mapping.ShopriteBuyerItemId).HasMaxLength(128);
             entity.Property(mapping => mapping.Gtin).HasMaxLength(32);
             entity.Property(mapping => mapping.UpdatedBy).HasMaxLength(320);
+        });
+
+        modelBuilder.Entity<ShopriteDeliveryLocationEntity>(entity =>
+        {
+            entity.ToTable("shoprite_delivery_locations");
+            entity.HasKey(location => location.Id);
+            entity.HasIndex(location => location.BranchCode).IsUnique();
+            entity.Property(location => location.BranchCode).HasMaxLength(32);
+            entity.Property(location => location.Gln).HasMaxLength(32);
+            entity.Property(location => location.Name).HasMaxLength(256);
+            entity.Property(location => location.LocationType)
+                .HasConversion<string>()
+                .HasMaxLength(32);
+            entity.Property(location => location.UpdatedBy).HasMaxLength(320);
+        });
+
+        modelBuilder.Entity<ShopriteTradeItemEntity>(entity =>
+        {
+            entity.ToTable("shoprite_trade_items");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new
+            {
+                item.AcumaticaInventoryId,
+                item.AcumaticaUom,
+                item.DeliversTo
+            }).IsUnique();
+            entity.Property(item => item.AcumaticaInventoryId).HasMaxLength(128);
+            entity.Property(item => item.AcumaticaUom).HasMaxLength(32);
+            entity.Property(item => item.DeliversTo)
+                .HasConversion<string>()
+                .HasMaxLength(32);
+            entity.Property(item => item.Gtin).HasMaxLength(32);
+            entity.Property(item => item.ShopritePackSize).HasPrecision(18, 4);
+            entity.Property(item => item.ShopriteUom)
+                .HasConversion<string>()
+                .HasMaxLength(16);
+            entity.Property(item => item.UpdatedBy).HasMaxLength(320);
         });
 
         modelBuilder.Entity<ShopriteUomMappingEntity>(entity =>

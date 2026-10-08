@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using System.Text.Json;
 using Pvm.Api.Features.Invoices.Models;
 using Microsoft.EntityFrameworkCore;
@@ -75,8 +76,18 @@ public static class PurchaseOrderEndpoints
     private static async Task<IResult> RefreshPurchaseOrdersAsync(
         ShopritePurchaseOrderRefreshRunQueue runQueue,
         CurrentAppUserAccessor currentUser,
+        IOptions<ShopritePurchaseOrderRefreshOptions> refreshOptions,
         CancellationToken cancellationToken)
     {
+        if (!refreshOptions.Value.Enabled)
+        {
+            return Results.Problem(
+                title: "Reading Shoprite orders is switched off",
+                detail: "Shoprite marks an order as downloaded when it is read, which removes it from the "
+                    + "people who work orders on the Shoprite portal. Invoices no longer need the order.",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
         var queued = await runQueue.EnqueueAsync(
             IntegrationRunTriggers.Manual,
             currentUser.User?.Email ?? "unknown",
