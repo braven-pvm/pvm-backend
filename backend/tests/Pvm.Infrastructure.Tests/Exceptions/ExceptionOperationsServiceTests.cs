@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Pvm.Application.Exceptions;
 using Pvm.Application.Messaging;
+using Pvm.Application.Shoprite;
 using Pvm.Domain.Invoices;
 using Pvm.Domain.Validation;
 using Pvm.Infrastructure.Exceptions;
@@ -267,7 +268,7 @@ public sealed class ExceptionOperationsServiceTests : IAsyncLifetime
         await using var db = CreateDbContext();
         await db.Database.EnsureCreatedAsync();
         var service = Service(db);
-        var candidate = await SeedCandidateAsync(db, status: "Rejected", withPurchaseOrder: false);
+        var candidate = await SeedCandidateAsync(db, status: "Rejected", withReferenceData: false);
         var operation = await SeedOperationAsync(db, candidate.Id, "Rejected");
 
         var result = await service.RetryRejectedAsync(
@@ -456,29 +457,44 @@ public sealed class ExceptionOperationsServiceTests : IAsyncLifetime
     private static async Task<InvoiceCandidateEntity> SeedCandidateAsync(
         PvmDbContext db,
         string status,
-        bool withPurchaseOrder = true,
+        bool withReferenceData = true,
         string suffix = "1")
     {
         var now = DateTimeOffset.UtcNow;
         var purchaseOrderNumber = $"121538291{suffix}";
-        Guid? purchaseOrderId = null;
-        if (withPurchaseOrder)
+        // An invoice is completed from Shoprite reference data. Without it, revalidation fails.
+        if (withReferenceData)
         {
-            var purchaseOrder = new ShopritePurchaseOrderEntity
+            if (!await db.ShopriteDeliveryLocations.AnyAsync(location => location.BranchCode == "1810"))
             {
-                Id = Guid.NewGuid(),
-                PurchaseOrderNumber = purchaseOrderNumber,
-                OrderTypeCode = "220",
-                SupplierGln = "6001197000006",
-                DeliveryGln = "6001001305600",
-                DeliveryLocationCode = "30562",
-                DeliveryLocationName = "CHECKERS LORRAINE",
-                DeliveryLocationSource = "buyer",
-                FirstSeenAt = now,
-                LastSeenAt = now
-            };
-            db.ShopritePurchaseOrders.Add(purchaseOrder);
-            purchaseOrderId = purchaseOrder.Id;
+                db.ShopriteDeliveryLocations.Add(new ShopriteDeliveryLocationEntity
+                {
+                    Id = Guid.NewGuid(),
+                    BranchCode = "1810",
+                    Gln = "6001001305600",
+                    Name = "CHECKERS 6TH AVENUE",
+                    LocationType = ShopriteLocationType.Store,
+                    IsVerified = true,
+                    UpdatedBy = "test",
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+                db.ShopriteTradeItems.Add(new ShopriteTradeItemEntity
+                {
+                    Id = Guid.NewGuid(),
+                    AcumaticaInventoryId = "ENER10",
+                    AcumaticaUom = "BOX",
+                    DeliversTo = ShopriteLocationType.Store,
+                    Gtin = "06001197181125",
+                    AcumaticaUnitsPerShopriteUnit = 1,
+                    ShopritePackSize = 20m,
+                    ShopriteUom = ShopriteMeasurementUnit.EA,
+                    IsVerified = true,
+                    UpdatedBy = "test",
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+            }
         }
 
         var invoice = new CanonicalInvoice(
@@ -519,7 +535,6 @@ public sealed class ExceptionOperationsServiceTests : IAsyncLifetime
             CustomerAccount = invoice.CustomerAccount,
             CustomerLocation = invoice.CustomerLocation,
             ShopritePurchaseOrderNumber = invoice.ShopritePurchaseOrderNumber,
-            MatchedShopritePurchaseOrderId = purchaseOrderId,
             SupplierGln = invoice.SupplierGln,
             StoreDcGln = invoice.StoreDcGln,
             IdempotencyKey = $"exception-test-{suffix}-{Guid.NewGuid():N}",

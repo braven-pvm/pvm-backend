@@ -1,12 +1,31 @@
 # Shoprite Layer 7 Headers and Order Acknowledgement QA Runbook
 
-> **Acknowledgement is switched off, in QA and in production.**
-> PVM accepts each Shoprite order on the Shoprite portal, and that acceptance
-> changes the order status at Shoprite. A second acknowledgement from the API is
-> redundant, and it could interfere with the people who work the portal. The
-> code stays behind `Shoprite:AcknowledgeOrders` in case Shoprite ever stops
-> providing new orders without an API acknowledgement. Confirmed with PVM
-> operations on 2026-09-01.
+> **The integration no longer reads Shoprite orders at all. Do not switch
+> acknowledgement or order reading on.**
+>
+> On 2026-10-08 this runbook's earlier assumption was proven wrong. It said a
+> portal acceptance changes the order status at Shoprite, so an API
+> acknowledgement was redundant. The evidence:
+>
+> - Shoprite has two queues. Portal processing by PVM's Manual users does not
+>   clear the Auto Download (API) queue. Sales orders existed for orders that
+>   the API still offered as new days later.
+> - Reading an order through the API does change what Manual users see. Shoprite
+>   auto-acknowledges an order about 118 minutes after the API fetches it without
+>   acknowledging, and PVM staff found their orders already acknowledged.
+> - Shoprite (Randi Walters, 2026-10-08) confirmed that any download or view moves
+>   an order from Current to Auto Downloaded/Viewed, and that no read avoids it.
+>
+> Shoprite's designed EDI process is the reverse of PVM's: the system downloads
+> orders and Manual users read them under Old. PVM's people work orders in
+> Current, so the integration stays out of the order channel.
+>
+> Invoices are now completed from Shoprite reference data instead of the order:
+> `shoprite_delivery_locations` (Acumatica customer = Shoprite branch → GLN) and
+> `shoprite_trade_items` (Acumatica item and unit → Shoprite GTIN, per store or
+> distribution centre). Order reading sits behind `ShopritePoRefresh:Enabled`,
+> off by default, and the scheduled job and its staleness alert exist only when
+> `shopritePoRefreshEnabled` is true.
 
 Purpose: verify the two production requirements that Shoprite confirmed on
 2026-08-24.

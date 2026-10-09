@@ -3,132 +3,80 @@ using Pvm.Application.Shoprite;
 using Pvm.Domain.Invoices;
 using Pvm.Domain.Validation;
 using Pvm.Infrastructure.Persistence;
-using Pvm.Infrastructure.Persistence.Entities;
 
 namespace Pvm.Infrastructure.Shoprite;
 
+/// <summary>
+/// Completes an Acumatica invoice for Shoprite from reference data, then validates it.
+///
+/// The invoice no longer reads the Shoprite order. Shoprite marks an order as downloaded the
+/// moment anything reads it, and PVM's people work orders on the Shoprite portal, so reading
+/// orders took them out of their hands. The store or distribution centre now comes from the
+/// Acumatica customer, and each line's GTIN from the item, through
+/// <see cref="ShopriteInvoiceReferenceEnricher"/>.
+/// </summary>
 public sealed class ShopriteInvoiceCandidateMatcher(PvmDbContext dbContext)
 {
+    // Candidate states in which an invoice was sent to Shoprite, or may have been.
+    private static readonly string[] SentStatuses = ["Submitted", "InProgress", "Ambiguous"];
+
     public async Task<ShopriteInvoiceMatchResult> MatchAndValidateAsync(
         CanonicalInvoice invoice,
         CancellationToken cancellationToken)
     {
-        var issues = new List<ValidationIssue>();
-        Guid? matchedPurchaseOrderId = null;
+        var branchCode = Normalize(invoice.CustomerAccount);
+        var location = await dbContext.ShopriteDeliveryLocations
+            .AsNoTracking()
+            .Where(entity => entity.BranchCode == branchCode)
+            .Select(entity => new ShopriteDeliveryLocation(
+                entity.BranchCode,
+                entity.Gln,
+                entity.Name,
+                entity.LocationType,
+                entity.IsVerified))
+            .SingleOrDefaultAsync(cancellationToken);
 
-        if (!string.IsNullOrWhiteSpace(invoice.ShopritePurchaseOrderNumber))
-        {
-            var matches = await dbContext.ShopritePurchaseOrders
-                .AsNoTracking()
-                .Include(order => order.Lines)
-                .Where(order => order.PurchaseOrderNumber == invoice.ShopritePurchaseOrderNumber)
-                .ToListAsync(cancellationToken);
-
-            if (matches.Count == 0)
-            {
-                issues.Add(new ValidationIssue(
-                    "missing-local-shoprite-po",
-                    $"Shoprite PO {invoice.ShopritePurchaseOrderNumber} has not been loaded into the local PO inbox.",
-                    ValidationSeverity.Blocking,
-                    "Shoprite PO inbox"));
-            }
-            else if (matches.Count > 1)
-            {
-                issues.Add(new ValidationIssue(
-                    "ambiguous-local-shoprite-po",
-                    $"Shoprite PO {invoice.ShopritePurchaseOrderNumber} matched multiple local PO records.",
-                    ValidationSeverity.Blocking,
-                    "integration-config"));
-            }
-            else
-            {
-                var purchaseOrder = matches[0];
-                matchedPurchaseOrderId = purchaseOrder.Id;
-                invoice = invoice with
-                {
-                    SupplierGln = string.IsNullOrWhiteSpace(purchaseOrder.SupplierGln)
-                        ? invoice.SupplierGln
-                        : purchaseOrder.SupplierGln,
-                    SellerVatRegistrationNumber = ShopriteSupplierProfile.EffectiveSellerVatRegistrationNumber(
-                        invoice.SellerVatRegistrationNumber),
-                    StoreDcGln = string.IsNullOrWhiteSpace(purchaseOrder.DeliveryGln)
-                        ? invoice.StoreDcGln
-                        : purchaseOrder.DeliveryGln,
-                    Lines = await EnrichLinesAsync(invoice.Lines, purchaseOrder.Lines, cancellationToken)
-                };
-            }
-        }
-
-        var baseValidation = ShopriteInvoiceValidator.Validate(invoice, ShopriteValidationEnvironment.Qa);
-        var validation = issues.Count == 0
-            ? baseValidation
-            : new ValidationResult(baseValidation.Issues.Concat(issues).ToArray());
-
-        return new ShopriteInvoiceMatchResult(invoice, matchedPurchaseOrderId, validation);
-    }
-
-    private async Task<IReadOnlyList<CanonicalInvoiceLine>> EnrichLinesAsync(
-        IReadOnlyList<CanonicalInvoiceLine> invoiceLines,
-        IReadOnlyCollection<ShopritePurchaseOrderLineEntity> purchaseOrderLines,
-        CancellationToken cancellationToken)
-    {
-        var inventoryIds = invoiceLines
+        var inventoryIds = invoice.Lines
             .Select(line => Normalize(line.AcumaticaInventoryId))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-
-        var itemMappings = await dbContext.ShopriteItemMappings
+        var tradeItems = await dbContext.ShopriteTradeItems
             .AsNoTracking()
-            .Where(mapping => inventoryIds.Contains(mapping.AcumaticaInventoryId))
-            .ToListAsync(cancellationToken);
-        var uomMappings = await dbContext.ShopriteUomMappings
-            .AsNoTracking()
-            .Where(mapping => inventoryIds.Contains(mapping.AcumaticaInventoryId))
+            .Where(entity => inventoryIds.Contains(entity.AcumaticaInventoryId))
+            .Select(entity => new ShopriteTradeItem(
+                entity.AcumaticaInventoryId,
+                entity.AcumaticaUom,
+                entity.DeliversTo,
+                entity.Gtin,
+                entity.AcumaticaUnitsPerShopriteUnit,
+                entity.ShopritePackSize,
+                entity.ShopriteUom,
+                entity.IsVerified))
             .ToListAsync(cancellationToken);
 
-        return invoiceLines.Select(line =>
-        {
-            var inventoryId = Normalize(line.AcumaticaInventoryId);
-            var mappedOrderLines = itemMappings
-                .Where(mapping => mapping.AcumaticaInventoryId == inventoryId && mapping.IsVerified)
-                .SelectMany(mapping => purchaseOrderLines.Where(orderLine =>
-                    string.Equals(
-                        orderLine.BuyerItemId,
-                        mapping.ShopriteBuyerItemId,
-                        StringComparison.OrdinalIgnoreCase)))
-                .DistinctBy(orderLine => orderLine.Id)
-                .ToArray();
-            var mappedOrderLine = mappedOrderLines.Length == 1
-                ? mappedOrderLines[0]
-                : null;
-            var supplierItemMatches = purchaseOrderLines
-                .Where(orderLine => string.Equals(
-                    orderLine.SupplierItemId,
-                    line.AcumaticaInventoryId,
-                    StringComparison.OrdinalIgnoreCase))
-                .ToArray();
-            var supplierItemMatch = supplierItemMatches.Length == 1
-                ? supplierItemMatches[0]
-                : null;
-            var uom = Normalize(line.AcumaticaUom);
-            var mappedUom = uomMappings.SingleOrDefault(mapping =>
-                mapping.AcumaticaInventoryId == inventoryId
-                && mapping.AcumaticaUom == uom);
+        var alreadySubmitted = string.IsNullOrWhiteSpace(invoice.ShopritePurchaseOrderNumber)
+            ? []
+            : await dbContext.InvoiceCandidates
+                .AsNoTracking()
+                .Where(candidate =>
+                    candidate.ShopritePurchaseOrderNumber == invoice.ShopritePurchaseOrderNumber
+                    && candidate.AcumaticaInvoiceId != invoice.AcumaticaInvoiceId
+                    && SentStatuses.Contains(candidate.Status))
+                .OrderBy(candidate => candidate.InvoiceNumber)
+                .Select(candidate => candidate.InvoiceNumber)
+                .ToArrayAsync(cancellationToken);
 
-            return line with
-            {
-                Gtin = mappedOrderLine?.Gtin
-                    ?? supplierItemMatch?.Gtin
-                    ?? line.Gtin,
-                ShopriteUom = mappedUom?.ShopriteUom ?? line.ShopriteUom,
-                IsShopriteUomVerified = mappedUom?.IsVerified
-                    ?? line.IsShopriteUomVerified
-            };
-        }).ToArray();
+        var enrichment = ShopriteInvoiceReferenceEnricher.Enrich(invoice, location, tradeItems, alreadySubmitted);
+        var baseValidation = ShopriteInvoiceValidator.Validate(enrichment.Invoice, ShopriteValidationEnvironment.Qa);
+        var validation = enrichment.Issues.Count == 0
+            ? baseValidation
+            : new ValidationResult(baseValidation.Issues.Concat(enrichment.Issues).ToArray());
+
+        return new ShopriteInvoiceMatchResult(enrichment.Invoice, MatchedPurchaseOrderId: null, validation);
     }
 
     public static string Normalize(string value)
-        => value.Trim().ToUpperInvariant();
+        => ShopriteInvoiceReferenceEnricher.Normalize(value);
 }
 
 public sealed record ShopriteInvoiceMatchResult(

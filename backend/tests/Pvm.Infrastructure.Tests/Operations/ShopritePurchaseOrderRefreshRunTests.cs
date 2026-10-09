@@ -82,6 +82,40 @@ public sealed class ShopritePurchaseOrderRefreshRunTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SwitchedOff_NeverReadsShopriteAndRecordsWhy()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        var runId = Guid.NewGuid();
+        var command = new RefreshShopritePurchaseOrdersMessage(
+            "system:scheduler",
+            runId,
+            IntegrationRunTriggers.Scheduled);
+        // FailingPurchaseOrderClient throws if it is called, so the handler must not call it.
+        var handler = new ShopritePurchaseOrderRefreshMessageHandler(
+            new FailingPurchaseOrderClient(),
+            null!,
+            null!,
+            null!,
+            new IntegrationRunService(db, Configuration()),
+            Options.Create(new ShopritePurchaseOrderRefreshOptions()),
+            NullLogger<ShopritePurchaseOrderRefreshMessageHandler>.Instance);
+        var envelope = new IntegrationMessageEnvelope(
+            Guid.NewGuid(),
+            IntegrationMessageTypes.ShopritePurchaseOrderRefreshV1,
+            runId.ToString("D"),
+            null,
+            DateTimeOffset.UtcNow,
+            JsonSerializer.SerializeToElement(command));
+
+        await handler.HandleAsync(envelope, command, CancellationToken.None);
+
+        var run = await db.IntegrationRuns.SingleAsync(item => item.Id == runId);
+        Assert.Equal(IntegrationRunStatuses.Failed, run.Status);
+        Assert.Equal("shoprite-po-refresh-switched-off", run.ErrorCode);
+    }
+
+    [Fact]
     public async Task FailedFetch_RecordsFailedRunAndPreservesExistingPurchaseOrders()
     {
         await using var db = CreateDbContext();
@@ -108,6 +142,7 @@ public sealed class ShopritePurchaseOrderRefreshRunTests : IAsyncLifetime
             null!,
             null!,
             new IntegrationRunService(db, Configuration()),
+            Options.Create(new ShopritePurchaseOrderRefreshOptions { Enabled = true }),
             NullLogger<ShopritePurchaseOrderRefreshMessageHandler>.Instance);
         var envelope = new IntegrationMessageEnvelope(
             messageId,

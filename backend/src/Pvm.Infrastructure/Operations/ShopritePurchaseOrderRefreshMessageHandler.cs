@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Pvm.Application.Messaging;
 using Pvm.Application.Shoprite;
 using Pvm.Infrastructure.Shoprite;
@@ -11,6 +12,7 @@ public sealed class ShopritePurchaseOrderRefreshMessageHandler(
     ShopriteOrderAcknowledgementService acknowledgementService,
     ShopriteInvoiceCandidateRevalidationService revalidationService,
     IntegrationRunService runService,
+    IOptions<ShopritePurchaseOrderRefreshOptions> options,
     ILogger<ShopritePurchaseOrderRefreshMessageHandler> logger)
 {
     public async Task HandleAsync(
@@ -25,6 +27,22 @@ public sealed class ShopritePurchaseOrderRefreshMessageHandler(
             envelope.CorrelationId,
             command,
             cancellationToken);
+
+        // The single place that reads Shoprite orders refuses unless reading is switched on, so
+        // neither a schedule, a queued message, nor a person can take orders off the portal.
+        if (!options.Value.Enabled)
+        {
+            await runService.FailAsync(
+                runId,
+                "shoprite-po-refresh-switched-off",
+                "Reading Shoprite orders is switched off. Shoprite marks an order as downloaded when it is read, "
+                + "which removes it from the people who work orders on the Shoprite portal.",
+                CancellationToken.None);
+            logger.LogWarning(
+                "shoprite.po.refresh.refused RunId={RunId} Reason=switched-off",
+                runId);
+            return;
+        }
 
         try
         {

@@ -23,7 +23,7 @@ public sealed class DatabaseMigrationRunnerTests : IAsyncLifetime
         await DatabaseMigrationRunner.MigrateAsync(db);
 
         var applied = await db.Database.GetAppliedMigrationsAsync();
-        Assert.Equal(10, applied.Count());
+        Assert.Equal(11, applied.Count());
         Assert.Contains(DatabaseMigrationRunner.LegacyBaselineMigration, applied);
         Assert.True(await TableExistsAsync(db, "submission_operations"));
         Assert.True(await TableExistsAsync(db, "payload_archives"));
@@ -83,7 +83,7 @@ public sealed class DatabaseMigrationRunnerTests : IAsyncLifetime
         Assert.True(await ColumnExistsAsync(db, "shoprite_purchase_orders", "AcknowledgedAt"));
         Assert.True(await ColumnExistsAsync(db, "invoice_candidates", "SourceLastModifiedAt"));
         Assert.True(await ColumnExistsAsync(db, "integration_runs", "CursorAfter"));
-        Assert.Equal(10, (await db.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(11, (await db.Database.GetAppliedMigrationsAsync()).Count());
         var policy = await db.AutomationPolicyVersions.SingleAsync();
         Assert.Equal(1, policy.Version);
         Assert.Equal("Disabled", policy.Mode);
