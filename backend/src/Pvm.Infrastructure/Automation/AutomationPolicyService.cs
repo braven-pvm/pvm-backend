@@ -71,6 +71,10 @@ public sealed class AutomationPolicyService(
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private const string Automatic = "automatic";
 
+    // Outcomes that only time changes: the stabilization delay passes, the window opens, the
+    // daily cap resets. Nothing else re-evaluates such a candidate, so a sweep must.
+    private static readonly string[] DeferredOutcomes = ["Stabilizing", "OutsideWindow", "Capped"];
+
     public async Task<AutomationPolicy> GetCurrentAsync(CancellationToken cancellationToken)
     {
         var current = await dbContext.AutomationPolicyVersions
@@ -324,6 +328,31 @@ public sealed class AutomationPolicyService(
         return evaluation.ReasonCodes.Count == 0
             ? new AutomationSubmissionPermission(true, policy.Version, "eligible", "Candidate satisfies the active automation policy.")
             : Denied(policy, evaluation.ReasonCodes[0], evaluation.Summary);
+    }
+
+    /// <summary>
+    /// Re-evaluates candidates whose latest decision under the active policy is a deferred
+    /// outcome. A candidate is otherwise evaluated only when Acumatica changes it or the policy
+    /// changes, so without this sweep a candidate held by the stabilization delay stays held.
+    /// </summary>
+    public async Task<AutomationEvaluationBatch> EvaluateDeferredAsync(
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var policy = await GetCurrentAsync(cancellationToken);
+        var ids = await dbContext.AutomationDecisions.AsNoTracking()
+            .Where(decision => decision.PolicyVersion == policy.Version
+                && DeferredOutcomes.Contains(decision.Outcome)
+                && !dbContext.AutomationDecisions.Any(later =>
+                    later.InvoiceCandidateId == decision.InvoiceCandidateId
+                    && later.PolicyVersion == decision.PolicyVersion
+                    && later.EvaluatedAt > decision.EvaluatedAt))
+            .Select(decision => decision.InvoiceCandidateId)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+        return ids.Length == 0
+            ? new AutomationEvaluationBatch(0, 0, 0, 0)
+            : await EvaluateCandidatesAsync(ids, now, cancellationToken);
     }
 
     public async Task<AutomationEvaluationBatch> EvaluateCandidatesAsync(

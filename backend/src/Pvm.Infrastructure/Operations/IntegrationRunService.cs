@@ -93,7 +93,7 @@ public sealed class IntegrationRunService(
 
     public async Task CompleteAcumaticaInvoiceReconciliationAsync(
         Guid runId,
-        DateTimeOffset cursorAfter,
+        DateTimeOffset? cursorAfter,
         AcumaticaInvoiceRefreshResult result,
         CancellationToken cancellationToken)
     {
