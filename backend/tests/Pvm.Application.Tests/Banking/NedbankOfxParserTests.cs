@@ -96,7 +96,7 @@ public class NedbankOfxParserTests
     [Fact]
     public void Parse_drops_zero_amount_provisional_line()
     {
-        var statement = _parser.Parse(Sample, "NEDBANK-OPS");
+        var statement = _parser.Parse(Sample);
 
         // 7 STMTTRN in the fixture, one is the zero-amount PROVISIONAL STATEMENT marker.
         Assert.Equal(6, statement.Lines.Count);
@@ -107,7 +107,7 @@ public class NedbankOfxParserTests
     [Fact]
     public void Parse_splits_debit_and_credit()
     {
-        var statement = _parser.Parse(Sample, "NEDBANK-OPS");
+        var statement = _parser.Parse(Sample);
 
         var debit = Assert.Single(statement.Lines, line => line.ExtRefNbr == "00000675900");
         Assert.Equal(67252.45m, debit.Disbursement);
@@ -123,7 +123,7 @@ public class NedbankOfxParserTests
     [Fact]
     public void Parse_gives_identical_same_day_lines_distinct_ids()
     {
-        var statement = _parser.Parse(Sample, "NEDBANK-OPS");
+        var statement = _parser.Parse(Sample);
 
         var duplicates = statement.Lines
             .Where(line => line.Description == "Trans African 5412815006006813")
@@ -136,8 +136,8 @@ public class NedbankOfxParserTests
     [Fact]
     public void Parse_is_deterministic_across_runs()
     {
-        var first = _parser.Parse(Sample, "NEDBANK-OPS");
-        var second = _parser.Parse(Sample, "NEDBANK-OPS");
+        var first = _parser.Parse(Sample);
+        var second = _parser.Parse(Sample);
 
         Assert.Equal(
             first.Lines.Select(line => line.ExtTranId),
@@ -147,7 +147,7 @@ public class NedbankOfxParserTests
     [Fact]
     public void Parse_keeps_original_fitid_as_reference()
     {
-        var statement = _parser.Parse(Sample, "NEDBANK-OPS");
+        var statement = _parser.Parse(Sample);
 
         Assert.All(statement.Lines, line => Assert.StartsWith("NED-", line.ExtTranId));
         Assert.Contains(statement.Lines, line => line.ExtRefNbr == "00000675914");
@@ -156,9 +156,12 @@ public class NedbankOfxParserTests
     [Fact]
     public void Parse_sets_account_dates_and_consistent_balances()
     {
-        var statement = _parser.Parse(Sample, "NEDBANK-OPS");
+        var statement = _parser.Parse(Sample);
 
-        Assert.Equal("NEDBANK-OPS", statement.CashAccount);
+        // The parser does not choose a cash account. It reports which bank account the file is
+        // for, and the caller routes it from there.
+        Assert.Equal(string.Empty, statement.CashAccount);
+        Assert.Equal("1644294346", statement.SourceAccountNumber);
         Assert.Equal(new DateOnly(2026, 8, 7), statement.StartBalanceDate);
         Assert.Equal(new DateOnly(2026, 8, 8), statement.EndBalanceDate);
 
@@ -172,6 +175,6 @@ public class NedbankOfxParserTests
     [Fact]
     public void Parse_rejects_non_ofx_content()
     {
-        Assert.Throws<FormatException>(() => _parser.Parse("not xml at all", "NEDBANK-OPS"));
+        Assert.Throws<FormatException>(() => _parser.Parse("not xml at all"));
     }
 }

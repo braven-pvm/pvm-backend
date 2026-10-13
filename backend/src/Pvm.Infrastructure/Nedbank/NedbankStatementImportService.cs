@@ -27,7 +27,7 @@ public sealed class NedbankStatementImportService(
         string ofxContent,
         CancellationToken cancellationToken = default)
     {
-        var statement = parser.Parse(ofxContent, RequireCashAccount());
+        var statement = ParseAndRoute(ofxContent);
         if (statement.Lines.Count == 0)
         {
             return new NedbankImportResult(0, null, statement.StartBalanceDate, statement.EndBalanceDate);
@@ -51,8 +51,8 @@ public sealed class NedbankStatementImportService(
         string ofxContent,
         CancellationToken cancellationToken = default)
     {
-        var cashAccount = RequireCashAccount();
-        var statement = parser.Parse(ofxContent, cashAccount);
+        var statement = ParseAndRoute(ofxContent);
+        var cashAccount = statement.CashAccount;
 
         var latest = await acumaticaClient.GetLatestStatementAsync(cashAccount, cancellationToken);
 
@@ -114,15 +114,44 @@ public sealed class NedbankStatementImportService(
         return dates;
     }
 
-    private string RequireCashAccount()
+    // The file decides where it lands. Parse it, read the account it is for, then look that
+    // account up. Nothing is written until the lookup succeeds.
+    private BankStatementImport ParseAndRoute(string ofxContent)
     {
-        if (string.IsNullOrWhiteSpace(_options.CashAccount))
+        var parsed = parser.Parse(ofxContent);
+        return parsed with { CashAccount = ResolveCashAccount(parsed.SourceAccountNumber) };
+    }
+
+    private string ResolveCashAccount(string? sourceAccountNumber)
+    {
+        if (_options.Accounts.Count == 0)
         {
             throw new InvalidOperationException(
-                "Nedbank CashAccount (Acumatica target) is required to import a statement.");
+                "No Nedbank accounts are configured. Map each bank account number to its "
+                + "Acumatica cash account under Nedbank:Accounts.");
         }
 
-        return _options.CashAccount;
+        if (string.IsNullOrWhiteSpace(sourceAccountNumber))
+        {
+            throw new UnknownBankAccountException(
+                "This statement does not name a bank account, so it cannot be matched to an "
+                + "Acumatica cash account. Export the statement again from Nedbank.");
+        }
+
+        var account = sourceAccountNumber.Trim();
+        foreach (var (number, cashAccount) in _options.Accounts)
+        {
+            if (string.Equals(number.Trim(), account, StringComparison.OrdinalIgnoreCase))
+            {
+                return cashAccount;
+            }
+        }
+
+        throw new UnknownBankAccountException(
+            $"This statement is for Nedbank account {account}, which is not mapped to an "
+            + "Acumatica cash account. Known accounts: "
+            + string.Join(", ", _options.Accounts.Select(pair => $"{pair.Key} ({pair.Value})"))
+            + ". Nothing was imported.");
     }
 }
 

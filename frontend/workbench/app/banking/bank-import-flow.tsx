@@ -328,7 +328,9 @@ function CheckScreen({
       <section className="bank-panel">
         <div className="bank-file-id">
           <Chip tone={blocked ? "stop" : "ok"}>
-            {blocked ? "Already imported" : `Nedbank account ${preview.sourceAccountNumber ?? ""}`}
+            {blocked
+              ? "Already imported"
+              : `Nedbank ${preview.sourceAccountNumber ?? ""} → ${preview.cashAccount}`}
           </Chip>
           <span className="bank-file-name">{fileName}</span>
           <span className="bank-file-meta">{period}</span>

@@ -50,13 +50,18 @@ public static class BankImportEndpoints
         IOptions<InvestecOptions> investecOptions,
         CancellationToken cancellationToken)
     {
-        var accounts = new List<BankAccountStatus>
+        // One row per configured Nedbank account, ordered so the list does not shuffle.
+        var accounts = new List<BankAccountStatus>();
+        foreach (var cashAccount in nedbankOptions.Value.Accounts.Values
+                     .Distinct(StringComparer.OrdinalIgnoreCase)
+                     .OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
         {
-            await ReadAccountAsync(
-                acumaticaClient, "Nedbank", nedbankOptions.Value.CashAccount, "Upload", cancellationToken),
-            await ReadAccountAsync(
-                acumaticaClient, "Investec", investecOptions.Value.CashAccount, "Automatic", cancellationToken),
-        };
+            accounts.Add(await ReadAccountAsync(
+                acumaticaClient, "Nedbank", cashAccount, "Upload", cancellationToken));
+        }
+
+        accounts.Add(await ReadAccountAsync(
+            acumaticaClient, "Investec", investecOptions.Value.CashAccount, "Automatic", cancellationToken));
 
         return Results.Ok(new BankingStatusResponse(accounts));
     }
@@ -149,6 +154,12 @@ public static class BankImportEndpoints
         try
         {
             return await run(ofx);
+        }
+        catch (UnknownBankAccountException exception)
+        {
+            // The file is readable but is for an account we do not import into. Say so plainly;
+            // this is the common case when somebody uploads a different branch's statement.
+            return Results.BadRequest(new { file = file.FileName, message = exception.Message });
         }
         catch (FormatException exception)
         {

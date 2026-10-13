@@ -23,10 +23,13 @@ public sealed class NedbankOfxParser
     /// <paramref name="cashAccount"/>. Throws <see cref="FormatException"/> when the content is
     /// not well-formed OFX 2.0 XML.
     /// </summary>
-    public BankStatementImport Parse(string ofxContent, string cashAccount)
+    /// <summary>
+    /// Reads the file. The target cash account is NOT decided here: the caller routes the
+    /// statement using <see cref="BankStatementImport.SourceAccountNumber"/>.
+    /// </summary>
+    public BankStatementImport Parse(string ofxContent)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(ofxContent);
-        ArgumentException.ThrowIfNullOrWhiteSpace(cashAccount);
 
         XDocument document;
         try
@@ -43,18 +46,22 @@ public sealed class NedbankOfxParser
         var root = document.Root
             ?? throw new FormatException("Nedbank OFX has no root element.");
 
-        var accountId = FirstValue(root, "ACCTID") ?? "NEDBANK";
+        // No placeholder here. The caller routes the statement by this number, so an
+        // invented one would send the file to the wrong cash account.
+        var accountId = FirstValue(root, "ACCTID");
         var tranList = Descendant(root, "BANKTRANLIST");
         var startDate = ParseOfxDate(Value(tranList, "DTSTART"));
         var endDate = ParseOfxDate(Value(tranList, "DTEND"));
 
-        var lines = BuildLines(root, accountId);
+        // Real statements always carry an account number, so the hash input is unchanged;
+        // a file without one is refused upstream before anything is written.
+        var lines = BuildLines(root, accountId ?? string.Empty);
 
         var (beginning, ending) = ResolveBalances(root, lines);
         var statementDate = endDate ?? lines.LastOrDefault()?.TranDate ?? startDate ?? DateOnly.MinValue;
 
         return new BankStatementImport(
-            CashAccount: cashAccount,
+            CashAccount: string.Empty,
             StatementDate: statementDate,
             StartBalanceDate: startDate ?? statementDate,
             EndBalanceDate: statementDate,
