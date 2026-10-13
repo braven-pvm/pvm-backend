@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Pvm.Application.Automation;
 using Pvm.Application.Messaging;
+using Pvm.Application.Shoprite;
 using Pvm.Domain.Invoices;
 using Pvm.Domain.Validation;
 using Pvm.Infrastructure.Persistence;
@@ -467,23 +468,15 @@ public sealed class AutomationPolicyService(
             reasons.Add("candidate-payload-invalid");
         }
 
-        var purchaseOrder = candidate.MatchedShopritePurchaseOrderId is null
-            ? null
-            : await dbContext.ShopritePurchaseOrders.AsNoTracking()
-                .SingleOrDefaultAsync(item => item.Id == candidate.MatchedShopritePurchaseOrderId, cancellationToken);
         if (candidate.Status != "Ready" || validation?.CanSubmit != true) reasons.Add("candidate-not-ready");
-        if (purchaseOrder is null) reasons.Add("purchase-order-unmatched");
+        if (string.IsNullOrWhiteSpace(candidate.ShopritePurchaseOrderNumber)) reasons.Add("purchase-order-number-missing");
         if (invoice is null) reasons.Add("canonical-invoice-missing");
         if (invoice is not null)
         {
             if (!string.Equals(invoice.CurrencyCode, "ZAR", StringComparison.OrdinalIgnoreCase)) reasons.Add("unsupported-currency");
             if (!string.Equals(invoice.CountryCode, "ZA", StringComparison.OrdinalIgnoreCase)) reasons.Add("unsupported-country");
             if (invoice.Lines.Any(line => line.IsCatchWeight)) reasons.Add("catch-weight-excluded");
-        }
-        if (purchaseOrder?.OrderTypeCode is null
-            || !policy.SupportedOrderTypes.Contains(purchaseOrder.OrderTypeCode, StringComparer.OrdinalIgnoreCase))
-        {
-            reasons.Add("order-type-not-supported");
+            reasons.AddRange(await ReferenceDataReasonsAsync(invoice, cancellationToken));
         }
         if (policy.Mode == AutomationMode.Allowlisted)
         {
@@ -494,9 +487,7 @@ public sealed class AutomationPolicyService(
             var locationKeys = new[]
             {
                 candidate.CustomerLocation,
-                candidate.StoreDcGln,
-                purchaseOrder?.DeliveryLocationCode,
-                purchaseOrder?.DeliveryGln
+                candidate.StoreDcGln
             }.Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value!).ToArray();
             if (!locationKeys.Any(key => policy.LocationAllowlist.Contains(key, StringComparer.OrdinalIgnoreCase)))
             {
@@ -508,11 +499,6 @@ public sealed class AutomationPolicyService(
             .AnyAsync(operation => operation.InvoiceCandidateId == candidateId, cancellationToken);
         if (priorOperation) reasons.Add("prior-submission-operation");
 
-        var latestPoRefresh = await LatestSuccessAsync(IntegrationRunTypes.ShopritePurchaseOrderRefresh, cancellationToken);
-        if (latestPoRefresh is null || now - latestPoRefresh > TimeSpan.FromMinutes(policy.PurchaseOrderFreshnessMinutes))
-        {
-            reasons.Add("shoprite-po-data-stale");
-        }
         var latestAcumatica = await LatestSuccessAsync(IntegrationRunTypes.AcumaticaInvoiceReconciliation, cancellationToken);
         if (latestAcumatica is null || now - latestAcumatica > TimeSpan.FromMinutes(policy.AcumaticaFreshnessMinutes))
         {
@@ -678,6 +664,49 @@ public sealed class AutomationPolicyService(
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
+
+    // The invoice is completed from Shoprite reference data, not from the Shoprite order, because
+    // the integration never reads orders. Validation checked that data when the candidate was built,
+    // so an automatic submission checks it again: a GLN or GTIN corrected or unverified since then
+    // must stop the invoice, not travel with it.
+    private async Task<IReadOnlyList<string>> ReferenceDataReasonsAsync(
+        CanonicalInvoice invoice,
+        CancellationToken cancellationToken)
+    {
+        var reasons = new List<string>();
+        var branchCode = ShopriteInvoiceReferenceEnricher.Normalize(invoice.CustomerAccount);
+        var location = await dbContext.ShopriteDeliveryLocations.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.BranchCode == branchCode, cancellationToken);
+        if (location is null)
+        {
+            reasons.Add("delivery-location-missing");
+            return reasons;
+        }
+
+        if (!location.IsVerified) reasons.Add("delivery-location-unverified");
+        if (!string.Equals(location.Gln, invoice.StoreDcGln, StringComparison.Ordinal)) reasons.Add("delivery-location-changed");
+
+        var inventoryIds = invoice.Lines
+            .Select(line => ShopriteInvoiceReferenceEnricher.Normalize(line.AcumaticaInventoryId))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var tradeItems = await dbContext.ShopriteTradeItems.AsNoTracking()
+            .Where(item => inventoryIds.Contains(item.AcumaticaInventoryId) && item.DeliversTo == location.LocationType)
+            .ToListAsync(cancellationToken);
+        foreach (var line in invoice.Lines)
+        {
+            var item = tradeItems.FirstOrDefault(candidate =>
+                ShopriteInvoiceReferenceEnricher.Normalize(candidate.AcumaticaInventoryId)
+                    == ShopriteInvoiceReferenceEnricher.Normalize(line.AcumaticaInventoryId)
+                && ShopriteInvoiceReferenceEnricher.Normalize(candidate.AcumaticaUom)
+                    == ShopriteInvoiceReferenceEnricher.Normalize(line.AcumaticaUom));
+            if (item is null) reasons.Add("trade-item-missing");
+            else if (!item.IsVerified) reasons.Add("trade-item-unverified");
+            else if (!string.Equals(item.Gtin, line.Gtin, StringComparison.Ordinal)) reasons.Add("trade-item-changed");
+        }
+
+        return reasons;
+    }
 
     private static AutomationSubmissionPermission Denied(AutomationPolicy policy, string code, string message)
         => new(false, policy.Version, code, message);
