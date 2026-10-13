@@ -26,7 +26,7 @@ public sealed class NedbankStatementImportServiceTests
         var service = new NedbankStatementImportService(
             new NedbankOfxParser(),
             acumatica,
-            Options.Create(new NedbankOptions { CashAccount = "NEDBANK-OPS" }));
+            Options.Create(new NedbankOptions { Accounts = { ["1644294346"] = "NEDBANK-OPS" } }));
 
         var result = await service.ImportAsync(Sample, CancellationToken.None);
 
@@ -38,7 +38,7 @@ public sealed class NedbankStatementImportServiceTests
     }
 
     [Fact]
-    public async Task ImportAsync_requires_cash_account()
+    public async Task ImportAsync_requires_configured_accounts()
     {
         var service = new NedbankStatementImportService(
             new NedbankOfxParser(),
@@ -47,6 +47,62 @@ public sealed class NedbankStatementImportServiceTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => service.ImportAsync(Sample, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ImportAsync_routes_a_statement_to_the_account_the_file_names()
+    {
+        var acumatica = new StubClient();
+        var service = new NedbankStatementImportService(
+            new NedbankOfxParser(),
+            acumatica,
+            Options.Create(new NedbankOptions
+            {
+                Accounts = { ["1644294346"] = "PVMNEDBANK", ["1497204518"] = "WCNEDBANK" },
+            }));
+
+        await service.ImportAsync(Sample.Replace("1644294346", "1497204518"), CancellationToken.None);
+
+        Assert.Equal("WCNEDBANK", acumatica.Last!.CashAccount);
+    }
+
+    [Fact]
+    public async Task ImportAsync_refuses_an_account_that_is_not_mapped()
+    {
+        // The Western Cape statement went into the main account by hand once. A fallback would
+        // make that silent, so an unknown account must stop the import.
+        var acumatica = new StubClient();
+        var service = new NedbankStatementImportService(
+            new NedbankOfxParser(),
+            acumatica,
+            Options.Create(new NedbankOptions { Accounts = { ["1644294346"] = "PVMNEDBANK" } }));
+
+        var error = await Assert.ThrowsAsync<UnknownBankAccountException>(
+            () => service.ImportAsync(Sample.Replace("1644294346", "9999999999"), CancellationToken.None));
+
+        Assert.Contains("9999999999", error.Message, StringComparison.Ordinal);
+        Assert.Null(acumatica.Last);
+    }
+
+    [Fact]
+    public async Task PreviewAsync_refuses_an_account_that_is_not_mapped()
+    {
+        var service = NewService(new StubClient());
+
+        await Assert.ThrowsAsync<UnknownBankAccountException>(
+            () => service.PreviewAsync(
+                Sample.Replace("1644294346", "9999999999"), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ImportAsync_refuses_a_file_that_names_no_account()
+    {
+        var service = NewService(new StubClient());
+        var withoutAccount = Sample.Replace(
+            "<BANKACCTFROM><ACCTID>1644294346</ACCTID></BANKACCTFROM>", string.Empty);
+
+        await Assert.ThrowsAsync<UnknownBankAccountException>(
+            () => service.ImportAsync(withoutAccount, CancellationToken.None));
     }
 
     [Fact]
@@ -72,7 +128,7 @@ public sealed class NedbankStatementImportServiceTests
     public async Task PreviewAsync_marks_lines_Acumatica_already_holds()
     {
         var acumatica = new StubClient();
-        var parsed = new NedbankOfxParser().Parse(Sample, "NEDBANK-OPS");
+        var parsed = new NedbankOfxParser().Parse(Sample);
         acumatica.Imported.Add(parsed.Lines[0].ExtTranId);
 
         var preview = await NewService(acumatica).PreviewAsync(Sample, CancellationToken.None);
@@ -88,7 +144,7 @@ public sealed class NedbankStatementImportServiceTests
     public async Task PreviewAsync_reports_nothing_to_import_when_every_line_exists()
     {
         var acumatica = new StubClient();
-        var parsed = new NedbankOfxParser().Parse(Sample, "NEDBANK-OPS");
+        var parsed = new NedbankOfxParser().Parse(Sample);
         foreach (var line in parsed.Lines)
         {
             acumatica.Imported.Add(line.ExtTranId);
@@ -153,7 +209,7 @@ public sealed class NedbankStatementImportServiceTests
         => new(
             new NedbankOfxParser(),
             acumatica,
-            Options.Create(new NedbankOptions { CashAccount = "NEDBANK-OPS" }));
+            Options.Create(new NedbankOptions { Accounts = { ["1644294346"] = "NEDBANK-OPS" } }));
 
     private sealed class StubClient : IAcumaticaBankStatementClient
     {
