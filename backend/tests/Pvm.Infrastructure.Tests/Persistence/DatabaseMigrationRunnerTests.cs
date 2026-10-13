@@ -23,7 +23,7 @@ public sealed class DatabaseMigrationRunnerTests : IAsyncLifetime
         await DatabaseMigrationRunner.MigrateAsync(db);
 
         var applied = await db.Database.GetAppliedMigrationsAsync();
-        Assert.Equal(11, applied.Count());
+        Assert.Equal(12, applied.Count());
         Assert.Contains(DatabaseMigrationRunner.LegacyBaselineMigration, applied);
         Assert.True(await TableExistsAsync(db, "submission_operations"));
         Assert.True(await TableExistsAsync(db, "payload_archives"));
@@ -39,6 +39,10 @@ public sealed class DatabaseMigrationRunnerTests : IAsyncLifetime
         Assert.True(await ColumnExistsAsync(db, "shoprite_purchase_orders", "AcknowledgedAt"));
         Assert.True(await ColumnExistsAsync(db, "invoice_candidates", "SourceLastModifiedAt"));
         Assert.True(await ColumnExistsAsync(db, "integration_runs", "CursorAfter"));
+        // The Shoprite reference data is seeded, and every row is verified once all migrations run.
+        Assert.Equal(33, await db.ShopriteDeliveryLocations.CountAsync());
+        Assert.Equal(16, await db.ShopriteTradeItems.CountAsync());
+        Assert.All(await db.ShopriteTradeItems.ToListAsync(), item => Assert.True(item.IsVerified));
         var policy = await db.AutomationPolicyVersions.SingleAsync();
         Assert.Equal(1, policy.Version);
         Assert.Equal("Disabled", policy.Mode);
@@ -83,7 +87,7 @@ public sealed class DatabaseMigrationRunnerTests : IAsyncLifetime
         Assert.True(await ColumnExistsAsync(db, "shoprite_purchase_orders", "AcknowledgedAt"));
         Assert.True(await ColumnExistsAsync(db, "invoice_candidates", "SourceLastModifiedAt"));
         Assert.True(await ColumnExistsAsync(db, "integration_runs", "CursorAfter"));
-        Assert.Equal(11, (await db.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(12, (await db.Database.GetAppliedMigrationsAsync()).Count());
         var policy = await db.AutomationPolicyVersions.SingleAsync();
         Assert.Equal(1, policy.Version);
         Assert.Equal("Disabled", policy.Mode);
