@@ -234,13 +234,41 @@ public sealed class AutomationPolicyServiceTests : IAsyncLifetime
     private AutomationPolicyService Service(PvmDbContext db)
         => new(db, new IntegrationCommandQueue(db));
 
+    [Fact]
+    public async Task Deferred_sweep_re_evaluates_a_stabilizing_candidate_once_the_delay_passes()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        var service = Service(db);
+        var candidate = await SeedEligibleCandidateAsync(db);
+        var now = DateTimeOffset.UtcNow;
+        var current = await service.GetCurrentAsync(CancellationToken.None);
+        // The candidate changed an hour ago, so a 90-minute delay holds it for 30 more minutes.
+        await ChangePolicyAsync(service, current.Version, AutomationMode.Shadow, stabilizationDelayMinutes: 90);
+        await service.EvaluateCandidatesAsync([candidate.Id], now, CancellationToken.None);
+
+        var early = await service.EvaluateDeferredAsync(now.AddMinutes(10), CancellationToken.None);
+        var due = await service.EvaluateDeferredAsync(now.AddMinutes(31), CancellationToken.None);
+        var after = await service.EvaluateDeferredAsync(now.AddMinutes(41), CancellationToken.None);
+
+        Assert.Equal(1, early.Evaluated);
+        Assert.Equal(0, early.WouldSubmit);
+        Assert.Equal(1, due.WouldSubmit);
+        Assert.Equal(0, after.Evaluated);
+        Assert.Equal(
+            ["Stabilizing", "WouldSubmit"],
+            await db.AutomationDecisions.OrderBy(item => item.EvaluatedAt).Select(item => item.Outcome).ToArrayAsync());
+        Assert.Empty(await db.IntegrationOutboxMessages.ToArrayAsync());
+    }
+
     private static Task<AutomationPolicyChangeResult> ChangePolicyAsync(
         AutomationPolicyService service,
         int expectedVersion,
         AutomationMode mode,
         string[]? accounts = null,
         string[]? locations = null,
-        int dailyAutomaticSubmissionCap = 10)
+        int dailyAutomaticSubmissionCap = 10,
+        int stabilizationDelayMinutes = 0)
         => service.ChangeAsync(
             new AutomationPolicyChange(
                 expectedVersion,
@@ -248,7 +276,7 @@ public sealed class AutomationPolicyServiceTests : IAsyncLifetime
                 accounts ?? [],
                 locations ?? [],
                 ["220"],
-                StabilizationDelayMinutes: 0,
+                StabilizationDelayMinutes: stabilizationDelayMinutes,
                 PurchaseOrderFreshnessMinutes: 60,
                 AcumaticaFreshnessMinutes: 60,
                 DailyAutomaticSubmissionCap: dailyAutomaticSubmissionCap,

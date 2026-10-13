@@ -85,6 +85,26 @@ public sealed class AcumaticaInvoiceReconciliationRunTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task FixtureRun_RecordsNoCursor_SoTheFirstLiveRunStillReadsTheBacklog()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        var client = new RecordingInvoiceClient();
+        var fixtureQueryTo = new DateTimeOffset(2026, 8, 6, 12, 10, 0, TimeSpan.Zero);
+
+        var fixture = await QueueAndHandleAsync(
+            db, NewHandler(db, client, AcumaticaInvoiceSourceMode.Fixture), fixtureQueryTo);
+        var liveQueryTo = fixtureQueryTo.AddMinutes(10);
+        await QueueAndHandleAsync(db, NewHandler(db, client), liveQueryTo);
+
+        var fixtureRun = await db.IntegrationRuns.SingleAsync(run => run.Id == fixture.RunId);
+        Assert.Equal(IntegrationRunStatuses.Succeeded, fixtureRun.Status);
+        Assert.Null(fixtureRun.CursorAfter);
+        var liveQuery = Assert.Single(client.Queries);
+        Assert.Equal(liveQueryTo.AddDays(-7), liveQuery.ModifiedFromInclusive);
+    }
+
+    [Fact]
     public async Task FailedRun_DoesNotAdvanceCursor()
     {
         await using var db = CreateDbContext();
@@ -200,7 +220,8 @@ public sealed class AcumaticaInvoiceReconciliationRunTests : IAsyncLifetime
 
     private AcumaticaInvoiceReconciliationMessageHandler NewHandler(
         PvmDbContext db,
-        RecordingInvoiceClient client)
+        RecordingInvoiceClient client,
+        AcumaticaInvoiceSourceMode sourceMode = AcumaticaInvoiceSourceMode.Real)
         => new(
             new AcumaticaInvoiceCandidateRefreshService(
                 client,
@@ -209,7 +230,7 @@ public sealed class AcumaticaInvoiceReconciliationRunTests : IAsyncLifetime
             new IntegrationRunService(db, Configuration()),
             Options.Create(new AcumaticaOptions
             {
-                InvoiceSourceMode = AcumaticaInvoiceSourceMode.Real,
+                InvoiceSourceMode = sourceMode,
                 InvoiceDateFrom = new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero)
             }),
             Options.Create(new AcumaticaReconciliationOptions

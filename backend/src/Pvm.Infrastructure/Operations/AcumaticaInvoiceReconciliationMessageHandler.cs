@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Pvm.Application.Acumatica;
 using Pvm.Application.Messaging;
 using Pvm.Infrastructure.Acumatica;
+using Pvm.Infrastructure.Automation;
 
 namespace Pvm.Infrastructure.Operations;
 
@@ -11,7 +12,8 @@ public sealed class AcumaticaInvoiceReconciliationMessageHandler(
     IntegrationRunService runService,
     IOptions<AcumaticaOptions> acumaticaOptions,
     IOptions<AcumaticaReconciliationOptions> reconciliationOptions,
-    ILogger<AcumaticaInvoiceReconciliationMessageHandler> logger)
+    ILogger<AcumaticaInvoiceReconciliationMessageHandler> logger,
+    AutomationPolicyService? automationPolicyService = null)
 {
     public async Task HandleAsync(
         IntegrationMessageEnvelope envelope,
@@ -47,10 +49,11 @@ public sealed class AcumaticaInvoiceReconciliationMessageHandler(
         if (acumaticaOptions.Value.InvoiceSourceMode == AcumaticaInvoiceSourceMode.Fixture)
         {
             // No live source is configured, so there is nothing to reconcile. Record an
-            // empty, successful run rather than a failure every ten minutes.
+            // empty, successful run rather than a failure every ten minutes. It records no
+            // cursor: nothing was read, so the first live run must not start after this one.
             await runService.CompleteAcumaticaInvoiceReconciliationAsync(
                 command.RunId,
-                command.QueryTo,
+                cursorAfter: null,
                 new AcumaticaInvoiceRefreshResult(0, 0, 0, 0),
                 cancellationToken);
             logger.LogInformation(
@@ -107,6 +110,32 @@ public sealed class AcumaticaInvoiceReconciliationMessageHandler(
                 command.RunId,
                 "acumatica-reconciliation-failed");
             throw;
+        }
+
+        if (automationPolicyService is null)
+        {
+            return;
+        }
+
+        // The run itself succeeded, so a sweep failure is logged and not rethrown: retrying the
+        // message would read Acumatica again for nothing. The next run sweeps again.
+        try
+        {
+            var deferred = await automationPolicyService.EvaluateDeferredAsync(DateTimeOffset.UtcNow, cancellationToken);
+            if (deferred.Evaluated > 0)
+            {
+                logger.LogInformation(
+                    "automation.deferred.reevaluated RunId={RunId} Evaluated={Evaluated} WouldSubmit={WouldSubmit} Queued={Queued} Excluded={Excluded}",
+                    command.RunId,
+                    deferred.Evaluated,
+                    deferred.WouldSubmit,
+                    deferred.Queued,
+                    deferred.Excluded);
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogError(exception, "automation.deferred.reevaluation.failed RunId={RunId}", command.RunId);
         }
     }
 }

@@ -97,9 +97,10 @@ param shopritePoRefreshEnabled bool = false
 @description('Sends the Layer 7 headers to Shoprite.')
 param shopriteUseLayer7Headers bool = false
 
-@description('Acumatica invoice source mode. RealQa must be enabled explicitly after QA credentials and schema are verified.')
+@description('Acumatica invoice source mode. Real reads the live instance. RealQa is the original name for Real.')
 @allowed([
   'Fixture'
+  'Real'
   'RealQa'
 ])
 param acumaticaInvoiceSourceMode string = 'Fixture'
