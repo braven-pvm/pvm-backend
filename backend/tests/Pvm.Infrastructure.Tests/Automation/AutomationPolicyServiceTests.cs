@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Pvm.Application.Automation;
 using Pvm.Application.Messaging;
+using Pvm.Application.Shoprite;
 using Pvm.Domain.Invoices;
 using Pvm.Domain.Validation;
 using Pvm.Infrastructure.Automation;
@@ -15,6 +16,9 @@ namespace Pvm.Infrastructure.Tests.Automation;
 public sealed class AutomationPolicyServiceTests : IAsyncLifetime
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    private const string BranchCode = "1810";
+    private const string StoreGln = "6001001305600";
+    private const string StoreGtin = "06001197181125";
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:16").Build();
 
     public Task InitializeAsync() => _postgres.StartAsync();
@@ -159,6 +163,74 @@ public sealed class AutomationPolicyServiceTests : IAsyncLifetime
         Assert.Equal(2, await db.AutomationPolicyVersions.CountAsync());
     }
 
+    [Fact]
+    public async Task Candidate_without_a_shoprite_order_is_eligible_from_reference_data()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        var service = Service(db);
+        var candidate = await SeedEligibleCandidateAsync(db);
+        var current = await service.GetCurrentAsync(CancellationToken.None);
+        await ChangePolicyAsync(service, current.Version, AutomationMode.Shadow);
+
+        var result = await service.EvaluateCandidatesAsync(
+            [candidate.Id], DateTimeOffset.UtcNow, CancellationToken.None);
+
+        Assert.Null(candidate.MatchedShopritePurchaseOrderId);
+        Assert.Empty(await db.ShopritePurchaseOrders.ToArrayAsync());
+        Assert.Equal(1, result.WouldSubmit);
+        Assert.Empty((await db.AutomationDecisions.SingleAsync()).ReasonCodes);
+    }
+
+    [Fact]
+    public async Task Delivery_location_changed_after_validation_excludes_the_candidate()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        var service = Service(db);
+        var candidate = await SeedEligibleCandidateAsync(db);
+        var location = await db.ShopriteDeliveryLocations.SingleAsync();
+        location.IsVerified = false;
+        location.Gln = "6001001999990";
+        await db.SaveChangesAsync();
+        var current = await service.GetCurrentAsync(CancellationToken.None);
+        await ChangePolicyAsync(service, current.Version, AutomationMode.Shadow);
+
+        var result = await service.EvaluateCandidatesAsync(
+            [candidate.Id], DateTimeOffset.UtcNow, CancellationToken.None);
+
+        Assert.Equal(0, result.WouldSubmit);
+        var decision = await db.AutomationDecisions.SingleAsync();
+        Assert.Equal("Excluded", decision.Outcome);
+        Assert.Contains("delivery-location-unverified", decision.ReasonCodes);
+        Assert.Contains("delivery-location-changed", decision.ReasonCodes);
+    }
+
+    [Fact]
+    public async Task Trade_item_unverified_or_removed_after_validation_blocks_automatic_submission()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        var service = Service(db);
+        var candidate = await SeedEligibleCandidateAsync(db);
+        (await db.ShopriteTradeItems.SingleAsync()).IsVerified = false;
+        await db.SaveChangesAsync();
+        var current = await service.GetCurrentAsync(CancellationToken.None);
+        await ChangePolicyAsync(service, current.Version, AutomationMode.Enabled);
+
+        var unverified = await service.EvaluateSubmissionAsync(
+            candidate.Id, "automatic", DateTimeOffset.UtcNow, CancellationToken.None);
+        db.ShopriteTradeItems.Remove(await db.ShopriteTradeItems.SingleAsync());
+        await db.SaveChangesAsync();
+        var removed = await service.EvaluateSubmissionAsync(
+            candidate.Id, "automatic", DateTimeOffset.UtcNow, CancellationToken.None);
+
+        Assert.False(unverified.Allowed);
+        Assert.Equal("trade-item-unverified", unverified.Code);
+        Assert.False(removed.Allowed);
+        Assert.Equal("trade-item-missing", removed.Code);
+    }
+
     private AutomationPolicyService Service(PvmDbContext db)
         => new(db, new IntegrationCommandQueue(db));
 
@@ -190,28 +262,16 @@ public sealed class AutomationPolicyServiceTests : IAsyncLifetime
     private static async Task<InvoiceCandidateEntity> SeedEligibleCandidateAsync(PvmDbContext db, string suffix = "1")
     {
         var now = DateTimeOffset.UtcNow;
-        var purchaseOrder = new ShopritePurchaseOrderEntity
-        {
-            Id = Guid.NewGuid(),
-            PurchaseOrderNumber = $"121538291{suffix}",
-            OrderTypeCode = "220",
-            SupplierGln = "6001197000006",
-            DeliveryGln = "6001001305600",
-            DeliveryLocationCode = "30562",
-            DeliveryLocationName = "CHECKERS LORRAINE",
-            DeliveryLocationSource = "buyer",
-            FirstSeenAt = now,
-            LastSeenAt = now
-        };
+        await SeedReferenceDataAsync(db);
         var invoice = new CanonicalInvoice(
             $"acu-invoice-{suffix}",
             $"INV15888{suffix}",
-            "1810",
+            BranchCode,
             "30562",
-            purchaseOrder.PurchaseOrderNumber,
-            purchaseOrder.SupplierGln,
+            $"121538291{suffix}",
+            "6001197000006",
             "4010137059",
-            purchaseOrder.DeliveryGln,
+            StoreGln,
             "ZA",
             "ZAR",
             now,
@@ -221,7 +281,7 @@ public sealed class AutomationPolicyServiceTests : IAsyncLifetime
             [new CanonicalInvoiceLine(
                 1,
                 "ENER10",
-                "06001197181125",
+                StoreGtin,
                 "Energy product",
                 1m,
                 "BOX",
@@ -241,7 +301,6 @@ public sealed class AutomationPolicyServiceTests : IAsyncLifetime
             CustomerAccount = invoice.CustomerAccount,
             CustomerLocation = invoice.CustomerLocation,
             ShopritePurchaseOrderNumber = invoice.ShopritePurchaseOrderNumber,
-            MatchedShopritePurchaseOrderId = purchaseOrder.Id,
             SupplierGln = invoice.SupplierGln,
             StoreDcGln = invoice.StoreDcGln,
             IdempotencyKey = $"eligible-policy-test-{suffix}",
@@ -253,13 +312,48 @@ public sealed class AutomationPolicyServiceTests : IAsyncLifetime
             CreatedAt = now.AddHours(-1),
             UpdatedAt = now.AddHours(-1)
         };
-        db.ShopritePurchaseOrders.Add(purchaseOrder);
         db.InvoiceCandidates.Add(candidate);
-        db.IntegrationRuns.AddRange(
-            SuccessfulRun(IntegrationRunTypes.ShopritePurchaseOrderRefresh, now),
-            SuccessfulRun(IntegrationRunTypes.AcumaticaInvoiceReconciliation, now));
+        db.IntegrationRuns.Add(SuccessfulRun(IntegrationRunTypes.AcumaticaInvoiceReconciliation, now));
         await db.SaveChangesAsync();
         return candidate;
+    }
+
+    private static async Task SeedReferenceDataAsync(PvmDbContext db)
+    {
+        if (await db.ShopriteDeliveryLocations.AnyAsync())
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        db.ShopriteDeliveryLocations.Add(new ShopriteDeliveryLocationEntity
+        {
+            Id = Guid.NewGuid(),
+            BranchCode = BranchCode,
+            Gln = StoreGln,
+            Name = "CHECKERS LORRAINE",
+            LocationType = ShopriteLocationType.Store,
+            IsVerified = true,
+            UpdatedBy = "test",
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        db.ShopriteTradeItems.Add(new ShopriteTradeItemEntity
+        {
+            Id = Guid.NewGuid(),
+            AcumaticaInventoryId = "ENER10",
+            AcumaticaUom = "BOX",
+            DeliversTo = ShopriteLocationType.Store,
+            Gtin = StoreGtin,
+            AcumaticaUnitsPerShopriteUnit = 1,
+            ShopritePackSize = 1m,
+            ShopriteUom = ShopriteMeasurementUnit.EA,
+            IsVerified = true,
+            UpdatedBy = "test",
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await db.SaveChangesAsync();
     }
 
     private static IntegrationRunEntity SuccessfulRun(string runType, DateTimeOffset now)
