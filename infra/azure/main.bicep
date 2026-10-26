@@ -63,6 +63,9 @@ param authBootstrapAdminObjectId string = ''
 @description('Public workbench URL used by the auth callback.')
 param workbenchPublicUrl string = 'https://ca-pvm-workbench-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io'
 
+@description('Custom domain for the workbench, for example backoffice.pvm.co.za. Empty means none.')
+param workbenchCustomDomain string = ''
+
 @description('First day of the budget period. Azure refuses a start date before the current month.')
 param budgetStartDate string = '${utcNow('yyyy-MM')}-01T00:00:00Z'
 
@@ -244,6 +247,7 @@ module platform 'modules/platform.bicep' = {
     authBootstrapAdminEmail: authBootstrapAdminEmail
     authBootstrapAdminObjectId: authBootstrapAdminObjectId
     workbenchPublicUrl: workbenchPublicUrl
+    workbenchCustomDomain: workbenchCustomDomain
     shopriteBaseUrl: shopriteBaseUrl
     shopriteUsername: shopriteUsername
     shopritePassword: shopritePassword

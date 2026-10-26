@@ -7,6 +7,7 @@
     "resourceGroupName": { "value": "rg-pvm-integrations-prod" },
     "ownerObjectId": { "value": "35425387-d19a-4e63-97b5-2165cce0032b" },
     "budgetStartDate": { "value": "2026-09-01T00:00:00Z" },
+    "workbenchCustomDomain": { "value": "backoffice.pvm.co.za" },
     "monthlyBudgetAmountUsd": { "value": 250 },
     "alertEmail": { "value": "developer@pvm.co.za" },
     "acumaticaBaseUrl": { "value": "https://pvm.aboutitgroup.co.za" },

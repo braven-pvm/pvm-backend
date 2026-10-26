@@ -26,6 +26,9 @@ param authBootstrapAdminEmail string = ''
 param authBootstrapAdminObjectId string = ''
 param workbenchPublicUrl string
 
+@description('Custom domain for the workbench, for example backoffice.pvm.co.za. Empty means none.')
+param workbenchCustomDomain string = ''
+
 param shopriteBaseUrl string = ''
 
 @secure()
@@ -781,6 +784,22 @@ resource apiContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
   ]
 }
 
+var workbenchCertificateName = 'mc-${replace(workbenchCustomDomain, '.', '-')}'
+
+// An Azure-managed certificate for the workbench's custom domain. Azure validates and renews it
+// through the CNAME that points the domain at the workbench, so that DNS record must stay
+// unproxied. Without this declaration, a deployment resets the ingress and drops the domain.
+resource workbenchCertificate 'Microsoft.App/managedEnvironments/managedCertificates@2023-05-01' = if (!empty(workbenchCustomDomain)) {
+  parent: containerAppsEnvironment
+  name: workbenchCertificateName
+  location: location
+  tags: tags
+  properties: {
+    subjectName: workbenchCustomDomain
+    domainControlValidation: 'CNAME'
+  }
+}
+
 resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
   name: workbenchContainerAppName
   location: location
@@ -800,6 +819,13 @@ resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
         targetPort: 3000
         transport: 'Auto'
         allowInsecure: false
+        customDomains: empty(workbenchCustomDomain) ? [] : [
+          {
+            name: workbenchCustomDomain
+            bindingType: 'SniEnabled'
+            certificateId: resourceId('Microsoft.App/managedEnvironments/managedCertificates', containerAppsEnvironment.name, workbenchCertificateName)
+          }
+        ]
       }
       registries: [
         {
@@ -882,6 +908,7 @@ resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
     }
   }
   dependsOn: [
+    workbenchCertificate
     identityAcrPullRole
   ]
 }
