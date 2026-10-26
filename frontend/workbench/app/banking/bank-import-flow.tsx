@@ -90,7 +90,7 @@ export function BankImportFlow({ accounts, canImport, statusFailed }: Props) {
             <span className="bank-file-name">{file?.name ?? "Your statement"}</span>
           </div>
           <div className="bank-panel-body">
-            <Callout tone="stop" title="Acumatica did not accept this statement">
+            <Callout tone="stop" title="Why it was not imported">
               {failure}
             </Callout>
             <p className="bank-note">
