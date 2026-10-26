@@ -15,6 +15,8 @@ public sealed class NedbankAccountConfigurationTests
     [InlineData("1644294346", "PVMNEDBANK")]
     [InlineData("1497204518", "WCNEDBANK")]
     [InlineData("1033436658", "ECNEDBANK")]
+    [InlineData("1497176344", "KZNNEDBANK")]
+    [InlineData("1497199883", "FSNEDBANK")]
     public void Each_bank_account_maps_to_its_own_cash_account(string accountNumber, string cashAccount)
     {
         Assert.True(
