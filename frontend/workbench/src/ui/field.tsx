@@ -342,6 +342,17 @@ export function RadioGroup({
   );
 }
 
+/** Several checkboxes under one label, for a choice of more than one option. */
+export function CheckboxGroup({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
+  return (
+    <fieldset className={styles.fieldset}>
+      <legend className={styles.label}>{label}</legend>
+      {hint ? <p className={styles.hint}>{hint}</p> : null}
+      <div className={styles.radios}>{children}</div>
+    </fieldset>
+  );
+}
+
 /** Groups the fields of one form with the form spacing. Put actions last. */
 export function FormLayout({ children }: { children: ReactNode }) {
   return <div className={styles.form}>{children}</div>;

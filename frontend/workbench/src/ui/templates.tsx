@@ -61,8 +61,8 @@ type DashboardPageProps = {
   automations?: { content: ReactNode; link?: SectionLink };
   /** StatTiles in a TileGrid, or Panels side by side in a Columns. */
   numbers?: { title?: string; content: ReactNode };
-  /** A Panel with a DataTable or a Timeline of recent runs. */
-  activity?: { content: ReactNode; link?: SectionLink };
+  /** A DataTable of recent runs or records. The template puts it in a flush Panel. */
+  activity?: { title?: string; content: ReactNode; link?: SectionLink };
 };
 
 /** Today and each module overview. Order: attention, automations, numbers, activity. */
@@ -91,8 +91,8 @@ export function DashboardPage({ header, notice, attention, automations, numbers,
         ) : null}
         {numbers ? <DashboardSection title={numbers.title ?? "Key numbers"}>{numbers.content}</DashboardSection> : null}
         {activity ? (
-          <DashboardSection title="Recent activity" link={activity.link}>
-            {activity.content}
+          <DashboardSection title={activity.title ?? "Recent activity"} link={activity.link}>
+            <Panel flush>{activity.content}</Panel>
           </DashboardSection>
         ) : null}
       </div>

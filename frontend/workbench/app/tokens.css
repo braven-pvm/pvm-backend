@@ -101,11 +101,52 @@
 }
 
 /*
- * Dark theme. It applies only with data-theme="dark" on <html> until step B2
- * converts the old globals.css pages, which use light-only colours. Step B2
- * adds the prefers-color-scheme rule. Each value is contrast-checked; the
- * table is in docs/design/design-system.md.
+ * Dark theme. It follows the operating-system setting. data-theme="light" or
+ * data-theme="dark" on <html> overrides it. The two blocks hold the same
+ * values. Each value is contrast-checked; the table is in
+ * docs/design/design-system.md.
  */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --color-canvas: #101612;
+    --color-surface: #172019;
+    --color-fill: #1f2923;
+    --color-text-strong: #eef2ef;
+    --color-text-weak: #a3aea7;
+    --color-stroke-strong: #75817a;
+    --color-stroke-weak: #2b352f;
+
+    --color-brand: #6fbf8f;
+    --color-brand-hover: #8ccfa6;
+    --color-brand-fill: #1d3326;
+    --color-on-brand: #0d1a12;
+
+    --color-error: #f97066;
+    --color-error-fill: #3a1714;
+    --color-warning: #fdb022;
+    --color-warning-fill: #33260b;
+    --color-success: #47cd89;
+    --color-success-fill: #0f2e1d;
+    --color-info: #84adff;
+    --color-info-fill: #102a4c;
+    --color-neutral: #b0b8c4;
+    --color-neutral-fill: #23282f;
+
+    --color-sidebar: #0b110d;
+    --color-sidebar-text: #e6ebe8;
+    --color-sidebar-text-weak: #94a39a;
+    --color-sidebar-current: #1f3326;
+
+    --color-band-production: #7a1a12;
+    --color-on-band-production: #ffe4e0;
+    --color-backdrop: rgba(0, 0, 0, 0.64);
+
+    --shadow-raised: none;
+    --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+}
+
 :root[data-theme="dark"] {
   color-scheme: dark;
   --color-canvas: #101612;

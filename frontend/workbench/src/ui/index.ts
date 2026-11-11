@@ -2,6 +2,7 @@
 // and /ui-kit in development. A screen uses only these components.
 export { AppShell, type EnvironmentKind } from "./app-shell";
 export { AttentionList, type AttentionItem } from "./attention-list";
+export { AuthCard } from "./auth-card";
 export { BackLink } from "./back-link";
 export { BarList, type Bar } from "./bar-list";
 export { Button, ButtonLink, buttonClass, type ButtonVariant } from "./button";
@@ -11,6 +12,7 @@ export { DataTable, type Column, type SortDirection } from "./data-table";
 export { EmptyState } from "./empty-state";
 export {
   CheckboxField,
+  CheckboxGroup,
   FileField,
   FormActions,
   FormLayout,
@@ -21,6 +23,7 @@ export {
   type FieldWidth,
   type Option,
 } from "./field";
+export { FileDrop } from "./file-drop";
 export { FilterBar } from "./filter-bar";
 export { FilterChips, type FilterChip } from "./filter-chips";
 export { KeyValueList, type KeyValue } from "./key-value-list";

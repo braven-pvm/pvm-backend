@@ -1,0 +1,64 @@
+.page {
+  align-items: center;
+  background: var(--color-canvas);
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--space-l) var(--space-s);
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-stroke-weak);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-raised);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-s);
+  max-width: 440px;
+  padding: var(--space-l);
+  width: 100%;
+}
+
+.brand {
+  align-items: center;
+  color: var(--color-text-strong);
+  display: flex;
+  font-size: var(--text-small);
+  font-weight: var(--font-bold);
+  gap: var(--space-xs);
+  margin: 0 0 var(--space-xs);
+}
+
+.mark {
+  align-items: center;
+  background: var(--color-sidebar);
+  border-radius: var(--radius-s);
+  color: var(--color-sidebar-text);
+  display: inline-flex;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.title {
+  color: var(--color-text-strong);
+  font-size: var(--text-h1);
+  font-weight: var(--font-bold);
+  line-height: var(--leading-h1);
+  margin: 0;
+}
+
+.description {
+  color: var(--color-text-weak);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.description p {
+  margin: 0;
+}
+
+.action {
+  margin-top: var(--space-xs);
+}

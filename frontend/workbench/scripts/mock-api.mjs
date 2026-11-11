@@ -368,7 +368,7 @@ const routes = {
   "POST /api/exceptions/*": () => ({}),
   "GET /api/banking/status": () => ({
     accounts: [
-      { bank: "Investec", cashAccount: "PVMINVEST", mode: "Feed", available: true, importedThrough: daysAgo(1), closingBalance: -12480.33, recentStatements: statements("00", -8000, 14, -12480.33) },
+      { bank: "Investec", cashAccount: "PVMINVEST", mode: "Automatic", available: true, importedThrough: daysAgo(1), closingBalance: -12480.33, recentStatements: statements("00", -8000, 14, -12480.33) },
       { bank: "Nedbank", cashAccount: "PVMNEDBANK", mode: "Upload", available: true, importedThrough: daysAgo(1), closingBalance: 74116.2, recentStatements: statements("00", 70000, 8, 74116.2) },
     ],
   }),

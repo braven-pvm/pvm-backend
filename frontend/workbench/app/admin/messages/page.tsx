@@ -1,99 +1,104 @@
+import Link from "next/link";
+import { RefreshCw } from "lucide-react";
 import { enqueueIntegrationCommandAction } from "../../actions";
-import { getIntegrationMessages } from "../../../src/api/client";
+import { getIntegrationMessages, type IntegrationMessageView } from "../../../src/api/client";
 import { requireWorkbenchUser } from "../../../src/auth/session";
+import { formatDateTime } from "../../../src/formatters.mjs";
+import { DataTable, EmptyState, FilterChips, ListPage, Notice, StatusBadge, SubmitButton, type Column } from "../../../src/ui";
+import { EventsSections } from "../events-sections";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Queue messages" };
 
-export default async function IntegrationMessagesPage() {
+type MessagesPageProps = {
+  searchParams: Promise<{ view?: string }>;
+};
+
+type Delivery = IntegrationMessageView["deliveries"][number];
+type Outbox = IntegrationMessageView["outbox"][number];
+
+const deliveryColumns: Column<Delivery>[] = [
+  { key: "message", header: "Message", render: (row) => row.messageType },
+  { key: "updated", header: "Updated", render: (row) => formatDateTime(row.updatedAt) },
+  { key: "queue", header: "Queue", render: (row) => row.queueName, mono: true },
+  { key: "deliveries", header: "Tries", render: (row) => row.deliveryCount, align: "end" },
+  { key: "status", header: "Status", render: (row) => <StatusBadge status={row.status} /> },
+  { key: "result", header: "Result", render: (row) => row.errorSummary ?? row.deadLetterReason ?? row.errorCode ?? "—", weak: true },
+];
+
+const outboxColumns: Column<Outbox>[] = [
+  { key: "message", header: "Command", render: (row) => row.messageType },
+  { key: "created", header: "Created", render: (row) => formatDateTime(row.createdAt) },
+  { key: "queue", header: "Queue", render: (row) => row.queueName, mono: true },
+  { key: "attempts", header: "Tries", render: (row) => row.publishAttempts, align: "end" },
+  { key: "status", header: "Status", render: (row) => <StatusBadge status={row.status} /> },
+  { key: "result", header: "Result", render: (row) => row.lastErrorSummary ?? row.lastErrorCode ?? "—", weak: true },
+];
+
+export default async function IntegrationMessagesPage({ searchParams }: MessagesPageProps) {
   const user = await requireWorkbenchUser("/admin/messages");
+  const header = {
+    eyebrow: "Automation · events",
+    title: "Queue messages",
+    description: "Commands the backoffice queued, and what the worker did with each one.",
+  };
+
   if (!user.roles.includes("Admin")) {
     return (
-      <main className="page-shell">
-        <section className="empty-state">
-          <strong>Admin access required</strong>
-          <p>Integration command and delivery records are restricted to administrators.</p>
-        </section>
-      </main>
+      <ListPage
+        header={header}
+        sections={<EventsSections current="messages" />}
+        notice={<Notice tone="info" title="Admin access needed">Queue records are for Admins only.</Notice>}
+        table={null}
+      />
     );
   }
 
+  const { view: requestedView } = await searchParams;
+  const showOutbox = requestedView === "outbox";
   const view = await getIntegrationMessages();
+  const summary = view.summary;
 
   return (
-    <main className="page-shell">
-      <section className="page-heading">
-        <div>
-          <h1>Integration Messages</h1>
-          <p>Inspect durable commands, worker delivery, retries, and dead letters.</p>
-        </div>
-        <div className="command-actions">
-          <form action={enqueueIntegrationCommandAction}>
-            <input type="hidden" name="command" value="shoprite-po-refresh" />
-            <button className="button secondary" type="submit">Queue PO refresh</button>
-          </form>
+    <ListPage
+      header={{
+        ...header,
+        actions: (
           <form action={enqueueIntegrationCommandAction}>
             <input type="hidden" name="command" value="acumatica-discovery" />
-            <button className="button" type="submit">Queue invoice reconciliation</button>
+            <SubmitButton variant="secondary" pendingLabel="Queueing…">
+              <RefreshCw aria-hidden="true" />
+              Read invoices from Acumatica now
+            </SubmitButton>
           </form>
-        </div>
-      </section>
-
-      <section className="metric-strip four-up" aria-label="Message summary">
-        <div><span>Pending publish</span><strong>{view.summary.pending}</strong></div>
-        <div><span>Published</span><strong>{view.summary.published}</strong></div>
-        <div><span>Retrying</span><strong>{view.summary.retrying}</strong></div>
-        <div><span>Dead letters</span><strong>{view.summary.deadLettered}</strong></div>
-      </section>
-
-      <section className="table-panel" aria-label="Outbox messages">
-        <div className="table-toolbar">
-          <h2>Outbox</h2><span>Latest {view.outbox.length} of {view.summary.outboxTotal}</span>
-        </div>
-        {view.outbox.length === 0 ? <Empty label="No commands queued" /> : (
-          <table>
-            <thead><tr><th>Created</th><th>Command</th><th>Queue</th><th>Status</th><th>Attempts</th><th>Result</th></tr></thead>
-            <tbody>{view.outbox.map((message) => (
-              <tr key={message.id}>
-                <td data-label="Created">{new Date(message.createdAt).toLocaleString()}</td>
-                <td data-label="Command">{message.messageType}<span>{message.correlationId}</span></td>
-                <td data-label="Queue">{message.queueName}</td>
-                <td data-label="Status"><Status value={message.status} /></td>
-                <td data-label="Attempts">{message.publishAttempts}</td>
-                <td data-label="Result">{message.lastErrorCode ?? "-"}<span>{message.lastErrorSummary}</span></td>
-              </tr>
-            ))}</tbody>
-          </table>
-        )}
-      </section>
-
-      <section className="table-panel detail-section" aria-label="Message deliveries">
-        <div className="table-toolbar">
-          <h2>Worker deliveries</h2><span>Latest {view.deliveries.length} of {view.summary.deliveryTotal}</span>
-        </div>
-        {view.deliveries.length === 0 ? <Empty label="No worker deliveries recorded" /> : (
-          <table>
-            <thead><tr><th>Updated</th><th>Message</th><th>Queue</th><th>Status</th><th>Deliveries</th><th>Result</th></tr></thead>
-            <tbody>{view.deliveries.map((delivery) => (
-              <tr key={delivery.id}>
-                <td data-label="Updated">{new Date(delivery.updatedAt).toLocaleString()}</td>
-                <td data-label="Message">{delivery.messageType}<span>{delivery.messageId}</span></td>
-                <td data-label="Queue">{delivery.queueName}</td>
-                <td data-label="Status"><Status value={delivery.status} /></td>
-                <td data-label="Deliveries">{delivery.deliveryCount}</td>
-                <td data-label="Result">{delivery.deadLetterReason ?? delivery.errorCode ?? "-"}<span>{delivery.errorSummary}</span></td>
-              </tr>
-            ))}</tbody>
-          </table>
-        )}
-      </section>
-    </main>
+        ),
+      }}
+      sections={<EventsSections current="messages" />}
+      notice={
+        summary.deadLettered > 0 ? (
+          <Notice tone="warning" title={summary.deadLettered === 1 ? "1 message stopped after repeated failures" : `${summary.deadLettered} messages stopped after repeated failures`}>
+            <p>
+              Work them in <Link href="/exceptions?tab=dead-letters">Exceptions, Dead letters</Link>.
+            </p>
+          </Notice>
+        ) : null
+      }
+      filters={
+        <FilterChips
+          label="Choose the message list"
+          chips={[
+            { label: "Worker deliveries", count: summary.deliveryTotal, href: "/admin/messages", current: !showOutbox },
+            { label: "Outbox", count: summary.outboxTotal, href: "/admin/messages?view=outbox", current: showOutbox },
+          ]}
+        />
+      }
+      table={
+        showOutbox ? (
+          <DataTable caption="Outbox" columns={outboxColumns} rows={view.outbox} rowKey={(row) => row.id} empty={<EmptyState title="No commands queued" />} />
+        ) : (
+          <DataTable caption="Worker deliveries" columns={deliveryColumns} rows={view.deliveries} rowKey={(row) => row.id} empty={<EmptyState title="No deliveries yet" />} />
+        )
+      }
+    />
   );
-}
-
-function Empty({ label }: { label: string }) {
-  return <div className="empty-state"><strong>{label}</strong></div>;
-}
-
-function Status({ value }: { value: string }) {
-  return <span className={`status-pill status-${value.toLowerCase()}`}>{value}</span>;
 }

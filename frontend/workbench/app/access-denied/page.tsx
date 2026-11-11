@@ -1,14 +1,17 @@
+import { AuthCard, ButtonLink } from "../../src/ui";
+
+export const metadata = { title: "No access" };
+
 export default function AccessDeniedPage() {
   return (
-    <main className="page-shell">
-      <section className="page-heading">
-        <div>
-          <h1>Access denied</h1>
-          <p>
-            Your Microsoft account does not have access to PVM Backoffice yet. Ask an admin to add you.
-          </p>
-        </div>
-      </section>
-    </main>
+    <AuthCard
+      title="No access yet"
+      description="Your Microsoft account signed in, but it is not added to PVM Backoffice. Ask an Admin to add you, then sign in again."
+      action={
+        <ButtonLink href="/api/auth/signout" variant="secondary">
+          Sign out
+        </ButtonLink>
+      }
+    />
   );
 }
