@@ -1,0 +1,565 @@
+<title>PVM Backoffice prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap">
+<style>
+/* Layout: dark sidebar + light canvas; one view per hash; tokens mirror frontend/workbench/app/tokens.css */
+:root {
+  --canvas: #f5f6f5; --surface: #ffffff; --fill: #eef1ef;
+  --text: #1f2421; --text-weak: #5b6660; --stroke: #848f89; --line: #e1e6e2;
+  --brand: #14532d; --brand-hover: #0f3f22; --brand-fill: #e7f1ea; --on-brand: #ffffff;
+  --err: #b42318; --err-fill: #fef3f2; --warn: #93370d; --warn-fill: #fffaeb;
+  --ok: #067647; --ok-fill: #ecfdf3; --info: #175cd3; --info-fill: #eff8ff;
+  --neutral: #475467; --neutral-fill: #f2f4f7;
+  --side: #16211b; --side-text: #e6ebe8; --side-weak: #9aa8a0; --side-current: #24392c;
+  --band: #b42318; --on-band: #ffffff;
+  --shadow: 0 1px 2px rgba(31,36,33,.06), 0 1px 3px rgba(31,36,33,.10);
+  --font: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --canvas: #101612; --surface: #172019; --fill: #1f2923;
+  --text: #eef2ef; --text-weak: #a3aea7; --stroke: #6b766f; --line: #2b352f;
+  --brand: #6fbf8f; --brand-hover: #8ccfa6; --brand-fill: #1d3326; --on-brand: #0d1a12;
+  --err: #f97066; --err-fill: #3a1714; --warn: #fdb022; --warn-fill: #33260b;
+  --ok: #47cd89; --ok-fill: #0f2e1d; --info: #84adff; --info-fill: #102a4c;
+  --neutral: #b0b8c4; --neutral-fill: #23282f;
+  --side: #0b110d; --side-text: #e6ebe8; --side-weak: #94a39a; --side-current: #1f3326;
+  --band: #7a1a12; --on-band: #ffe4e0; --shadow: none; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --canvas: #101612; --surface: #172019; --fill: #1f2923;
+  --text: #eef2ef; --text-weak: #a3aea7; --stroke: #6b766f; --line: #2b352f;
+  --brand: #6fbf8f; --brand-hover: #8ccfa6; --brand-fill: #1d3326; --on-brand: #0d1a12;
+  --err: #f97066; --err-fill: #3a1714; --warn: #fdb022; --warn-fill: #33260b;
+  --ok: #47cd89; --ok-fill: #0f2e1d; --info: #84adff; --info-fill: #102a4c;
+  --neutral: #b0b8c4; --neutral-fill: #23282f;
+  --side: #0b110d; --side-text: #e6ebe8; --side-weak: #94a39a; --side-current: #1f3326;
+  --band: #7a1a12; --on-band: #ffe4e0; --shadow: none; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--canvas); color: var(--text); font-family: var(--font); font-size: 15px; line-height: 1.5; }
+a { color: var(--brand); }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; }
+.side { background: var(--side); color: var(--side-text); padding: 20px 14px; display: flex; flex-direction: column; gap: 22px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; padding: 0 8px; color: var(--side-text); text-decoration: none; }
+.mark { width: 28px; height: 28px; border-radius: 6px; background: var(--side-current); display: grid; place-items: center; font-size: 13px; }
+.side-top { display: flex; align-items: center; justify-content: space-between; }
+.menu-btn { display: none; }
+.nav { display: flex; flex-direction: column; gap: 20px; flex: 1; }
+.group { display: flex; flex-direction: column; gap: 2px; }
+.glabel { font-size: 12px; font-weight: 600; color: var(--side-weak); padding: 0 8px; margin: 0 0 4px; letter-spacing: .02em; }
+.nav a { display: flex; align-items: center; gap: 10px; color: var(--side-weak); text-decoration: none; font-size: 14px; padding: 8px; border-radius: 8px; min-height: 36px; }
+.nav a:hover { color: var(--side-text); background: rgba(255,255,255,.06); }
+.nav a[aria-current="page"] { background: var(--side-current); color: #fff; font-weight: 600; }
+.nav a:focus-visible { outline-color: var(--side-text); }
+.nav svg { width: 18px; height: 18px; flex: none; }
+.count { margin-left: auto; font-size: 12px; font-weight: 600; background: var(--err); color: #fff; border-radius: 999px; padding: 0 7px; line-height: 20px; }
+.account { border-top: 1px solid rgba(255,255,255,.1); padding: 14px 8px 0; font-size: 14px; display: flex; flex-direction: column; gap: 2px; }
+.account small { color: var(--side-weak); font-size: 12px; }
+.main { min-width: 0; }
+.band { background: var(--band); color: var(--on-band); font-size: 13px; font-weight: 600; display: flex; gap: 8px; align-items: center; padding-block: 8px; padding-left: max(32px, env(safe-area-inset-left, 0px)); padding-right: max(32px, env(safe-area-inset-right, 0px)); }
+.band svg { width: 16px; height: 16px; }
+.proto { font-size: 12px; color: var(--text-weak); background: var(--fill); border-bottom: 1px solid var(--line); padding-block: 6px; padding-left: max(32px, env(safe-area-inset-left, 0px)); padding-right: max(32px, env(safe-area-inset-right, 0px)); }
+.content { max-width: 1280px; margin: 0 auto; padding-block: 32px 80px; padding-left: max(32px, env(safe-area-inset-left, 0px)); padding-right: max(32px, env(safe-area-inset-right, 0px)); }
+.view { display: flex; flex-direction: column; gap: 32px; }
+.head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px; }
+.head > div:first-child { display: flex; flex-direction: column; gap: 4px; max-width: 72ch; }
+.eyebrow { font-size: 12px; font-weight: 600; color: var(--text-weak); margin: 0; letter-spacing: .02em; }
+h1 { font-size: 28px; line-height: 36px; font-weight: 600; letter-spacing: -.01em; margin: 0; text-wrap: balance; }
+h2 { font-size: 16px; line-height: 24px; font-weight: 600; margin: 0; }
+.desc { color: var(--text-weak); margin: 0; font-size: 15px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn { font: inherit; font-size: 14px; font-weight: 600; min-height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid transparent; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; text-decoration: none; white-space: nowrap; }
+.btn svg { width: 16px; height: 16px; }
+.btn.primary { background: var(--brand); color: var(--on-brand); }
+.btn.primary:hover { background: var(--brand-hover); }
+.btn.secondary { background: var(--surface); color: var(--brand); border-color: var(--brand); }
+.btn.secondary:hover { background: var(--brand-fill); }
+.btn.tertiary { background: none; color: var(--brand); text-decoration: underline; text-underline-offset: 3px; padding: 0 6px; }
+.badge { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; line-height: 16px; border-radius: 999px; padding: 4px 10px 4px 8px; white-space: nowrap; }
+.badge svg { width: 14px; height: 14px; }
+.b-ok { background: var(--ok-fill); color: var(--ok); } .b-err { background: var(--err-fill); color: var(--err); }
+.b-warn { background: var(--warn-fill); color: var(--warn); } .b-info { background: var(--info-fill); color: var(--info); }
+.b-off { background: var(--neutral-fill); color: var(--neutral); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+.phead { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 16px 24px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.phead p { margin: 2px 0 0; color: var(--text-weak); font-size: 14px; }
+.pbody { padding: 20px 24px; }
+.section { display: flex; flex-direction: column; gap: 12px; }
+.section > .label { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.attention { display: flex; flex-direction: column; }
+.arow { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 14px 24px; border-top: 1px solid var(--line); }
+.arow:first-child { border-top: 0; }
+.arow strong { font-weight: 600; display: block; }
+.arow span.sub { color: var(--text-weak); font-size: 14px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; text-decoration: none; color: var(--text); }
+.tile:hover { border-color: var(--stroke); }
+.tile .name { font-weight: 600; font-size: 14px; }
+.tile .meta { font-size: 13px; color: var(--text-weak); }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 24px; margin: 0; font-size: 14px; }
+.kv dt { color: var(--text-weak); } .kv dd { margin: 0; }
+.tablewrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-size: 12px; font-weight: 600; color: var(--text-weak); background: var(--fill); padding: 10px 16px; white-space: nowrap; }
+td { padding: 12px 16px; border-top: 1px solid var(--line); vertical-align: middle; }
+td.num, th.num { text-align: right; }
+tr.link { cursor: pointer; } tr.link:hover td { background: var(--brand-fill); }
+.mono { font-family: var(--mono); font-size: 13px; }
+.weak { color: var(--text-weak); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.chip[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-fill); color: var(--brand); font-weight: 600; }
+.subnav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.subnav button { font: inherit; font-size: 14px; background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 12px; color: var(--text-weak); cursor: pointer; }
+.subnav button[aria-selected="true"] { color: var(--brand); border-bottom-color: var(--brand); font-weight: 600; }
+.notice { display: flex; gap: 12px; align-items: flex-start; border-radius: 12px; padding: 14px 18px; font-size: 14px; }
+.notice svg { width: 18px; height: 18px; flex: none; margin-top: 2px; }
+.notice strong { display: block; }
+.n-warn { background: var(--warn-fill); color: var(--warn); } .n-info { background: var(--info-fill); color: var(--info); }
+.n-err { background: var(--err-fill); color: var(--err); } .n-ok { background: var(--ok-fill); color: var(--ok); }
+.back { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; text-decoration: none; }
+.back svg { width: 16px; height: 16px; }
+.steps { display: flex; gap: 8px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
+.steps li { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-weak); padding-right: 16px; }
+.steps .dot { width: 26px; height: 26px; border-radius: 999px; display: grid; place-items: center; font-size: 13px; font-weight: 600; border: 1px solid var(--stroke); }
+.steps li[data-state="current"] { color: var(--text); font-weight: 600; }
+.steps li[data-state="current"] .dot { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
+.steps li[data-state="done"] .dot { background: var(--brand-fill); border-color: var(--brand); color: var(--brand); }
+.drop { border: 2px dashed var(--stroke); border-radius: 12px; padding: 32px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--text-weak); }
+.drop svg { width: 28px; height: 28px; color: var(--brand); }
+.file { display: flex; align-items: center; gap: 10px; background: var(--fill); border-radius: 8px; padding: 10px 14px; font-size: 14px; }
+.modes { display: inline-flex; border: 1px solid var(--stroke); border-radius: 8px; overflow: hidden; }
+.modes button { font: inherit; font-size: 14px; min-height: 40px; padding: 0 18px; background: var(--surface); color: var(--text); border: 0; border-left: 1px solid var(--stroke); cursor: pointer; }
+.modes button:first-child { border-left: 0; }
+.modes button[aria-pressed="true"] { background: var(--brand); color: var(--on-brand); font-weight: 600; }
+.confirm { border: 1px solid var(--warn); background: var(--warn-fill); color: var(--text); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.timeline li { display: grid; grid-template-columns: 130px minmax(0,1fr); gap: 16px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.timeline li:first-child { border-top: 0; }
+.bars { display: flex; flex-direction: column; gap: 10px; }
+.bar { display: grid; grid-template-columns: 170px minmax(0,1fr) 64px; gap: 12px; align-items: center; font-size: 14px; }
+.track { height: 12px; background: var(--fill); border-radius: 6px; overflow: hidden; position: relative; }
+.track span { display: block; height: 100%; border-radius: 6px; background: var(--brand); }
+.track span.low { background: var(--warn); }
+.axis { display: grid; grid-template-columns: 170px minmax(0,1fr) 64px; gap: 12px; font-size: 12px; color: var(--text-weak); }
+.axis div { display: flex; justify-content: space-between; }
+.diff-up { color: var(--ok); font-weight: 600; } .diff-down { color: var(--err); font-weight: 600; }
+@media (max-width: 900px) {
+  .shell { grid-template-columns: minmax(0,1fr); }
+  .side { position: static; height: auto; gap: 0; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .menu-btn { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 14px; color: var(--side-text); background: none; border: 1px solid rgba(255,255,255,.24); border-radius: 8px; min-height: 40px; padding: 0 14px; cursor: pointer; }
+  .menu-btn svg { width: 18px; height: 18px; }
+  .nav, .account { display: none; }
+  .side[data-open="true"] .nav, .side[data-open="true"] .account { display: flex; padding-top: 16px; }
+  .band, .proto, .content { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .arow { grid-template-columns: minmax(0,1fr); gap: 8px; padding: 14px 16px; }
+  .phead, .pbody { padding-left: 16px; padding-right: 16px; }
+  .bar, .axis { grid-template-columns: 110px minmax(0,1fr) 52px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="shell">
+  <aside class="side" id="side" data-open="false">
+    <div class="side-top">
+      <a class="brand" href="#today"><span class="mark" aria-hidden="true">P</span>PVM Backoffice</a>
+      <button class="menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="nav" aria-label="Menu"><i data-lucide="menu"></i><span>Menu</span></button>
+    </div>
+    <nav class="nav" id="nav" aria-label="Main navigation">
+      <div class="group">
+        <a href="#today" data-nav="today"><i data-lucide="house"></i>Today</a>
+        <a href="#exceptions" data-nav="exceptions"><i data-lucide="inbox"></i>Exceptions<span class="count">3</span></a>
+      </div>
+      <div class="group">
+        <p class="glabel">Operations</p>
+        <a href="#shoprite" data-nav="shoprite"><i data-lucide="store"></i>Shoprite</a>
+        <a href="#banking" data-nav="banking"><i data-lucide="landmark"></i>Banking</a>
+        <a href="#stock" data-nav="stock"><i data-lucide="package"></i>Web store stock</a>
+      </div>
+      <div class="group">
+        <p class="glabel">Automation</p>
+        <a href="#automations" data-nav="automations"><i data-lucide="zap"></i>Automations</a>
+        <a href="#runs" data-nav="runs"><i data-lucide="history"></i>Runs</a>
+        <a href="#events" data-nav="events"><i data-lucide="activity"></i>Events</a>
+      </div>
+      <div class="group">
+        <p class="glabel">Insight</p>
+        <a href="#reports" data-nav="reports"><i data-lucide="chart-column"></i>Reports</a>
+      </div>
+      <div class="group">
+        <p class="glabel">Settings</p>
+        <a href="#connections" data-nav="connections"><i data-lucide="plug"></i>Connections</a>
+        <a href="#people" data-nav="people"><i data-lucide="users"></i>Users</a>
+      </div>
+    </nav>
+    <div class="account"><span>Marius Bloemhof</span><small>Admin</small></div>
+  </aside>
+
+  <div class="main">
+    <div class="band" role="note"><i data-lucide="triangle-alert"></i>Production — changes affect live Acumatica, bank and Shoprite data</div>
+    <div class="proto">Prototype with example data. Use the sidebar and the buttons to move between screens; nothing is sent anywhere.</div>
+    <div class="content">
+
+      <!-- TODAY -->
+      <section class="view" data-view="today" aria-label="Today">
+        <div class="head">
+          <div><p class="eyebrow">Wednesday 11 November 2026</p><h1>Today</h1><p class="desc">4 items need you. Everything else is running.</p></div>
+          <div class="actions"><a class="btn primary" href="#bank-import"><i data-lucide="upload"></i>Import statement</a></div>
+        </div>
+
+        <div class="section">
+          <div class="label"><h2>Needs attention</h2><a href="#exceptions">All exceptions</a></div>
+          <div class="panel attention">
+            <div class="arow"><span class="badge b-err"><i data-lucide="circle-x"></i>Failed</span><div><strong>Investec feed failed at 05:00</strong><span class="sub">Acumatica sign-in timed out. The next run is tomorrow at 05:00.</span></div><a class="btn secondary" href="#automation">Open automation</a></div>
+            <div class="arow"><span class="badge b-warn"><i data-lucide="circle-alert"></i>Needs review</span><div><strong>INV190970 has no Shoprite PO number</strong><span class="sub">Add the PO number in Acumatica. The invoice re-checks itself on the next sync.</span></div><a class="btn secondary" href="#invoice">Open invoice</a></div>
+            <div class="arow"><span class="badge b-warn"><i data-lucide="clock"></i>Overdue</span><div><strong>Nedbank Western Cape: no statement since 7 Nov</strong><span class="sub">3 working days without a statement. Download the OFX from Nedbank and import it.</span></div><a class="btn secondary" href="#bank-import">Import statement</a></div>
+            <div class="arow"><span class="badge b-info"><i data-lucide="eye"></i>Shadow</span><div><strong>Stock sync found 6 changes for the web store</strong><span class="sub">Shadow mode: review the differences before the sync writes to pvm.co.za.</span></div><a class="btn secondary" href="#stock">Review changes</a></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="label"><h2>Automations</h2><a href="#automations">All automations</a></div>
+          <div class="tiles">
+            <a class="tile" href="#automation"><span class="name">Investec feed</span><span class="badge b-err" style="align-self:flex-start"><i data-lucide="circle-x"></i>Failing</span><span class="meta">Live · daily 05:00</span></a>
+            <a class="tile" href="#automations"><span class="name">Invoice reconciliation</span><span class="badge b-ok" style="align-self:flex-start"><i data-lucide="circle-check"></i>Healthy</span><span class="meta">Live · every 10 minutes</span></a>
+            <a class="tile" href="#automations"><span class="name">Shoprite submission</span><span class="badge b-info" style="align-self:flex-start"><i data-lucide="eye"></i>Shadow</span><span class="meta">51 ready · 0 sent</span></a>
+            <a class="tile" href="#stock"><span class="name">Stock sync</span><span class="badge b-info" style="align-self:flex-start"><i data-lucide="eye"></i>Shadow</span><span class="meta">Every 30 minutes · 6 changes</span></a>
+          </div>
+        </div>
+
+        <div class="cols">
+          <div class="panel"><div class="phead"><div><h2>Banking</h2><p>Last statement per account</p></div><a href="#banking">Open</a></div>
+            <div class="tablewrap"><table><thead><tr><th>Account</th><th>Covers to</th><th>Status</th></tr></thead><tbody>
+              <tr><td>Investec ZAR</td><td>10 Nov</td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Current</span></td></tr>
+              <tr><td>Nedbank Head Office</td><td>10 Nov</td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Current</span></td></tr>
+              <tr><td>Nedbank Western Cape</td><td>07 Nov</td><td><span class="badge b-warn"><i data-lucide="clock"></i>Overdue</span></td></tr>
+            </tbody></table></div></div>
+          <div class="panel"><div class="phead"><div><h2>Shoprite</h2><p>Invoices this week</p></div><a href="#shoprite">Open</a></div>
+            <div class="pbody"><dl class="kv"><dt>Ready to send</dt><dd>51</dd><dt>Needs review</dt><dd>1</dd><dt>Sent</dt><dd>0 (submission in shadow)</dd><dt>Last invoice sync</dt><dd>10:40</dd></dl></div></div>
+        </div>
+      </section>
+
+      <!-- EXCEPTIONS -->
+      <section class="view" data-view="exceptions" aria-label="Exceptions" hidden>
+        <div class="head"><div><p class="eyebrow">Work queue</p><h1>Exceptions</h1><p class="desc">Anything an automation could not finish on its own. Assign it, fix it, then resolve it.</p></div></div>
+        <div class="chips" role="group" aria-label="Filter exceptions"><button class="chip" aria-pressed="true">Open · 3</button><button class="chip" aria-pressed="false">Assigned to me · 1</button><button class="chip" aria-pressed="false">Resolved this week · 12</button></div>
+        <div class="panel"><div class="tablewrap"><table><thead><tr><th>Severity</th><th>What happened</th><th>Module</th><th>Opened</th><th>Assigned</th><th></th></tr></thead><tbody>
+          <tr><td><span class="badge b-err"><i data-lucide="circle-x"></i>Failed</span></td><td>Investec feed run failed: Acumatica sign-in timed out</td><td>Banking</td><td>11 Nov, 05:01</td><td class="weak">Nobody</td><td><a href="#automation">Open</a></td></tr>
+          <tr><td><span class="badge b-warn"><i data-lucide="circle-alert"></i>Review</span></td><td>INV190970 has no Shoprite PO number</td><td>Shoprite</td><td>10 Nov, 14:12</td><td>Marius Bloemhof</td><td><a href="#invoice">Open</a></td></tr>
+          <tr><td><span class="badge b-warn"><i data-lucide="circle-alert"></i>Review</span></td><td>Queue message dead-lettered after 5 attempts: acumatica-invoice-discovery</td><td>Shoprite</td><td>09 Nov, 22:47</td><td class="weak">Nobody</td><td><a href="#events">Open</a></td></tr>
+        </tbody></table></div></div>
+      </section>
+
+      <!-- SHOPRITE -->
+      <section class="view" data-view="shoprite" aria-label="Shoprite" hidden>
+        <div class="head"><div><p class="eyebrow">Operations</p><h1>Shoprite</h1><p class="desc">E-invoices built from finalised Acumatica invoices and submitted to the Shoprite B2B portal.</p></div>
+          <div class="actions"><span class="badge b-info"><i data-lucide="eye"></i>Submission in shadow</span><a class="btn secondary" href="#automations">Automation settings</a></div></div>
+        <div class="subnav" role="tablist" aria-label="Shoprite sections">
+          <button role="tab" aria-selected="true" data-tab="sr-invoices">Invoices</button>
+          <button role="tab" aria-selected="false" data-tab="sr-pos">Purchase orders</button>
+          <button role="tab" aria-selected="false" data-tab="sr-ref">Reference data</button>
+        </div>
+        <div data-pane="sr-invoices" class="section">
+          <div class="chips" role="group" aria-label="Filter invoices"><button class="chip" aria-pressed="true">All · 52</button><button class="chip" aria-pressed="false">Ready · 51</button><button class="chip" aria-pressed="false">Needs review · 1</button><button class="chip" aria-pressed="false">Sent · 0</button></div>
+          <div class="panel"><div class="tablewrap"><table><thead><tr><th>Invoice</th><th>Store or DC</th><th>Shoprite PO</th><th>Date</th><th class="num">Total incl. VAT</th><th>Status</th></tr></thead><tbody>
+            <tr class="link" data-go="invoice"><td class="mono">INV190970</td><td>Shoprite Centurion DC</td><td class="weak">Missing</td><td>10 Nov</td><td class="num">R 18 422.40</td><td><span class="badge b-warn"><i data-lucide="circle-alert"></i>Needs review</span></td></tr>
+            <tr class="link" data-go="invoice"><td class="mono">INV190968</td><td>Checkers Hyper Fourways</td><td class="mono">1220104411</td><td>10 Nov</td><td class="num">R 6 913.80</td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Ready</span></td></tr>
+            <tr class="link" data-go="invoice"><td class="mono">INV190961</td><td>Shoprite Brackenfell DC</td><td class="mono">1220102998</td><td>09 Nov</td><td class="num">R 41 207.15</td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Ready</span></td></tr>
+            <tr class="link" data-go="invoice"><td class="mono">INV190955</td><td>Checkers Durbanville</td><td class="mono">1220102874</td><td>09 Nov</td><td class="num">R 3 486.00</td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Ready</span></td></tr>
+          </tbody></table></div></div>
+        </div>
+        <div data-pane="sr-pos" class="section" hidden>
+          <div class="notice n-info"><i data-lucide="info"></i><div><strong>Order reading is switched off</strong>Reading orders through the API takes them off the Shoprite portal. Purchase orders are entered on the portal and captured in Acumatica.</div></div>
+        </div>
+        <div data-pane="sr-ref" class="section" hidden>
+          <div class="panel"><div class="phead"><div><h2>Delivery locations</h2><p>Acumatica branch to Shoprite GLN · 33 locations</p></div><button class="btn secondary" type="button">Add location</button></div>
+            <div class="tablewrap"><table><thead><tr><th>Acumatica location</th><th>Shoprite name</th><th>GLN</th></tr></thead><tbody>
+              <tr><td class="mono">DEB2062-CENT</td><td>Shoprite Centurion DC</td><td class="mono">6001007000207</td></tr>
+              <tr><td class="mono">DEB2062-BRAC</td><td>Shoprite Brackenfell DC</td><td class="mono">6001007000306</td></tr>
+            </tbody></table></div></div>
+        </div>
+      </section>
+
+      <!-- INVOICE RECORD -->
+      <section class="view" data-view="invoice" aria-label="Invoice INV190970" hidden>
+        <a class="back" href="#shoprite"><i data-lucide="arrow-left"></i>Shoprite invoices</a>
+        <div class="head"><div><p class="eyebrow">Shoprite invoice</p><h1>INV190970</h1><p class="desc">Shoprite Centurion DC · 10 Nov 2026 · R 18 422.40 incl. VAT</p></div>
+          <div class="actions"><span class="badge b-warn"><i data-lucide="circle-alert"></i>Needs review</span><a class="btn primary" href="#invoice">Open in Acumatica</a></div></div>
+        <div class="notice n-warn"><i data-lucide="circle-alert"></i><div><strong>Shoprite PO number is missing</strong>Add the customer order number on the Acumatica sales order. This invoice re-checks itself on the next sync, every 10 minutes.</div></div>
+        <div class="cols">
+          <div class="panel"><div class="phead"><h2>Summary</h2></div><div class="pbody"><dl class="kv">
+            <dt>Customer</dt><dd>DEB2062 · Shoprite Checkers</dd><dt>Deliver to</dt><dd>Shoprite Centurion DC · GLN 6001007000207</dd>
+            <dt>Shoprite PO</dt><dd class="weak">Missing</dd><dt>Lines</dt><dd>4</dd><dt>VAT</dt><dd>R 2 402.92</dd></dl></div></div>
+          <div class="panel"><div class="phead"><h2>Activity</h2></div><div class="pbody"><ul class="timeline">
+            <li><span class="weak">10 Nov, 14:12</span><span>Validation failed: no Shoprite PO number</span></li>
+            <li><span class="weak">10 Nov, 14:12</span><span>Read from Acumatica by invoice reconciliation</span></li>
+            <li><span class="weak">10 Nov, 13:58</span><span>Invoice finalised in Acumatica</span></li></ul></div></div>
+        </div>
+        <div class="panel"><div class="phead"><h2>Lines</h2></div><div class="tablewrap"><table><thead><tr><th>Item</th><th>Description</th><th>GTIN</th><th class="num">Qty</th><th class="num">Line total</th></tr></thead><tbody>
+          <tr><td class="mono">ENER12</td><td>Energade lemon 500 ml</td><td class="mono">6001007611212</td><td class="num">12 cases</td><td class="num">R 6 912.00</td></tr>
+          <tr><td class="mono">ENER10</td><td>Energade naartjie 500 ml</td><td class="mono">6001007611014</td><td class="num">10 cases</td><td class="num">R 5 760.00</td></tr>
+          <tr><td class="mono">ENER3</td><td>Energade mixed berry 500 ml</td><td class="mono">6001007611304</td><td class="num">4 cases</td><td class="num">R 2 304.00</td></tr>
+          <tr><td class="mono">DYNA31</td><td>Octane orange 1 kg</td><td class="mono">6009880461317</td><td class="num">8 units</td><td class="num">R 1 043.48</td></tr>
+        </tbody></table></div></div>
+      </section>
+
+      <!-- BANKING -->
+      <section class="view" data-view="banking" aria-label="Banking" hidden>
+        <div class="head"><div><p class="eyebrow">Operations</p><h1>Banking</h1><p class="desc">Bank statements into Acumatica cash management. Investec arrives by feed; Nedbank by statement upload.</p></div>
+          <div class="actions"><a class="btn primary" href="#bank-import"><i data-lucide="upload"></i>Import statement</a></div></div>
+        <div class="panel"><div class="phead"><div><h2>Accounts</h2><p>Coverage is measured from statement lines, not statement dates</p></div></div>
+          <div class="tablewrap"><table><thead><tr><th>Account</th><th>Cash account</th><th>Arrives by</th><th>Last line date</th><th>Status</th></tr></thead><tbody>
+            <tr><td>Investec Business ••••3580</td><td class="mono">PVMINVEST</td><td>Daily feed 05:00</td><td>10 Nov</td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Current</span></td></tr>
+            <tr><td>Nedbank Head Office ••••4346</td><td class="mono">PVMNEDBANK</td><td>Statement upload</td><td>10 Nov</td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Current</span></td></tr>
+            <tr><td>Nedbank Western Cape</td><td class="mono">PVMNEDWC</td><td>Statement upload</td><td>07 Nov</td><td><span class="badge b-warn"><i data-lucide="clock"></i>Overdue · 3 days</span></td></tr>
+            <tr><td>Nedbank KwaZulu-Natal</td><td class="mono">PVMNEDKZN</td><td>Statement upload</td><td>10 Nov</td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Current</span></td></tr>
+          </tbody></table></div></div>
+        <div class="panel"><div class="phead"><div><h2>Recent statements</h2><p>Created in Acumatica on screen CA306500</p></div><a href="#reports">Coverage report</a></div>
+          <div class="tablewrap"><table><thead><tr><th>Statement</th><th>Account</th><th>Period</th><th class="num">Lines</th><th class="num">Closing balance</th><th>Source</th></tr></thead><tbody>
+            <tr><td class="mono">001318</td><td>Nedbank Head Office</td><td>10 Nov</td><td class="num">8</td><td class="num">R 74 116.20</td><td>Upload · Izelle</td></tr>
+            <tr><td class="mono">001317</td><td>Investec ZAR</td><td>10 Nov</td><td class="num">14</td><td class="num">−R 12 480.33</td><td>Feed</td></tr>
+            <tr><td class="mono">001315</td><td>Nedbank KwaZulu-Natal</td><td>09–10 Nov</td><td class="num">5</td><td class="num">R 9 902.41</td><td>Upload · Izelle</td></tr>
+          </tbody></table></div></div>
+      </section>
+
+      <!-- BANK IMPORT TASK -->
+      <section class="view" data-view="bank-import" aria-label="Import a bank statement" hidden>
+        <a class="back" href="#banking"><i data-lucide="arrow-left"></i>Banking</a>
+        <div class="head"><div><p class="eyebrow">Banking</p><h1>Import a bank statement</h1><p class="desc">Nedbank OFX statements. The import detects the account, renumbers lines and skips anything already in Acumatica.</p></div></div>
+        <ol class="steps" id="importSteps"><li data-state="current"><span class="dot">1</span>Choose file</li><li data-state="todo"><span class="dot">2</span>Check what will change</li><li data-state="todo"><span class="dot">3</span>Done</li></ol>
+        <div class="panel" data-step="1"><div class="pbody section">
+          <div class="drop"><i data-lucide="file-up"></i><strong style="color:var(--text)">Drop an OFX file here</strong><span>Download it from Nedbank online banking as OFX (Money 2003 or later)</span></div>
+          <div class="file"><i data-lucide="file-text" style="width:18px;height:18px"></i><span class="mono">11 NOV 2026 - Statement6834.ofx</span><span class="weak" style="margin-left:auto">2.1 KB · example</span></div>
+          <div class="actions"><button class="btn primary" type="button" data-import="2">Check statement</button></div>
+        </div></div>
+        <div class="panel" data-step="2" hidden><div class="pbody section">
+          <dl class="kv"><dt>Account</dt><dd>Nedbank Western Cape → <span class="mono">PVMNEDWC</span></dd><dt>Period</dt><dd>08–10 Nov 2026</dd><dt>Balances</dt><dd>R 31 004.10 → R 38 212.55 · lines reconcile</dd></dl>
+          <div class="tablewrap"><table><thead><tr><th>Date</th><th>Description</th><th class="num">Amount</th><th>Will</th></tr></thead><tbody>
+            <tr><td>08 Nov</td><td>ABSA BANK CAS1074 MidwaterSpar</td><td class="num">R 3 919.43</td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Import</span></td></tr>
+            <tr><td>08 Nov</td><td>SAVEWAY SUPERSPAR</td><td class="num">R 1 915.90</td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Import</span></td></tr>
+            <tr><td>10 Nov</td><td>SHELL MIDDELST 5412815006031159</td><td class="num">−R 1 597.95</td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Import</span></td></tr>
+            <tr><td>10 Nov</td><td>TRF NA CPG 10112026</td><td class="num">R 2 971.07</td><td><span class="badge b-off"><i data-lucide="circle-dashed"></i>Skip · already imported</span></td></tr>
+          </tbody></table></div>
+          <div class="actions"><button class="btn primary" type="button" data-import="3">Import 3 lines</button><button class="btn tertiary" type="button" data-import="1">Choose another file</button></div>
+        </div></div>
+        <div class="panel" data-step="3" hidden><div class="pbody section">
+          <div class="notice n-ok"><i data-lucide="circle-check"></i><div><strong>Statement 001319 created</strong>3 lines imported to PVMNEDWC. 1 line was already in Acumatica and was skipped.</div></div>
+          <div class="actions"><a class="btn primary" href="#banking">Back to banking</a><button class="btn secondary" type="button" data-import="1">Import another statement</button></div>
+        </div></div>
+      </section>
+
+      <!-- STOCK -->
+      <section class="view" data-view="stock" aria-label="Web store stock" hidden>
+        <div class="head"><div><p class="eyebrow">Operations</p><h1>Web store stock</h1><p class="desc">Acumatica stock for warehouse HO, location FG, published to pvm.co.za for 54 mapped products.</p></div>
+          <div class="actions"><span class="badge b-info"><i data-lucide="eye"></i>Shadow</span><a class="btn secondary" href="#automations">Sync settings</a></div></div>
+        <div class="notice n-err"><i data-lucide="circle-x"></i><div><strong>The web store blocks the sync</strong>pvm.co.za answers API calls with a bot check. The host must exempt /wp-json/wc/ before the sync can write. <a href="#connections">View connection</a></div></div>
+        <div class="panel"><div class="phead"><div><h2>Changes found by the last run</h2><p>11 Nov, 10:30 · shadow mode, nothing written · levels below 5 publish as 0</p></div><button class="btn primary" type="button">Approve and switch to live</button></div>
+          <div class="tablewrap"><table><thead><tr><th>Product</th><th>Item</th><th class="num">Available</th><th class="num">Store shows</th><th class="num">Will publish</th><th class="num">Change</th></tr></thead><tbody>
+            <tr><td>Energade lemon 500 ml</td><td class="mono">ENER12</td><td class="num">3 408</td><td class="num">3 120</td><td class="num">3 408</td><td class="num diff-up">+288</td></tr>
+            <tr><td>Energade naartjie 500 ml</td><td class="mono">ENER10</td><td class="num">6 520</td><td class="num">7 004</td><td class="num">6 520</td><td class="num diff-down">−484</td></tr>
+            <tr><td>Octane citrus 1 kg</td><td class="mono">DYNA32</td><td class="num">31</td><td class="num">29</td><td class="num">31</td><td class="num diff-up">+2</td></tr>
+            <tr><td>Octane orange 1 kg</td><td class="mono">DYNA31</td><td class="num">4</td><td class="num">9</td><td class="num">0</td><td class="num diff-down">−9</td></tr>
+            <tr><td>Nite recovery 500 g</td><td class="mono">NITE10</td><td class="num">46</td><td class="num">41</td><td class="num">46</td><td class="num diff-up">+5</td></tr>
+            <tr><td>Protein whey vanilla 2 kg</td><td class="mono">PROT20</td><td class="num">17</td><td class="num">22</td><td class="num">17</td><td class="num diff-down">−5</td></tr>
+          </tbody></table></div></div>
+        <p class="weak" style="margin:0;font-size:14px">Available = on hand − allocated to sales orders − unreleased transfers out. Matches the legacy stock script on 52 of 54 products; the 2 differences are explained in the comparison report.</p>
+      </section>
+
+      <!-- AUTOMATIONS -->
+      <section class="view" data-view="automations" aria-label="Automations" hidden>
+        <div class="head"><div><p class="eyebrow">Automation</p><h1>Automations</h1><p class="desc">Everything that runs without a person. Off does nothing; Shadow works it out and writes nothing; Live writes.</p></div></div>
+        <div class="panel"><div class="tablewrap"><table><thead><tr><th>Automation</th><th>Module</th><th>Runs</th><th>Mode</th><th>Health</th><th>Last run</th><th>Next run</th></tr></thead><tbody>
+          <tr class="link" data-go="automation"><td><strong>Investec feed</strong></td><td>Banking</td><td>Daily 05:00</td><td><span class="badge b-ok"><i data-lucide="play"></i>Live</span></td><td><span class="badge b-err"><i data-lucide="circle-x"></i>Failing</span></td><td>Today 05:00</td><td>Tomorrow 05:00</td></tr>
+          <tr><td><strong>Invoice reconciliation</strong></td><td>Shoprite</td><td>Every 10 min</td><td><span class="badge b-ok"><i data-lucide="play"></i>Live</span></td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Healthy</span></td><td>10:40</td><td>10:50</td></tr>
+          <tr><td><strong>Invoice lookback</strong></td><td>Shoprite</td><td>Daily 02:15</td><td><span class="badge b-ok"><i data-lucide="play"></i>Live</span></td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Healthy</span></td><td>Today 02:15</td><td>Tomorrow 02:15</td></tr>
+          <tr><td><strong>Shoprite submission</strong></td><td>Shoprite</td><td>On invoice ready</td><td><span class="badge b-info"><i data-lucide="eye"></i>Shadow</span></td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Healthy</span></td><td>10:40</td><td>On event</td></tr>
+          <tr><td><strong>Stock sync</strong></td><td>Web store stock</td><td>Every 30 min</td><td><span class="badge b-info"><i data-lucide="eye"></i>Shadow</span></td><td><span class="badge b-warn"><i data-lucide="circle-alert"></i>Blocked</span></td><td>10:30</td><td>11:00</td></tr>
+          <tr><td><strong>Shoprite PO refresh</strong></td><td>Shoprite</td><td>Every 5 min</td><td><span class="badge b-off"><i data-lucide="pause"></i>Off</span></td><td class="weak">—</td><td>08 Oct</td><td class="weak">—</td></tr>
+        </tbody></table></div></div>
+      </section>
+
+      <!-- AUTOMATION DETAIL -->
+      <section class="view" data-view="automation" aria-label="Investec feed" hidden>
+        <a class="back" href="#automations"><i data-lucide="arrow-left"></i>Automations</a>
+        <div class="head"><div><p class="eyebrow">Banking · automation</p><h1>Investec feed</h1><p class="desc">Reads Investec transactions for account 29559 and creates statements on cash account PVMINVEST.</p></div>
+          <div class="actions"><span class="badge b-err"><i data-lucide="circle-x"></i>Failing</span><button class="btn primary" type="button" id="runNow"><i data-lucide="play"></i>Run now</button></div></div>
+        <div class="notice n-err" id="runNotice"><i data-lucide="circle-x"></i><div><strong>Last run failed: Acumatica sign-in timed out after 100 s</strong>Nothing was written. The next run reads the same days again, so no transactions are lost.</div></div>
+        <div class="panel"><div class="phead"><div><h2>Mode</h2><p>Changes apply from the next run</p></div></div><div class="pbody section">
+          <div class="modes" role="group" aria-label="Automation mode"><button type="button" data-mode="Off" aria-pressed="false">Off</button><button type="button" data-mode="Shadow" aria-pressed="false">Shadow</button><button type="button" data-mode="Live" aria-pressed="true">Live</button></div>
+          <div class="confirm" id="modeConfirm" hidden><span id="modeConfirmText"></span><div class="actions"><button class="btn primary" type="button" id="modeYes">Switch mode</button><button class="btn tertiary" type="button" id="modeNo">Keep current mode</button></div></div>
+        </div></div>
+        <div class="cols">
+          <div class="panel"><div class="phead"><h2>Configuration</h2></div><div class="pbody"><dl class="kv">
+            <dt>Schedule</dt><dd>Daily 05:00 SAST</dd><dt>Reads</dt><dd>Last 7 days, never before 13 Sep 2026</dd><dt>Writes to</dt><dd>PVMINVEST on CA306500</dd><dt>Duplicates</dt><dd>Skipped by Investec transaction id</dd></dl></div></div>
+          <div class="panel"><div class="phead"><h2>Recent runs</h2><a href="#runs">All runs</a></div><div class="pbody"><ul class="timeline">
+            <li><span class="weak">11 Nov, 05:00</span><span><span class="badge b-err"><i data-lucide="circle-x"></i>Failed</span> Sign-in timed out</span></li>
+            <li><span class="weak">10 Nov, 05:00</span><span><span class="badge b-ok"><i data-lucide="circle-check"></i>Succeeded</span> 14 lines · statement 001317</span></li>
+            <li><span class="weak">09 Nov, 05:00</span><span><span class="badge b-ok"><i data-lucide="circle-check"></i>Succeeded</span> 0 new lines</span></li></ul></div></div>
+        </div>
+      </section>
+
+      <!-- RUNS -->
+      <section class="view" data-view="runs" aria-label="Runs" hidden>
+        <div class="head"><div><p class="eyebrow">Automation</p><h1>Runs</h1><p class="desc">Every execution of every automation.</p></div></div>
+        <div class="chips" role="group" aria-label="Filter runs"><button class="chip" aria-pressed="true">All</button><button class="chip" aria-pressed="false">Failed · 1</button><button class="chip" aria-pressed="false">Banking</button><button class="chip" aria-pressed="false">Shoprite</button><button class="chip" aria-pressed="false">Stock</button></div>
+        <div class="panel"><div class="tablewrap"><table><thead><tr><th>Started</th><th>Automation</th><th>Trigger</th><th>Status</th><th>Result</th><th class="num">Duration</th></tr></thead><tbody>
+          <tr><td>11 Nov, 10:40</td><td>Invoice reconciliation</td><td>Schedule</td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Succeeded</span></td><td>3 read · 1 new</td><td class="num">4 s</td></tr>
+          <tr><td>11 Nov, 10:30</td><td>Stock sync</td><td>Schedule</td><td><span class="badge b-info"><i data-lucide="eye"></i>Shadow</span></td><td>54 checked · 6 changes · 0 written</td><td class="num">38 s</td></tr>
+          <tr class="link" data-go="automation"><td>11 Nov, 05:00</td><td>Investec feed</td><td>Schedule</td><td><span class="badge b-err"><i data-lucide="circle-x"></i>Failed</span></td><td>Acumatica sign-in timed out</td><td class="num">1 m 40 s</td></tr>
+          <tr><td>11 Nov, 02:15</td><td>Invoice lookback</td><td>Schedule</td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Succeeded</span></td><td>7 days · 0 changes</td><td class="num">12 s</td></tr>
+        </tbody></table></div></div>
+      </section>
+
+      <!-- EVENTS -->
+      <section class="view" data-view="events" aria-label="Events" hidden>
+        <div class="head"><div><p class="eyebrow">Automation</p><h1>Events</h1><p class="desc">What arrived from outside and what moved through the queues. Mostly for diagnosing a failed run.</p></div></div>
+        <div class="chips" role="group" aria-label="Filter events"><button class="chip" aria-pressed="true">All sources</button><button class="chip" aria-pressed="false">Acumatica webhooks</button><button class="chip" aria-pressed="false">Queue messages</button><button class="chip" aria-pressed="false">Dead-lettered · 1</button></div>
+        <div class="panel"><div class="tablewrap"><table><thead><tr><th>Received</th><th>Source</th><th>Event</th><th>Status</th></tr></thead><tbody>
+          <tr><td>11 Nov, 10:39</td><td>Acumatica webhook</td><td>PVM-Shoprite-Finalized-Invoices · INV190972</td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Processed</span></td></tr>
+          <tr><td>11 Nov, 10:39</td><td>Queue message</td><td>acumatica-invoice-discovery</td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Processed</span></td></tr>
+          <tr><td>09 Nov, 22:47</td><td>Queue message</td><td>acumatica-invoice-discovery</td><td><span class="badge b-err"><i data-lucide="circle-x"></i>Dead lettered</span></td></tr>
+        </tbody></table></div></div>
+      </section>
+
+      <!-- REPORTS -->
+      <section class="view" data-view="reports" aria-label="Reports" hidden>
+        <div class="head"><div><p class="eyebrow">Insight</p><h1>Statement coverage</h1><p class="desc">Days with statement lines in Acumatica over the last 30 days, per account. A gap means a missing import.</p></div>
+          <div class="actions"><button class="btn secondary" type="button"><i data-lucide="download"></i>Export CSV</button></div></div>
+        <div class="panel"><div class="pbody bars">
+          <div class="bar"><span>Investec ZAR</span><div class="track"><span style="width:96.7%"></span></div><span class="num">29 / 30</span></div>
+          <div class="bar"><span>Nedbank Head Office</span><div class="track"><span style="width:93.3%"></span></div><span class="num">28 / 30</span></div>
+          <div class="bar"><span>Nedbank KZN</span><div class="track"><span style="width:86.7%"></span></div><span class="num">26 / 30</span></div>
+          <div class="bar"><span>Nedbank Free State</span><div class="track"><span style="width:83.3%"></span></div><span class="num">25 / 30</span></div>
+          <div class="bar"><span>Nedbank Western Cape</span><div class="track"><span class="low" style="width:70%"></span></div><span class="num">21 / 30</span></div>
+          <div class="axis"><span></span><div><span>0</span><span>15</span><span>30 days</span></div><span></span></div>
+        </div></div>
+        <div class="tiles">
+          <a class="tile" href="#reports"><span class="name">Statement coverage</span><span class="meta">Banking · days covered per account</span></a>
+          <a class="tile" href="#shoprite"><span class="name">Shoprite invoices by status</span><span class="meta">Shoprite · ready, sent, rejected</span></a>
+          <a class="tile" href="#stock"><span class="name">Stock differences</span><span class="meta">Web store · Acumatica vs store</span></a>
+        </div>
+      </section>
+
+      <!-- CONNECTIONS -->
+      <section class="view" data-view="connections" aria-label="Connections" hidden>
+        <div class="head"><div><p class="eyebrow">Settings</p><h1>Connections</h1><p class="desc">The outside systems the backoffice talks to, checked every 15 minutes from production.</p></div>
+          <div class="actions"><button class="btn secondary" type="button"><i data-lucide="refresh-cw"></i>Check all now</button></div></div>
+        <div class="panel"><div class="tablewrap"><table><thead><tr><th>System</th><th>Used by</th><th>Status</th><th>Detail</th><th>Checked</th></tr></thead><tbody>
+          <tr><td><strong>Acumatica</strong> · pvm.aboutitgroup.co.za</td><td>Everything</td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Reachable</span></td><td>Signed in as integration · 20 of 21 forms granted</td><td>10:45</td></tr>
+          <tr><td><strong>Investec API</strong></td><td>Investec feed</td><td><span class="badge b-ok"><i data-lucide="circle-check"></i>Reachable</span></td><td>Token issued · account 29559 visible</td><td>10:45</td></tr>
+          <tr><td><strong>Shoprite B2B</strong></td><td>Shoprite submission</td><td><span class="badge b-off"><i data-lucide="pause"></i>Paused</span></td><td>Order reading off by design</td><td>10:45</td></tr>
+          <tr><td><strong>WooCommerce</strong> · www.pvm.co.za</td><td>Stock sync</td><td><span class="badge b-err"><i data-lucide="circle-x"></i>Blocked</span></td><td>Host bot check on /wp-json/wc/ · needs a path exception</td><td>10:45</td></tr>
+          <tr><td><strong>Nedbank</strong></td><td>Bank import</td><td><span class="badge b-off"><i data-lucide="circle-dashed"></i>Manual</span></td><td>No API; statements arrive by upload</td><td class="weak">—</td></tr>
+        </tbody></table></div></div>
+      </section>
+
+      <!-- USERS -->
+      <section class="view" data-view="people" aria-label="Users" hidden>
+        <div class="head"><div><p class="eyebrow">Settings</p><h1>Users</h1><p class="desc">People who can sign in, and what each role allows.</p></div><div class="actions"><button class="btn primary" type="button">Add user</button></div></div>
+        <div class="panel"><div class="tablewrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Last sign-in</th></tr></thead><tbody>
+          <tr><td>Marius Bloemhof</td><td class="weak">Entra account</td><td>Admin</td><td>Today, 10:02</td></tr>
+          <tr><td>Izelle</td><td class="weak">Entra account</td><td>Operator</td><td>Today, 08:41</td></tr>
+        </tbody></table></div></div>
+        <dl class="kv"><dt>Viewer</dt><dd>Sees everything, changes nothing</dd><dt>Operator</dt><dd>Imports statements, fixes invoices, works exceptions</dd><dt>Admin</dt><dd>Everything, plus users, connections and automation modes</dd></dl>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script>
+(function () {
+  var parentOf = { invoice: "shoprite", "bank-import": "banking", automation: "automations" };
+  var views = Array.prototype.slice.call(document.querySelectorAll("[data-view]"));
+  var names = views.map(function (v) { return v.getAttribute("data-view"); });
+  var side = document.getElementById("side");
+  var menuBtn = document.getElementById("menuBtn");
+
+  function icons() { if (window.lucide) { window.lucide.createIcons({ attrs: { "aria-hidden": "true" } }); } }
+
+  function show() {
+    var name = location.hash.slice(1);
+    if (names.indexOf(name) === -1) { name = "today"; }
+    views.forEach(function (v) { v.hidden = v.getAttribute("data-view") !== name; });
+    var navName = parentOf[name] || name;
+    document.querySelectorAll("[data-nav]").forEach(function (a) {
+      if (a.getAttribute("data-nav") === navName) { a.setAttribute("aria-current", "page"); } else { a.removeAttribute("aria-current"); }
+    });
+    side.setAttribute("data-open", "false");
+    menuBtn.setAttribute("aria-expanded", "false");
+    window.scrollTo(0, 0);
+  }
+
+  menuBtn.addEventListener("click", function () {
+    var open = side.getAttribute("data-open") !== "true";
+    side.setAttribute("data-open", String(open));
+    menuBtn.setAttribute("aria-expanded", String(open));
+    menuBtn.setAttribute("aria-label", open ? "Close menu" : "Menu");
+  });
+
+  document.querySelectorAll("tr[data-go]").forEach(function (row) {
+    row.addEventListener("click", function () { location.hash = row.getAttribute("data-go"); });
+  });
+
+  document.querySelectorAll(".chips").forEach(function (group) {
+    group.addEventListener("click", function (e) {
+      var chip = e.target.closest(".chip"); if (!chip) { return; }
+      group.querySelectorAll(".chip").forEach(function (c) { c.setAttribute("aria-pressed", String(c === chip)); });
+    });
+  });
+
+  document.querySelectorAll(".subnav").forEach(function (nav) {
+    nav.addEventListener("click", function (e) {
+      var tab = e.target.closest("[data-tab]"); if (!tab) { return; }
+      nav.querySelectorAll("[data-tab]").forEach(function (t) {
+        var on = t === tab; t.setAttribute("aria-selected", String(on));
+        document.querySelector('[data-pane="' + t.getAttribute("data-tab") + '"]').hidden = !on;
+      });
+    });
+  });
+
+  var steps = document.querySelectorAll("#importSteps li");
+  document.querySelectorAll("[data-import]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var n = Number(btn.getAttribute("data-import"));
+      document.querySelectorAll("[data-step]").forEach(function (p) { p.hidden = Number(p.getAttribute("data-step")) !== n; });
+      steps.forEach(function (li, i) { li.setAttribute("data-state", i + 1 < n ? "done" : i + 1 === n ? "current" : "todo"); });
+    });
+  });
+
+  var current = "Live", pending = null;
+  var confirmBox = document.getElementById("modeConfirm");
+  var confirmText = document.getElementById("modeConfirmText");
+  var modeButtons = document.querySelectorAll("[data-mode]");
+  var consequence = {
+    Off: "Switch the Investec feed off? No statements are created until it is switched back on.",
+    Shadow: "Switch to shadow? Runs still read Investec and log what they would import, but write nothing to Acumatica.",
+    Live: "Switch to live? Each run creates statements on PVMINVEST in production Acumatica."
+  };
+  function paintModes() { modeButtons.forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-mode") === current)); }); }
+  modeButtons.forEach(function (b) {
+    b.addEventListener("click", function () {
+      var m = b.getAttribute("data-mode"); if (m === current) { confirmBox.hidden = true; return; }
+      pending = m; confirmText.textContent = consequence[m]; confirmBox.hidden = false;
+    });
+  });
+  document.getElementById("modeYes").addEventListener("click", function () { current = pending; paintModes(); confirmBox.hidden = true; });
+  document.getElementById("modeNo").addEventListener("click", function () { confirmBox.hidden = true; });
+
+  document.getElementById("runNow").addEventListener("click", function () {
+    var n = document.getElementById("runNotice");
+    n.className = "notice n-info";
+    n.innerHTML = '<i data-lucide="loader"></i><div><strong>Run started at 10:52</strong>Reading 04–11 Nov from Investec. This page shows the result when it finishes.</div>';
+    icons();
+  });
+
+  window.addEventListener("hashchange", show);
+  show();
+  icons();
+})();
+</script>

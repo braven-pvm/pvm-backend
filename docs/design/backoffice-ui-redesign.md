@@ -8,6 +8,10 @@ banking, stock, Shoprite, reports and a growing set of automations. This
 document sets the structure, the design system and the build order, so every
 new screen lands in the right place and looks like it belongs.
 
+A clickable prototype of the target screens is in
+[`backoffice-prototype.html`](backoffice-prototype.html). Open it in a browser.
+It uses the tokens from `frontend/workbench/app/tokens.css` and example data only.
+
 ## 1. Where it is today
 
 | Area | Finding | Consequence |
