@@ -1,6 +1,6 @@
 # PVM Backoffice — UI redesign
 
-Status: approved direction, slice 0 in progress · Owner: Marius Bloemhof · 2026-11-11
+Status: approved direction, step A (design system) in progress · Owner: Marius Bloemhof · 2026-11-11
 
 The workbench started as an admin console for one integration (Shoprite invoice
 submission). It is becoming the operating surface for PVM's back office:
@@ -149,10 +149,10 @@ stock sync (planned).
 Health is derived, not stored: **Late** when the expected run time has passed
 by more than one interval without a run; **Failing** when the last run failed.
 
-Slice 2 starts with a frontend registry over the existing endpoints. The
-durable version needs a small backend registry (`GET /api/automations`) so
-schedules and modes live in one place; that is a backend task for the same
-slice.
+Step C2 (Automations) starts with a frontend registry over the existing
+endpoints. The durable version needs a small backend registry
+(`GET /api/automations`) so schedules and modes live in one place; that is a
+backend task for the same step.
 
 ## 5. Page templates
 
@@ -208,7 +208,8 @@ search, the next step is one headless Radix primitive for that need only.
 Defined in `app/tokens.css`. Values chosen from an 8-point scale and verified
 for contrast.
 
-Colour (light theme; dark theme is a later slice):
+Colour (light theme; the dark values are in `app/tokens.css` and in
+[`design-system.md`](design-system.md)):
 
 | Token | Value | Use | Contrast |
 | --- | --- | --- | --- |
@@ -256,21 +257,11 @@ element.
 
 ### 6.3 Components (`src/ui/`)
 
-| Component | Slice | Notes |
-| --- | --- | --- |
-| `AppShell`, `SideNav` | 0 | Grouped, role-filtered, current item highlighted, environment band |
-| `PageHeader` | 0 | Eyebrow (module), title, description, actions slot |
-| `Button` | 0 | `primary` (one per screen), `secondary`, `tertiary`; 40px tall, Verb + Noun labels |
-| `StatusBadge` | 0 | Maps any status string to a tone; icon + text |
-| `Panel` | 0 | Surface with optional heading and actions |
-| `EmptyState` | 0 | Headline, one line, optional action |
-| `StatTile` | 1 | Label, value, supporting line, tone |
-| `AttentionList` | 1 | Severity-ordered rows with one action each |
-| `AutomationCard` | 1 | Name, mode, health, last and next run |
-| `DataTable`, `FilterBar`, `Pagination` | 2 | Server-side sort and filter through search params |
-| `Tabs`, `Timeline`, `KeyValueList` | 3 | Record template |
-| `ModeSwitch`, `ConfirmDialog`, `Toast` | 2–3 | Off / Shadow / Live with confirmation into Live |
-| `Stepper` | 3 | Task template |
+The component reference is [`design-system.md`](design-system.md). It is the
+authority for every component: anatomy, variants, states, sizes, accessibility,
+usage rules and copy. The live reference is `/ui-kit` in development. A screen
+uses only components from that reference. If a screen needs something the
+reference does not cover, add it to the reference first, then build the screen.
 
 ### 6.4 Copy rules
 
@@ -280,21 +271,28 @@ say what happened and what to do. Numbers as numerals. Dates as
 
 ## 7. Build order
 
-Each slice is one pull request, deployable on its own, with no page broken in
-between.
+The order is: complete the system, convert every current page, then build new
+modules. Each step is one or more pull requests, deployable on its own, with no
+page broken in between.
 
-| Slice | Scope | Done when |
+| Step | Scope | Done when |
 | --- | --- | --- |
-| **0 — Foundation** | Tokens, `AppShell` with grouped sidebar, production band, renamed product, core components, signed-out pages without navigation | Every existing page renders in the new shell; lint and build pass |
-| **1 — Today** | New home: attention list across modules, automation tiles, key numbers | Home answers "what needs me" without opening another page |
-| **2 — Automations** | `/automations` list and detail; Shoprite policy moves there; backend registry endpoint | Every automation shows mode, last and next run, with Run now |
-| **3 — Banking module** | Overview per account, statement list, import as a Task page | Overdue accounts are visible; import flow uses the Task template |
-| **4 — Shoprite module** | Routes under `/shoprite`, redirects, reference data under settings | Old URLs redirect; invoices use List and Record templates |
-| **5 — Activity** | Runs list rebuilt on `DataTable`; Events merges messages and webhooks | One events stream with source filter |
-| **6 — Web store stock** | Overview, shadow differences to review, product mapping | Lands with the stock sync backend |
-| **7 — Reports** | Report index and a first report (statement coverage by account) | One report with filters and CSV export |
-| **8 — Settings** | Connections health page, users moved | Each outside system shows reachable / last success |
-| **9 — Dark theme, polish** | Dark token set, keyboard shortcuts, command palette | — |
+| **0 — Foundation** (done, PR #53) | Tokens, `AppShell` with grouped sidebar, production band, renamed product, first six components | Every existing page renders in the new shell |
+| **A1 — Core components** | Dark theme tokens; Notice, Field family, DataTable, FilterChips, Pagination, Tabs, KeyValueList, Timeline, Stepper, ConfirmDialog, ModeSwitch, StatTile, AttentionList, Tile, BarList, BackLink, Spinner; `design-system.md`; `/ui-kit` shows every component and state | Every component in the prototype exists in `src/ui` with a written specification |
+| **A2 — Page templates** | Dashboard, List, Record, Task and Settings templates as layout components, each with a specification and an example in `/ui-kit` | A new page needs no layout decision |
+| **B1 — Convert Shoprite pages** | Invoices, purchase orders, inventory mappings, exceptions, automation policy onto components and templates. No feature changes | These pages use no `globals.css` classes |
+| **B2 — Convert the other pages** | Banking, runs, admin messages, Acumatica events, users, home, sign-in, access denied. Delete `globals.css`. Switch on the dark theme from the operating-system setting | `globals.css` is gone; both themes pass the contrast check |
+| **C1 — Today** | New home: attention list across modules, automation tiles, key numbers | Home answers "what needs me" without opening another page |
+| **C2 — Automations** | `/automations` list and detail; Shoprite policy moves there; backend registry endpoint | Every automation shows mode, last and next run, with Run now |
+| **C3 — Banking module** | Overview per account, statement list, import as a Task page | Overdue accounts are visible; import flow uses the Task template |
+| **C4 — Shoprite module** | Routes under `/shoprite`, redirects, reference data under settings | Old URLs redirect |
+| **C5 — Activity** | Runs list and Events stream that merges messages and webhooks | One events stream with source filter |
+| **C6 — Web store stock** | Overview, shadow differences to review, product mapping | Lands with the stock sync backend |
+| **C7 — Reports** | Report index and a first report (statement coverage by account) | One report with filters and CSV export |
+| **C8 — Settings** | Connections health page, users moved | Each outside system shows reachable and last success |
+| **C9 — Polish** | Keyboard shortcuts, command palette | — |
 
-Old CSS is removed page by page as each page moves to components; nothing is
-deleted until no page uses it.
+The dark theme tokens land in A1 but switch on only in B2. Until then the old
+`globals.css` styles use light-only colours, and a dark canvas behind them is
+unreadable. In A1 and A2 the dark theme is visible only in `/ui-kit`, through
+its theme switch.
