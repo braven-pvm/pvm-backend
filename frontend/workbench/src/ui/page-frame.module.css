@@ -1,0 +1,19 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-l);
+  margin: 0 auto;
+  max-width: var(--content-max);
+  padding: var(--space-l) var(--space-l) var(--space-xxl);
+  width: 100%;
+}
+
+.page[data-width="narrow"] {
+  max-width: 864px;
+}
+
+@media (max-width: 900px) {
+  .page {
+    padding: var(--space-m) var(--space-s) var(--space-xl);
+  }
+}

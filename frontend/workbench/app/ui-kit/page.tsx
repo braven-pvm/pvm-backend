@@ -127,7 +127,12 @@ export default function UiKitPage() {
           eyebrow="Design system"
           title="UI kit"
           description="Every token and component with its states. The rules are in docs/design/design-system.md. A screen uses only what is on this page."
-          actions={<ThemeSwitch />}
+          actions={
+            <>
+              <ButtonLink href="/ui-kit/templates">Page templates</ButtonLink>
+              <ThemeSwitch />
+            </>
+          }
         />
 
         <nav aria-label="UI kit sections">

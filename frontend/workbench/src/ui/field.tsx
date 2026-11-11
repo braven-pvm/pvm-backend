@@ -23,6 +23,8 @@ type FrameProps = {
   /** What is wrong and how to fix it: "Enter a date after 13 Sep 2026". */
   error?: string;
   required?: boolean;
+  /** false hides "(optional)", for filter fields where every field is optional. */
+  showOptional?: boolean;
   width?: FieldWidth;
   children: ReactNode;
 };
@@ -32,7 +34,7 @@ function describedBy(id: string, hint: ReactNode, error?: string) {
   return ids.length > 0 ? ids.join(" ") : undefined;
 }
 
-function FieldFrame({ id, label, hint, error, required, width = "m", children }: FrameProps) {
+function FieldFrame({ id, label, hint, error, required, showOptional = true, width = "m", children }: FrameProps) {
   return (
     <div className={styles.field} data-width={width} data-invalid={error ? true : undefined}>
       <label className={styles.label} htmlFor={id}>
@@ -41,9 +43,9 @@ function FieldFrame({ id, label, hint, error, required, width = "m", children }:
           <span className={styles.required} aria-hidden="true">
             {" *"}
           </span>
-        ) : (
+        ) : showOptional ? (
           <span className={styles.optional}> (optional)</span>
-        )}
+        ) : null}
       </label>
       {hint ? (
         <p className={styles.hint} id={`${id}-hint`}>
@@ -68,6 +70,8 @@ type Common = {
   hint?: ReactNode;
   error?: string;
   width?: FieldWidth;
+  /** false hides "(optional)", for filter fields where every field is optional. */
+  showOptional?: boolean;
 };
 
 export function TextField({
@@ -78,10 +82,19 @@ export function TextField({
   error,
   width,
   required,
+  showOptional,
   ...props
 }: Common & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "id">) {
   return (
-    <FieldFrame id={id} label={label} hint={hint} error={error} required={required} width={width}>
+    <FieldFrame
+      id={id}
+      label={label}
+      hint={hint}
+      error={error}
+      required={required}
+      showOptional={showOptional}
+      width={width}
+    >
       <input
         className={styles.control}
         id={id}
@@ -103,11 +116,20 @@ export function TextareaField({
   error,
   width = "l",
   required,
+  showOptional,
   rows = 4,
   ...props
 }: Common & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "id">) {
   return (
-    <FieldFrame id={id} label={label} hint={hint} error={error} required={required} width={width}>
+    <FieldFrame
+      id={id}
+      label={label}
+      hint={hint}
+      error={error}
+      required={required}
+      showOptional={showOptional}
+      width={width}
+    >
       <textarea
         className={`${styles.control} ${styles.textarea}`}
         id={id}
@@ -133,6 +155,7 @@ export function SelectField({
   error,
   width,
   required,
+  showOptional,
   options,
   placeholder,
   ...props
@@ -141,7 +164,15 @@ export function SelectField({
     "name" | "id"
   >) {
   return (
-    <FieldFrame id={id} label={label} hint={hint} error={error} required={required} width={width}>
+    <FieldFrame
+      id={id}
+      label={label}
+      hint={hint}
+      error={error}
+      required={required}
+      showOptional={showOptional}
+      width={width}
+    >
       <select
         className={`${styles.control} ${styles.select}`}
         id={id}
@@ -171,10 +202,19 @@ export function FileField({
   error,
   width = "l",
   required,
+  showOptional,
   ...props
 }: Common & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "id" | "type">) {
   return (
-    <FieldFrame id={id} label={label} hint={hint} error={error} required={required} width={width}>
+    <FieldFrame
+      id={id}
+      label={label}
+      hint={hint}
+      error={error}
+      required={required}
+      showOptional={showOptional}
+      width={width}
+    >
       <input
         className={`${styles.control} ${styles.file}`}
         type="file"
@@ -235,6 +275,7 @@ export function RadioGroup({
   options,
   defaultValue,
   required,
+  showOptional = true,
 }: Omit<Common, "id" | "width"> & {
   options: RadioOption[];
   defaultValue?: string;
@@ -253,9 +294,9 @@ export function RadioGroup({
           <span className={styles.required} aria-hidden="true">
             {" *"}
           </span>
-        ) : (
+        ) : showOptional ? (
           <span className={styles.optional}> (optional)</span>
-        )}
+        ) : null}
       </legend>
       {hint ? (
         <p className={styles.hint} id={`${groupId}-hint`}>

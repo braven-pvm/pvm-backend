@@ -1,0 +1,63 @@
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sectionHead {
+  align-items: baseline;
+  display: flex;
+  gap: var(--space-s);
+  justify-content: space-between;
+}
+
+.sectionTitle {
+  color: var(--color-text-strong);
+  font-size: var(--text-h3);
+  font-weight: var(--font-bold);
+  line-height: var(--leading-h3);
+  margin: 0;
+}
+
+.sectionLink {
+  color: var(--color-brand);
+  font-size: var(--text-small);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.allClear {
+  align-items: center;
+  color: var(--color-success);
+  display: flex;
+  font-size: var(--text-small);
+  font-weight: var(--font-bold);
+  gap: var(--space-xs);
+  line-height: var(--leading-small);
+  margin: 0;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-s);
+}
+
+.recordHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.columns {
+  align-items: start;
+  display: grid;
+  gap: var(--space-m);
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+}
