@@ -181,12 +181,27 @@ shows a preview first. The bank import is the reference.
 ### 6.1 Approach
 
 Plain CSS with design tokens as CSS custom properties, components as React
-server components in `src/ui/`, each with a CSS Module. No Tailwind: adopting
-it means rewriting every page at once, and the token layer gives the same
-consistency without the churn. Accessible headless primitives
-(`@radix-ui/react-dialog`, `-dropdown-menu`, `-tabs`, `-popover`) are added
-only when the first screen needs a dialog, menu or tab set — hand-rolling those
-correctly is not worth it.
+server components in `src/ui/`, each with a CSS Module. No UI framework and no
+CSS framework.
+
+Dependency rule: the platform first, our own small component second, a library
+last. A library is added only when it does work that is hard to get right, it
+is small, and it ships only the parts we import.
+
+| Need | Use | Not |
+|---|---|---|
+| Styling | CSS Modules and `app/tokens.css` | Tailwind, CSS-in-JS, component kits (MUI, Chakra, shadcn) |
+| Dialogs and confirmations | Native `<dialog>` with `showModal()`: focus trap, Esc and backdrop are built in | A dialog library |
+| Menus and popovers | The native `popover` attribute | A dropdown library |
+| Disclosure | Native `<details>` and `<summary>` | An accordion library |
+| Tabs | Our own `Tabs` component (WAI-ARIA tab pattern, about 60 lines) | A tabs library |
+| Tables, filters, paging | Our own `DataTable`; filters and paging in the URL, data from the API | A data-grid library |
+| Charts | Inline SVG components (bars, sparklines) | A charting library |
+| Icons | `lucide-react`: SVG components, only imported icons ship, no runtime | An icon font |
+| Dates | `Intl.DateTimeFormat` with the `Africa/Johannesburg` time zone | Moment, date-fns |
+
+If a native element cannot do the job, for example a combobox with keyboard
+search, the next step is one headless Radix primitive for that need only.
 
 ### 6.2 Tokens
 
