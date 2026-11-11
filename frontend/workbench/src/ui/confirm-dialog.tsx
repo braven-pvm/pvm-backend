@@ -13,7 +13,10 @@ type ConfirmDialogProps = {
   triggerVariant?: ButtonVariant;
   /** A question that names the action and the object: "Delete the mapping for ENER12?" */
   title: string;
-  /** The consequence, in plain words. Say if it cannot be undone. */
+  /**
+   * The consequence, in plain words. Say if it cannot be undone. It can also
+   * hold fields that the action needs, such as a required reason.
+   */
   children: ReactNode;
   /** Repeats the action: "Delete mapping". Never "OK" or "Yes". */
   confirmLabel: string;

@@ -1,0 +1,20 @@
+.block {
+  background: var(--color-fill);
+  border-radius: var(--radius-m);
+  color: var(--color-text-strong);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  margin: 0;
+  max-height: 480px;
+  overflow: auto;
+  padding: var(--space-s);
+  white-space: pre;
+}
+
+.empty {
+  color: var(--color-text-weak);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  margin: 0;
+}

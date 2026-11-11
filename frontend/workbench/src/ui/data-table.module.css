@@ -37,6 +37,7 @@
 .td[data-mono] {
   font-family: var(--font-mono);
   font-size: 13px;
+  white-space: nowrap;
 }
 
 .td[data-weak] {

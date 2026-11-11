@@ -3,14 +3,11 @@ import { test } from "node:test";
 import { isCurrent, navigationFor } from "./navigation.ts";
 
 const labels = (groups) => groups.flatMap((group) => group.items.map((item) => item.label));
-const childLabels = (groups, parent) =>
-  groups.flatMap((group) => group.items).find((item) => item.label === parent)?.children?.map((c) => c.label);
 
 test("a viewer sees no write or admin items", () => {
   const groups = navigationFor(["Viewer"]);
   assert.ok(!labels(groups).includes("Banking"));
   assert.ok(!labels(groups).includes("Users"));
-  assert.ok(!childLabels(groups, "Shoprite").includes("Inventory mappings"));
 });
 
 test("an operator sees banking but not admin settings", () => {
@@ -24,7 +21,6 @@ test("an admin sees everything", () => {
   for (const label of ["Today", "Exceptions", "Shoprite", "Banking", "Automations", "Runs", "Events", "Users"]) {
     assert.ok(labels(groups).includes(label), label);
   }
-  assert.ok(childLabels(groups, "Shoprite").includes("Inventory mappings"));
 });
 
 test("a group with nothing allowed disappears", () => {

@@ -1,149 +1,134 @@
-import Link from "next/link";
+import { resolveDeadLettersAction } from "../actions";
 import { getExceptions, type ExceptionTask } from "../../src/api/client";
 import { hasAnyRole, requireWorkbenchUser } from "../../src/auth/session";
-import { ExceptionActions } from "./exception-actions";
-import { DeadLetterBulkForm } from "./dead-letter-bulk-form";
+import { formatDateTime } from "../../src/formatters.mjs";
+import {
+  ConfirmDialog,
+  DataTable,
+  EmptyState,
+  FilterChips,
+  ListPage,
+  Notice,
+  SelectField,
+  StatusBadge,
+  TextField,
+  type Column,
+} from "../../src/ui";
+import { categoryLabel, queues, severityTone } from "./queues";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Exceptions" };
 
 type ExceptionsPageProps = {
-  searchParams: Promise<{
-    tab?: string;
-    exceptionError?: string;
-    exceptionStatus?: string;
-  }>;
+  searchParams: Promise<{ tab?: string; exceptionError?: string; exceptionStatus?: string }>;
 };
 
-const tabs = [
-  { key: "all", label: "All open", category: undefined, status: "active" },
-  { key: "ambiguous", label: "Ambiguous", category: "AmbiguousSubmission", status: "active" },
-  { key: "rejected", label: "Rejected", category: "RejectedSubmission", status: "active" },
-  { key: "needs-review", label: "Needs review", category: "NeedsReview", status: "active" },
-  { key: "dead-letters", label: "Dead letters", category: "DeadLetter", status: "active" },
-  { key: "stuck", label: "Stuck", category: "StuckWork", status: "active" },
-  { key: "held", label: "Held", category: "HeldInvoice", status: "active" },
-  { key: "resolved", label: "Resolved", category: undefined, status: "Resolved" },
-] as const;
+const deadLetterQueues = [
+  { value: "shoprite-po-refresh", label: "shoprite-po-refresh" },
+  { value: "acumatica-invoice-discovery", label: "acumatica-invoice-discovery" },
+  { value: "shoprite-invoice-submit", label: "shoprite-invoice-submit" },
+];
+
+const columns: Column<ExceptionTask>[] = [
+  { key: "summary", header: "What happened", render: (task) => task.summary },
+  {
+    key: "severity",
+    header: "Severity",
+    render: (task) => <StatusBadge status={task.severity} tone={severityTone(task.severity)} />,
+  },
+  { key: "category", header: "Queue", render: (task) => categoryLabel(task.category), weak: true },
+  { key: "invoice", header: "Invoice", render: (task) => task.invoiceNumber ?? "—", mono: true },
+  { key: "owner", header: "Owner", render: (task) => task.owner ?? "Nobody" },
+  { key: "seen", header: "Last seen", render: (task) => formatDateTime(task.lastSeenAt), weak: true },
+  {
+    key: "status",
+    header: "Status",
+    render: (task) => (task.isOverdue ? <StatusBadge status="Overdue" /> : <StatusBadge status={task.status} />),
+  },
+];
 
 export default async function ExceptionsPage({ searchParams }: ExceptionsPageProps) {
   const user = await requireWorkbenchUser("/exceptions");
   const isAdmin = hasAnyRole(user, ["Admin"]);
   const params = await searchParams;
-  const activeTab = tabs.find((tab) => tab.key === params.tab) ?? tabs[0];
-  const listing = await getExceptions(activeTab.status, activeTab.category);
+  const queue = queues.find((item) => item.key === params.tab) ?? queues[0];
+  const listing = await getExceptions(queue.status, queue.category);
   const summary = listing.summary;
 
   return (
-    <main className="page-shell exceptions-page">
-      <section className="page-heading">
-        <div>
-          <h1>Exceptions</h1>
-          <p>Work every unresolved integration problem to a safe disposition.</p>
-        </div>
-        <div className="mode-summary">
-          <span>{summary.overdue} overdue</span>
-          <strong>{listing.tasks.length} shown</strong>
-        </div>
-      </section>
-
-      {params.exceptionError ? (
-        <div className="alert-banner alert-error" role="alert">
-          <strong>Action refused</strong><span>{params.exceptionError}</span>
-        </div>
-      ) : null}
-      {params.exceptionStatus ? (
-        <div className="alert-banner alert-success" role="status">
-          <strong>Exception updated</strong><span>{params.exceptionStatus}</span>
-        </div>
-      ) : null}
-
-      <section className="metric-strip four-up" aria-label="Exception counts">
-        <div><span>Ambiguous</span><strong>{summary.ambiguous}</strong></div>
-        <div><span>Rejected</span><strong>{summary.rejected}</strong></div>
-        <div><span>Dead letters</span><strong>{summary.deadLetters}</strong></div>
-        <div><span>Needs review</span><strong>{summary.needsReview}</strong></div>
-      </section>
-
-      <nav className="tab-strip" aria-label="Exception queues">
-        {tabs.map((tab) => (
-          <Link
-            key={tab.key}
-            className={tab.key === activeTab.key ? "tab is-active" : "tab"}
-            href={`/exceptions?tab=${tab.key}`}
-          >
-            {tab.label}
-          </Link>
-        ))}
-      </nav>
-
-      {isAdmin && activeTab.key === "dead-letters" && summary.deadLetters > 0 ? (
-        <DeadLetterBulkForm openCount={summary.deadLetters} />
-      ) : null}
-
-      {listing.tasks.length === 0 ? (
-        <p className="empty-state">No exception is open in this queue.</p>
-      ) : (
-        <ol className="exception-list">
-          {listing.tasks.map((task) => (
-            <li key={task.id} className={`exception-card severity-${task.severity.toLowerCase()}`}>
-              <header>
-                <div>
-                  <span className="section-kicker">{task.category}</span>
-                  <h2>{task.summary}</h2>
-                </div>
-                <div className="exception-badges">
-                  <span className={`badge severity-${task.severity.toLowerCase()}`}>{task.severity}</span>
-                  <span className="badge">{task.status}</span>
-                  {task.isOverdue ? <span className="badge badge-warning">Overdue</span> : null}
-                </div>
-              </header>
-
-              <dl className="exception-facts">
-                <div><dt>Error code</dt><dd>{task.errorCode}</dd></div>
-                <div><dt>Fix location</dt><dd>{task.fixLocation}</dd></div>
-                <div><dt>Retry</dt><dd>{task.retryClassification}</dd></div>
-                <div><dt>Owner</dt><dd>{task.owner ?? "Unassigned"}</dd></div>
-                <div><dt>Seen</dt><dd>{task.occurrenceCount} time(s)</dd></div>
-                <div><dt>Last seen</dt><dd>{new Date(task.lastSeenAt).toLocaleString("en-ZA")}</dd></div>
-              </dl>
-
-              {task.latestEvidence ? <p className="exception-evidence">{task.latestEvidence}</p> : null}
-
-              {task.invoiceCandidateId ? (
-                <p className="exception-link">
-                  <Link href={`/invoices/${task.invoiceCandidateId}`}>
-                    Open invoice {task.invoiceNumber ?? task.invoiceCandidateId}
-                  </Link>
-                </p>
-              ) : null}
-
-              {task.comments.length > 0 ? (
-                <ul className="exception-comments">
-                  {task.comments.map((comment) => (
-                    <li key={comment.id}>
-                      <strong>{comment.actor}</strong>
-                      <span>{comment.body}</span>
-                      <time dateTime={comment.createdAt}>
-                        {new Date(comment.createdAt).toLocaleString("en-ZA")}
-                      </time>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-
-              {task.resolutionReason ? (
-                <p className="exception-resolution">
-                  Resolved by {task.resolvedBy}: {task.resolutionReason}
-                </p>
-              ) : null}
-
-              {isAdmin ? <ExceptionActions task={task as ExceptionTask} /> : null}
-            </li>
-          ))}
-        </ol>
-      )}
-
-      {!isAdmin ? <p className="read-only-note">Exception actions are available to Admin only.</p> : null}
-    </main>
+    <ListPage
+      header={{
+        eyebrow: "Work queue",
+        title: "Exceptions",
+        description: `Problems an automation could not finish on its own. ${summary.overdue} overdue.`,
+        actions:
+          isAdmin && queue.key === "dead-letters" && summary.deadLetters > 0 ? (
+            <ConfirmDialog
+              triggerLabel="Close old dead letters"
+              triggerVariant="secondary"
+              title="Close old dead letters?"
+              confirmLabel="Close dead letters"
+              pendingLabel="Closing…"
+              action={resolveDeadLettersAction}
+            >
+              <p>
+                Use this when the incident is fixed and the messages are no longer needed. Closing never replays a message.
+                The reason goes in the audit log. {summary.deadLetters} dead letters are open.
+              </p>
+              <SelectField
+                name="queueName"
+                label="Queue"
+                width="full"
+                placeholder="Every queue"
+                showOptional={false}
+                options={deadLetterQueues}
+              />
+              <TextField name="olderThanDays" label="Older than (days)" type="number" min={0} defaultValue="1" width="s" required />
+              <TextField name="reason" label="Reason" hint="The incident reference, and why a replay is not needed" width="full" required />
+            </ConfirmDialog>
+          ) : null,
+      }}
+      notice={
+        <>
+          {params.exceptionError ? (
+            <Notice tone="error" title="Action refused" live>
+              {params.exceptionError}
+            </Notice>
+          ) : null}
+          {params.exceptionStatus ? <Notice tone="success" title={params.exceptionStatus} live /> : null}
+          {!isAdmin ? (
+            <Notice tone="info" title="Only an Admin can act on exceptions">
+              You can see every exception. Ask an Admin to assign, retry or close one.
+            </Notice>
+          ) : null}
+        </>
+      }
+      filters={
+        <FilterChips
+          label="Exception queues"
+          chips={queues.map((item) => ({
+            label: item.label,
+            count: item.count(summary),
+            href: item.key === "all" ? "/exceptions" : `/exceptions?tab=${item.key}`,
+            current: item.key === queue.key,
+          }))}
+        />
+      }
+      table={
+        <DataTable
+          caption={`${queue.label} exceptions`}
+          columns={columns}
+          rows={listing.tasks}
+          rowKey={(task) => task.id}
+          rowHref={(task) => `/exceptions/${task.id}`}
+          empty={
+            <EmptyState
+              title={queue.key === "resolved" ? "Nothing resolved yet" : "Nothing is open in this queue"}
+              description={queue.key === "resolved" ? undefined : "Exceptions appear here when an automation cannot finish on its own."}
+            />
+          }
+        />
+      }
+    />
   );
 }

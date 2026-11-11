@@ -53,6 +53,15 @@ const toneByStatus: Record<string, StatusTone> = {
   inprogress: "info",
   stabilizing: "info",
   fresh: "success",
+  matched: "success",
+  configured: "success",
+  current: "success",
+  reachable: "success",
+  published: "success",
+  unmatched: "warning",
+  pending: "info",
+  retrying: "warning",
+  queued: "neutral",
 };
 
 export function toneFor(status: string): StatusTone {

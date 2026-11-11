@@ -5,6 +5,7 @@ export { AttentionList, type AttentionItem } from "./attention-list";
 export { BackLink } from "./back-link";
 export { BarList, type Bar } from "./bar-list";
 export { Button, ButtonLink, buttonClass, type ButtonVariant } from "./button";
+export { CodeBlock } from "./code-block";
 export { ConfirmDialog } from "./confirm-dialog";
 export { DataTable, type Column, type SortDirection } from "./data-table";
 export { EmptyState } from "./empty-state";

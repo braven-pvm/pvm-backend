@@ -57,6 +57,9 @@
 .body {
   font-size: var(--text-body);
   line-height: var(--leading-body);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-m);
 }
 
 .body p {

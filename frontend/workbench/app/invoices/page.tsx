@@ -1,109 +1,91 @@
-import Link from "next/link";
+import { RefreshCw } from "lucide-react";
 import { refreshCandidatesAction } from "../actions";
-import { getInvoiceCandidates } from "../../src/api/client";
+import { getInvoiceCandidates, type InvoiceCandidateSummary } from "../../src/api/client";
 import { hasAnyRole, requireWorkbenchUser } from "../../src/auth/session";
+import { formatDateTime } from "../../src/formatters.mjs";
+import { ButtonLink, DataTable, EmptyState, FilterChips, ListPage, StatusBadge, SubmitButton, type Column } from "../../src/ui";
+import { ShopriteSections } from "../shoprite-sections";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Shoprite invoices" };
 
-export default async function InvoiceCandidatesPage() {
+type InvoicesPageProps = {
+  searchParams: Promise<{ status?: string }>;
+};
+
+const filters = [
+  { value: undefined, label: "All" },
+  { value: "Ready", label: "Ready" },
+  { value: "NeedsReview", label: "Needs review" },
+  { value: "Submitted", label: "Submitted" },
+] as const;
+
+const columns: Column<InvoiceCandidateSummary>[] = [
+  { key: "invoice", header: "Invoice", render: (row) => row.invoiceNumber, mono: true },
+  { key: "customer", header: "Customer", render: (row) => row.customerAccount, mono: true },
+  { key: "po", header: "Shoprite PO", render: (row) => row.shopritePurchaseOrderNumber ?? "Missing", mono: true },
+  { key: "match", header: "PO match", render: (row) => <StatusBadge status={row.purchaseOrderMatchStatus} /> },
+  { key: "location", header: "Store or DC", render: (row) => row.customerLocation ?? row.storeDcGln ?? "Not mapped" },
+  { key: "updated", header: "Updated", render: (row) => formatDateTime(row.updatedAt), weak: true },
+  { key: "status", header: "Status", render: (row) => <StatusBadge status={row.status} /> },
+];
+
+export default async function InvoiceCandidatesPage({ searchParams }: InvoicesPageProps) {
   const user = await requireWorkbenchUser("/invoices");
+  const { status } = await searchParams;
   const candidates = await getInvoiceCandidates();
-  const candidateCount = candidates.length;
   const canWrite = hasAnyRole(user, ["Admin", "Operator"]);
-  const matchedCount = candidates.filter(
-    (candidate) => candidate.purchaseOrderMatchStatus === "Matched",
-  ).length;
-  const needsReviewCount = candidates.filter(
-    (candidate) => candidate.status === "NeedsReview",
-  ).length;
+  const rows = status ? candidates.filter((candidate) => candidate.status === status) : candidates;
 
   return (
-    <main className="page-shell">
-      <section className="page-heading">
-        <div>
-          <h1>Invoice Submission Workbench</h1>
-          <p>
-            Monitor finalized Acumatica invoice candidates prepared for
-            Shoprite submission.
-          </p>
-        </div>
-        {canWrite ? (
+    <ListPage
+      header={{
+        eyebrow: "Shoprite",
+        title: "Invoices",
+        description: "Finalised Acumatica invoices for Shoprite. Each one is checked against Shoprite reference data before it can be sent.",
+        actions: canWrite ? (
           <form action={refreshCandidatesAction}>
-            <button className="button" type="submit">
-              Refresh queue
-            </button>
+            <SubmitButton pendingLabel="Reading Acumatica…">
+              <RefreshCw aria-hidden="true" />
+              Read invoices from Acumatica
+            </SubmitButton>
           </form>
-        ) : (
-          <button className="button" type="button" disabled>
-            Read-only
-          </button>
-        )}
-      </section>
-
-      <section className="metric-strip" aria-label="Invoice queue summary">
-        <div>
-          <span>Candidate invoices</span>
-          <strong>{candidateCount}</strong>
-        </div>
-        <div>
-          <span>Matched to PO</span>
-          <strong>{matchedCount}</strong>
-        </div>
-        <div>
-          <span>Needs review</span>
-          <strong>{needsReviewCount}</strong>
-        </div>
-      </section>
-
-      <section className="table-panel" aria-label="Invoice candidates">
-        <div className="table-toolbar">
-          <h2>Invoice candidates</h2>
-          <span>{candidateCount} records</span>
-        </div>
-        {candidateCount === 0 ? (
-          <div className="empty-state">
-            <strong>No invoice candidates loaded</strong>
-            <p>
-              Task 12 will wire refresh, candidate details, XML preview, and
-              manual submission against sanitized fixture data.
-            </p>
-          </div>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Invoice</th>
-                <th>Customer</th>
-                <th>PO match</th>
-                <th>DC</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {candidates.map((candidate) => (
-                <tr key={candidate.id}>
-                  <td data-label="Invoice">{candidate.invoiceNumber}</td>
-                  <td data-label="Customer">{candidate.customerAccount}</td>
-                  <td data-label="PO match">
-                    {candidate.shopritePurchaseOrderNumber ?? "-"}
-                    <span>{candidate.purchaseOrderMatchStatus}</span>
-                  </td>
-                  <td data-label="DC">
-                    {candidate.customerLocation ?? candidate.storeDcGln ?? "Unmapped"}
-                  </td>
-                  <td data-label="Status">
-                    <span className="status-pill">{candidate.status}</span>
-                  </td>
-                  <td className="table-action" data-label="Action">
-                    <Link href={`/invoices/${candidate.id}`}>Open</Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-    </main>
+        ) : null,
+      }}
+      sections={<ShopriteSections current="invoices" isAdmin={hasAnyRole(user, ["Admin"])} />}
+      filters={
+        <FilterChips
+          label="Filter invoices by status"
+          chips={filters.map((filter) => ({
+            label: filter.label,
+            count: filter.value ? candidates.filter((candidate) => candidate.status === filter.value).length : candidates.length,
+            href: filter.value ? `/invoices?status=${filter.value}` : "/invoices",
+            current: status === filter.value,
+          }))}
+        />
+      }
+      table={
+        <DataTable
+          caption="Shoprite invoices"
+          columns={columns}
+          rows={rows}
+          rowKey={(row) => row.id}
+          rowHref={(row) => `/invoices/${row.id}`}
+          empty={
+            candidates.length === 0 ? (
+              <EmptyState
+                title="No Shoprite invoices yet"
+                description="Finalised Acumatica invoices for Shoprite customers appear here after the next read, every 10 minutes."
+              />
+            ) : (
+              <EmptyState
+                title="No invoices match this filter"
+                action={<ButtonLink href="/invoices">Show all invoices</ButtonLink>}
+              />
+            )
+          }
+        />
+      }
+    />
   );
 }

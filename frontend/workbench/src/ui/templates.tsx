@@ -106,6 +106,11 @@ type ListPageProps = {
   sections?: ReactNode;
   /** A Notice about the whole list, such as "Order reading is switched off". */
   notice?: ReactNode;
+  /**
+   * A short second list of items that need a person before the main list is
+   * useful, such as "Shoprite items without a mapping". A Panel, flush.
+   */
+  attention?: ReactNode;
   /** FilterChips or a FilterBar. */
   filters?: ReactNode;
   /** A DataTable. The template puts it in a flush Panel. */
@@ -115,26 +120,32 @@ type ListPageProps = {
 };
 
 /** A list of records with filters. Each row opens a Record page. */
-export function ListPage({ header, sections, notice, filters, table, pagination }: ListPageProps) {
+export function ListPage({ header, sections, notice, attention, filters, table, pagination }: ListPageProps) {
   return (
     <PageFrame>
       <PageHeader {...header} />
       {sections}
       {notice}
+      {attention}
       <div className={styles.list}>
         {filters}
-        <Panel flush>
-          {table}
-          {pagination}
-        </Panel>
+        {table ? (
+          <Panel flush>
+            {table}
+            {pagination}
+          </Panel>
+        ) : null}
       </div>
     </PageFrame>
   );
 }
 
 type RecordPageProps = {
-  /** The list this record belongs to: { href: "/shoprite/invoices", label: "Shoprite invoices" }. */
-  back: SectionLink;
+  /**
+   * The list this record belongs to: { href: "/shoprite/invoices", label: "Shoprite invoices" }.
+   * Leave it out only for a record that has no list yet.
+   */
+  back?: SectionLink;
   /**
    * title is the identifier (INV190970). description is the one-line context.
    * actions: the StatusBadge first, then at most one primary button.
@@ -157,7 +168,7 @@ export function RecordPage({ back, header, notice, summary, activity, sections, 
   return (
     <PageFrame>
       <div className={styles.recordHead}>
-        <BackLink href={back.href} label={back.label} />
+        {back ? <BackLink href={back.href} label={back.label} /> : null}
         <PageHeader {...header} />
       </div>
       {notice}

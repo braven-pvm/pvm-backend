@@ -46,12 +46,8 @@ export const navigation: NavGroup[] = [
         label: "Shoprite",
         href: "/invoices",
         icon: "shoprite",
+        // The module's sections are tabs on its pages, not sidebar children.
         matches: ["/invoices", "/purchase-orders", "/admin/inventory-mappings"],
-        children: [
-          { label: "Invoices", href: "/invoices" },
-          { label: "Purchase orders", href: "/purchase-orders" },
-          { label: "Inventory mappings", href: "/admin/inventory-mappings", roles: admin },
-        ],
       },
       { label: "Banking", href: "/banking", icon: "banking", roles: write },
     ],
@@ -66,10 +62,6 @@ export const navigation: NavGroup[] = [
         href: "/admin/acumatica-events",
         icon: "events",
         matches: ["/admin/acumatica-events", "/admin/messages"],
-        children: [
-          { label: "Acumatica webhooks", href: "/admin/acumatica-events" },
-          { label: "Queue messages", href: "/admin/messages" },
-        ],
       },
     ],
   },
