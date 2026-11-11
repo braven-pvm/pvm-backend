@@ -15,12 +15,19 @@
   box-sizing: border-box;
 }
 
+/*
+ * Legacy element rules below apply only inside pages that are not yet on the
+ * design system. A converted page sets data-ds on its <main class="page-shell">.
+ * This file is deleted in step B2.
+ */
+
 html,
 body {
   margin: 0;
   min-height: 100%;
   max-width: 100%;
-  overflow-x: hidden;
+  /* clip, not hidden: hidden makes body a scroll container and breaks the sticky sidebar. */
+  overflow-x: clip;
 }
 
 body {
@@ -311,27 +318,27 @@ a {
   margin-right: 0;
 }
 
-table {
+:where(.page-shell:not([data-ds])) table {
   border-collapse: collapse;
   width: 100%;
 }
 
-th,
-td {
+:where(.page-shell:not([data-ds])) th,
+:where(.page-shell:not([data-ds])) td {
   border-bottom: 1px solid var(--border);
   font-size: 14px;
   padding: 14px 20px;
   text-align: left;
 }
 
-th {
+:where(.page-shell:not([data-ds])) th {
   color: var(--muted);
   font-size: 12px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
-td {
+:where(.page-shell:not([data-ds])) td {
   color: var(--text);
 }
 
@@ -977,18 +984,18 @@ td {
   margin: 0 0 18px;
 }
 
-dl {
+:where(.page-shell:not([data-ds])) dl {
   display: grid;
   gap: 14px;
   margin: 0;
 }
 
-dl div {
+:where(.page-shell:not([data-ds])) dl div {
   display: grid;
   gap: 4px;
 }
 
-dt {
+:where(.page-shell:not([data-ds])) dt {
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
@@ -996,7 +1003,7 @@ dt {
   text-transform: uppercase;
 }
 
-dd {
+:where(.page-shell:not([data-ds])) dd {
   color: var(--surface-strong);
   font-size: 15px;
   font-weight: 650;
@@ -1123,7 +1130,7 @@ dd {
   margin-top: 12px;
 }
 
-td span {
+:where(.page-shell:not([data-ds])) td span {
   color: var(--muted);
   display: block;
   font-size: 12px;
@@ -1199,12 +1206,12 @@ td span {
     width: 100%;
   }
 
-  table,
-  thead,
-  tbody,
-  tr,
-  th,
-  td {
+  :where(.page-shell:not([data-ds])) table,
+  :where(.page-shell:not([data-ds])) thead,
+  :where(.page-shell:not([data-ds])) tbody,
+  :where(.page-shell:not([data-ds])) tr,
+  :where(.page-shell:not([data-ds])) th,
+  :where(.page-shell:not([data-ds])) td {
     display: block;
   }
 
@@ -1263,16 +1270,16 @@ td span {
     width: fit-content;
   }
 
-  thead {
+  :where(.page-shell:not([data-ds])) thead {
     display: none;
   }
 
-  tr {
+  :where(.page-shell:not([data-ds])) tr {
     border-bottom: 1px solid var(--border);
     padding: 12px 0;
   }
 
-  td {
+  :where(.page-shell:not([data-ds])) td {
     border-bottom: 0;
     display: grid;
     gap: 12px;
@@ -1282,7 +1289,7 @@ td span {
     padding: 8px 20px;
   }
 
-  td::before {
+  :where(.page-shell:not([data-ds])) td::before {
     color: var(--muted);
     content: attr(data-label);
     font-size: 12px;

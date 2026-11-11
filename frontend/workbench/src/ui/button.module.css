@@ -13,7 +13,14 @@
   min-height: var(--control-height);
   padding: 0 var(--space-s);
   text-decoration: none;
+  transition: background-color var(--duration-fast), color var(--duration-fast);
   white-space: nowrap;
+}
+
+.button svg {
+  flex: none;
+  height: 16px;
+  width: 16px;
 }
 
 .primary {
@@ -47,11 +54,21 @@
   color: var(--color-brand-hover);
 }
 
+.danger {
+  background: var(--color-error);
+  color: var(--color-surface);
+}
+
+.danger:hover {
+  filter: brightness(0.92);
+}
+
 .button:active {
   transform: translateY(1px);
 }
 
-.button:disabled {
+.button:disabled,
+.button[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: 0.45;
 }

@@ -1,0 +1,90 @@
+.scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.table {
+  border-collapse: collapse;
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-small);
+  width: 100%;
+}
+
+.th {
+  background: var(--color-fill);
+  color: var(--color-text-weak);
+  font-size: var(--text-caption);
+  font-weight: var(--font-bold);
+  line-height: var(--leading-caption);
+  padding: 10px var(--space-s);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.td {
+  border-top: 1px solid var(--color-stroke-weak);
+  color: var(--color-text-strong);
+  padding: 12px var(--space-s);
+  vertical-align: middle;
+}
+
+.th[data-align="end"],
+.td[data-align="end"] {
+  text-align: right;
+}
+
+.td[data-mono] {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.td[data-weak] {
+  color: var(--color-text-weak);
+}
+
+.sortLink {
+  align-items: center;
+  color: inherit;
+  display: inline-flex;
+  gap: var(--space-2xs);
+  text-decoration: none;
+}
+
+.sortLink:hover {
+  color: var(--color-text-strong);
+}
+
+.th[aria-sort] .sortLink {
+  color: var(--color-text-strong);
+}
+
+.linkRow {
+  position: relative;
+}
+
+.linkRow:hover .td {
+  background: var(--color-brand-fill);
+}
+
+.rowLink {
+  color: var(--color-brand);
+  font-weight: var(--font-bold);
+  text-decoration: none;
+}
+
+/* The link's hit area covers the whole row. */
+.rowLink::after {
+  content: "";
+  inset: 0;
+  position: absolute;
+}
+
+.rowLink:focus-visible {
+  outline: none;
+}
+
+.linkRow:has(.rowLink:focus-visible) {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}

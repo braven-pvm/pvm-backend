@@ -1,0 +1,70 @@
+.dialog {
+  background: var(--color-surface);
+  border: 1px solid var(--color-stroke-weak);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-overlay);
+  color: var(--color-text-strong);
+  max-width: min(480px, calc(100vw - 32px));
+  padding: 0;
+  width: 100%;
+}
+
+.dialog::backdrop {
+  background: var(--color-backdrop);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-m);
+  padding: var(--space-m);
+}
+
+.head {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-s);
+  justify-content: space-between;
+}
+
+.title {
+  font-size: var(--text-h2);
+  font-weight: var(--font-bold);
+  line-height: var(--leading-h2);
+  margin: 0;
+}
+
+.close {
+  align-items: center;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-m);
+  color: var(--color-text-weak);
+  cursor: pointer;
+  display: inline-flex;
+  flex: none;
+  height: var(--control-height);
+  justify-content: center;
+  margin: -8px -8px 0 0;
+  width: var(--control-height);
+}
+
+.close:hover {
+  background: var(--color-fill);
+  color: var(--color-text-strong);
+}
+
+.body {
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.body p {
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-s);
+}
