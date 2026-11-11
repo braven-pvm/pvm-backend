@@ -1,0 +1,222 @@
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: var(--color-sidebar);
+  color: var(--color-sidebar-text);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-m);
+  height: 100vh;
+  overflow-y: auto;
+  padding: var(--space-m) var(--space-s);
+  position: sticky;
+  top: 0;
+}
+
+.sidebarTop {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.brand {
+  align-items: center;
+  color: var(--color-sidebar-text);
+  display: flex;
+  font-size: var(--text-body);
+  font-weight: var(--font-bold);
+  gap: var(--space-xs);
+  padding: 0 var(--space-xs);
+}
+
+.brandMark {
+  align-items: center;
+  background: var(--color-sidebar-current);
+  border-radius: var(--radius-s);
+  display: inline-flex;
+  font-size: var(--text-small);
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.menuButton {
+  display: none;
+}
+
+.nav {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-m);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.groupLabel {
+  color: var(--color-sidebar-text-weak);
+  font-size: var(--text-caption);
+  font-weight: var(--font-bold);
+  line-height: var(--leading-caption);
+  margin: 0 0 var(--space-2xs);
+  padding: 0 var(--space-xs);
+}
+
+.list,
+.subList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.subList {
+  margin: 2px 0 var(--space-2xs) 26px;
+}
+
+.link,
+.subLink {
+  align-items: center;
+  border-radius: var(--radius-m);
+  color: var(--color-sidebar-text-weak);
+  display: flex;
+  font-size: var(--text-small);
+  gap: var(--space-xs);
+  line-height: var(--leading-small);
+  min-height: 36px;
+  padding: var(--space-xs);
+}
+
+.subLink {
+  min-height: 32px;
+  padding: 6px var(--space-xs);
+}
+
+.link:hover,
+.subLink:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-sidebar-text);
+}
+
+.link[data-section="true"] {
+  color: var(--color-sidebar-text);
+  font-weight: var(--font-bold);
+}
+
+.link[aria-current="page"],
+.subLink[aria-current="page"] {
+  background: var(--color-sidebar-current);
+  color: #ffffff;
+  font-weight: var(--font-bold);
+}
+
+.link:focus-visible,
+.subLink:focus-visible,
+.brand:focus-visible,
+.signOut:focus-visible {
+  outline-color: var(--color-sidebar-text);
+}
+
+.account {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-s) var(--space-xs) 0;
+}
+
+.userName {
+  color: var(--color-sidebar-text);
+  font-size: var(--text-small);
+  overflow-wrap: anywhere;
+}
+
+.signOut {
+  align-items: center;
+  color: var(--color-sidebar-text-weak);
+  display: inline-flex;
+  font-size: var(--text-small);
+  gap: var(--space-xs);
+}
+
+.signOut:hover {
+  color: var(--color-sidebar-text);
+}
+
+.main {
+  background: var(--color-canvas);
+  min-width: 0;
+}
+
+.band {
+  align-items: center;
+  display: flex;
+  font-size: var(--text-small);
+  font-weight: var(--font-bold);
+  gap: var(--space-xs);
+  line-height: var(--leading-small);
+  padding: var(--space-xs) var(--space-l);
+}
+
+.band[data-environment="production"] {
+  background: var(--color-error);
+  color: #ffffff;
+}
+
+.band[data-environment="qa"] {
+  background: var(--color-warning-fill);
+  border-bottom: 1px solid var(--color-stroke-weak);
+  color: var(--color-warning);
+}
+
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar {
+    gap: 0;
+    height: auto;
+    padding: var(--space-xs) var(--space-s);
+    z-index: 10;
+  }
+
+  .menuButton {
+    align-items: center;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    border-radius: var(--radius-m);
+    color: var(--color-sidebar-text);
+    cursor: pointer;
+    display: inline-flex;
+    font-size: var(--text-small);
+    gap: var(--space-xs);
+    min-height: var(--control-height);
+    padding: 0 var(--space-s);
+  }
+
+  .nav,
+  .account {
+    display: none;
+  }
+
+  .sidebar[data-open="true"] .nav,
+  .sidebar[data-open="true"] .account {
+    display: flex;
+    padding-top: var(--space-s);
+  }
+
+  .band {
+    padding: var(--space-xs) var(--space-s);
+  }
+}

@@ -1,0 +1,27 @@
+.empty {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  padding: var(--space-l) var(--space-m);
+}
+
+.title {
+  color: var(--color-text-strong);
+  font-size: var(--text-body);
+  font-weight: var(--font-bold);
+  line-height: var(--leading-body);
+  margin: 0;
+}
+
+.description {
+  color: var(--color-text-weak);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  margin: 0;
+  max-width: 60ch;
+}
+
+.action {
+  margin-top: var(--space-s);
+}

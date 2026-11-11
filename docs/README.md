@@ -14,6 +14,7 @@ Use this index to orient quickly.
 - `docs/shoprite-rest-v9.3-discovery.md`
 - `docs/acumatica-2025-r2-integration-research.md`
 - `docs/acumatica-integration-guide.md` - how to integrate any Acumatica instance; start here for a new site
+- `docs/design/backoffice-ui-redesign.md` - the backoffice UI: navigation, page templates, design tokens and build order; read before adding a screen
 - `docs/architecture-stack-options.md`
 
 ## Implementation Plans

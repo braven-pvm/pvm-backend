@@ -5,7 +5,7 @@ export default function AccessDeniedPage() {
         <div>
           <h1>Access denied</h1>
           <p>
-            Your Microsoft account is not pre-authorized for the PVM workbench.
+            Your Microsoft account does not have access to PVM Backoffice yet. Ask an admin to add you.
           </p>
         </div>
       </section>
