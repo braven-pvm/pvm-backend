@@ -55,6 +55,9 @@
       "value": [
         "PVM-Shoprite-Finalized-Invoices"
       ]
+    },
+    "sellInEnabled": {
+      "value": true
     }
   }
 }
