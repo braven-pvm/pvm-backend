@@ -1,0 +1,43 @@
+.list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chip {
+  align-items: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-stroke-strong);
+  border-radius: 999px;
+  color: var(--color-text-strong);
+  display: inline-flex;
+  font-size: var(--text-small);
+  gap: var(--space-xs);
+  line-height: var(--leading-small);
+  min-height: 36px;
+  padding: 0 14px;
+  text-decoration: none;
+}
+
+.chip:hover {
+  border-color: var(--color-brand);
+}
+
+.chip[aria-current="true"] {
+  background: var(--color-brand-fill);
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+  font-weight: var(--font-bold);
+}
+
+.count {
+  color: var(--color-text-weak);
+  font-variant-numeric: tabular-nums;
+}
+
+.chip[aria-current="true"] .count {
+  color: inherit;
+}

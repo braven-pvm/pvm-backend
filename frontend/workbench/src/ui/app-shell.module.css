@@ -116,7 +116,7 @@
 .link[aria-current="page"],
 .subLink[aria-current="page"] {
   background: var(--color-sidebar-current);
-  color: #ffffff;
+  color: var(--color-sidebar-text-current);
   font-weight: var(--font-bold);
 }
 
@@ -169,8 +169,8 @@
 }
 
 .band[data-environment="production"] {
-  background: var(--color-error);
-  color: #ffffff;
+  background: var(--color-band-production);
+  color: var(--color-on-band-production);
 }
 
 .band[data-environment="qa"] {

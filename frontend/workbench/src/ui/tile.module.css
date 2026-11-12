@@ -1,0 +1,31 @@
+.tile {
+  background: var(--color-surface);
+  border: 1px solid var(--color-stroke-weak);
+  border-radius: var(--radius-l);
+  color: var(--color-text-strong);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-s);
+  text-decoration: none;
+}
+
+.tile:hover {
+  border-color: var(--color-stroke-strong);
+}
+
+.title {
+  font-size: var(--text-small);
+  font-weight: var(--font-bold);
+  line-height: var(--leading-small);
+}
+
+.status {
+  align-self: flex-start;
+}
+
+.meta {
+  color: var(--color-text-weak);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+}

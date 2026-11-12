@@ -15,6 +15,7 @@ Use this index to orient quickly.
 - `docs/acumatica-2025-r2-integration-research.md`
 - `docs/acumatica-integration-guide.md` - how to integrate any Acumatica instance; start here for a new site
 - `docs/design/backoffice-ui-redesign.md` - the backoffice UI: navigation, page templates, design tokens and build order; read before adding a screen
+- `docs/design/design-system.md` - the component reference: every token and component with its props, states and rules; `/ui-kit` shows them live
 - `docs/architecture-stack-options.md`
 
 ## Implementation Plans
