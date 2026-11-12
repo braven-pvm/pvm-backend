@@ -1284,8 +1284,9 @@ resource stockSyncJob 'Microsoft.App/jobs@2025-01-01' = if (hasWooCommerceCreden
           ]
           env: concat(workerEnvironment, woocommerceEnvironment)
           resources: {
-            cpu: json('0.25')
-            memory: '0.5Gi'
+            // The open-order read holds 45 days of sales orders in memory at once.
+            cpu: json('0.5')
+            memory: '1Gi'
           }
         }
       ]
