@@ -1,5 +1,3 @@
-"use client";
-
 import {
   assignExceptionAction,
   commentOnExceptionAction,
@@ -11,188 +9,191 @@ import {
   setExceptionStatusAction,
 } from "../actions";
 import type { ExceptionTask } from "../../src/api/client";
+import {
+  Columns,
+  ConfirmDialog,
+  FormActions,
+  FormLayout,
+  Notice,
+  Panel,
+  RadioGroup,
+  SelectField,
+  SubmitButton,
+  TextField,
+} from "../../src/ui";
 
 const outcomes = [
   {
     value: "ConfirmedAccepted",
-    label: "Confirmed accepted",
-    consequence: "The submission becomes Submitted. The invoice is never sent again.",
+    label: "Shoprite accepted it",
+    hint: "The submission becomes Submitted. The invoice is never sent again.",
   },
   {
     value: "ConfirmedNotAccepted",
-    label: "Confirmed not accepted",
-    consequence: "The operation is cancelled and the invoice returns to review for a new attempt.",
+    label: "Shoprite did not accept it",
+    hint: "The submission is cancelled and the invoice goes back to review for a new attempt.",
   },
   {
     value: "StillUnknown",
-    label: "Still unknown",
-    consequence: "Nothing changes. The evidence is recorded and the task waits for Shoprite.",
+    label: "Still not known",
+    hint: "Nothing changes. The evidence is recorded and the exception waits.",
   },
 ];
 
-export function ExceptionActions({ task }: { task: ExceptionTask }) {
-  const isSubmissionOperation = task.entityType === "SubmissionOperation";
-  const canReplay = task.retryClassification === "safe-to-replay";
+const statuses = [
+  { value: "Open", label: "Open" },
+  { value: "InProgress", label: "In progress" },
+  { value: "WaitingForAcumatica", label: "Waiting for Acumatica" },
+  { value: "WaitingForShoprite", label: "Waiting for Shoprite" },
+  { value: "Suppressed", label: "Suppressed" },
+  { value: "Resolved", label: "Resolved" },
+];
 
-  return (
-    <div className="exception-actions">
-      {task.category === "AmbiguousSubmission" && isSubmissionOperation ? (
-        <form action={resolveAmbiguousSubmissionAction} className="exception-form">
-          <input name="submissionOperationId" type="hidden" value={task.entityId} />
-          <fieldset>
-            <legend>Resolve the ambiguous outcome</legend>
-            <p className="field-note">
-              Check Shoprite first. Record what you checked. There is no generic retry while the
-              outcome is unknown.
-            </p>
-            <label>
-              <span>Outcome *</span>
-              <select name="outcome" required defaultValue="StillUnknown">
-                {outcomes.map((outcome) => (
-                  <option key={outcome.value} value={outcome.value}>
-                    {outcome.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <ul className="consequence-list">
-              {outcomes.map((outcome) => (
-                <li key={outcome.value}>
-                  <strong>{outcome.label}:</strong> {outcome.consequence}
-                </li>
-              ))}
-            </ul>
-            <label>
-              <span>How Shoprite was checked *</span>
-              <input name="evidence" placeholder="Portal reference, ticket number or contact" required />
-            </label>
-            <label>
-              <span>Reason *</span>
-              <input name="reason" placeholder="Why this outcome is correct" required />
-            </label>
-            <button className="button primary" type="submit">Record the outcome</button>
-          </fieldset>
+/** The fix for this kind of exception. Only one applies to each exception. */
+export function ExceptionFix({ task }: { task: ExceptionTask }) {
+  if (task.category === "AmbiguousSubmission" && task.entityType === "SubmissionOperation") {
+    return (
+      <Panel title="Record what Shoprite says" description="Check the Shoprite portal first. While the outcome is unknown, there is no retry.">
+        <form action={resolveAmbiguousSubmissionAction}>
+          <input type="hidden" name="submissionOperationId" value={task.entityId} />
+          <ReturnTo task={task} />
+          <FormLayout>
+            <RadioGroup name="outcome" label="What Shoprite says" required defaultValue="StillUnknown" options={outcomes} />
+            <TextField name="evidence" label="How you checked" hint="A portal reference, a ticket number or the person you spoke to" width="l" required />
+            <TextField name="reason" label="Reason" hint="Why this outcome is correct" width="l" required />
+            <FormActions>
+              <SubmitButton pendingLabel="Recording…">Record the outcome</SubmitButton>
+            </FormActions>
+          </FormLayout>
         </form>
-      ) : null}
+      </Panel>
+    );
+  }
 
-      {task.category === "RejectedSubmission" && task.invoiceCandidateId ? (
-        <form
+  if (task.category === "RejectedSubmission" && task.invoiceCandidateId) {
+    return (
+      <Panel title="Allow a new attempt" description="The invoice is checked again first. A new attempt is refused while a check still fails.">
+        <ConfirmDialog
+          triggerLabel="Check again and allow a retry"
+          triggerVariant="primary"
+          title={`Allow a new attempt for ${task.invoiceNumber ?? "this invoice"}?`}
+          confirmLabel="Allow a retry"
+          pendingLabel="Checking…"
           action={retrySubmissionAction}
-          className="exception-form"
-          onSubmit={(event) => {
-            if (!window.confirm("Revalidate this invoice and authorize a new submission attempt?")) {
-              event.preventDefault();
-            }
-          }}
+          fields={{ invoiceCandidateId: task.invoiceCandidateId, returnTo: `/exceptions/${task.id}` }}
         >
-          <input name="invoiceCandidateId" type="hidden" value={task.invoiceCandidateId} />
-          <fieldset>
-            <legend>Authorize a retry</legend>
-            <p className="field-note">
-              The invoice is revalidated first. A retry is refused while validation still fails.
-            </p>
-            <label>
-              <span>Reason *</span>
-              <input name="reason" placeholder="What was corrected" required />
-            </label>
-            <button className="button primary" type="submit">Revalidate and allow a retry</button>
-          </fieldset>
+          <p>The invoice is checked again. If it passes, the next submission sends it to Shoprite.</p>
+          <TextField name="reason" label="What was corrected" width="full" required />
+        </ConfirmDialog>
+      </Panel>
+    );
+  }
+
+  if (task.category === "NeedsReview" && task.invoiceCandidateId) {
+    return (
+      <Panel title="Hold the invoice" description="A held invoice is never sent, by hand or by an automation, until someone releases it.">
+        <form action={holdInvoiceAction}>
+          <input type="hidden" name="invoiceCandidateId" value={task.invoiceCandidateId} />
+          <ReturnTo task={task} />
+          <FormLayout>
+            <TextField name="reason" label="Reason" hint="Why the invoice must not be sent" width="l" required />
+            <FormActions>
+              <SubmitButton variant="secondary" pendingLabel="Holding…">Hold invoice</SubmitButton>
+            </FormActions>
+          </FormLayout>
         </form>
-      ) : null}
+      </Panel>
+    );
+  }
 
-      {task.category === "NeedsReview" && task.invoiceCandidateId ? (
-        <form action={holdInvoiceAction} className="exception-form">
-          <input name="invoiceCandidateId" type="hidden" value={task.invoiceCandidateId} />
-          <fieldset>
-            <legend>Hold this invoice</legend>
-            <label>
-              <span>Reason *</span>
-              <input name="reason" placeholder="Why submission must not proceed" required />
-            </label>
-            <button className="button secondary" type="submit">Hold</button>
-          </fieldset>
+  if (task.category === "HeldInvoice" && task.invoiceCandidateId) {
+    return (
+      <Panel title="Release the hold" description="The invoice is checked again, then follows the normal rules.">
+        <form action={releaseInvoiceAction}>
+          <input type="hidden" name="invoiceCandidateId" value={task.invoiceCandidateId} />
+          <ReturnTo task={task} />
+          <FormLayout>
+            <TextField name="reason" label="Reason" hint="Why the hold can end" width="l" required />
+            <FormActions>
+              <SubmitButton pendingLabel="Releasing…">Release and check again</SubmitButton>
+            </FormActions>
+          </FormLayout>
         </form>
-      ) : null}
+      </Panel>
+    );
+  }
 
-      {task.category === "HeldInvoice" && task.invoiceCandidateId ? (
-        <form action={releaseInvoiceAction} className="exception-form">
-          <input name="invoiceCandidateId" type="hidden" value={task.invoiceCandidateId} />
-          <fieldset>
-            <legend>Release the hold</legend>
-            <label>
-              <span>Reason *</span>
-              <input name="reason" placeholder="Why the hold can end" required />
-            </label>
-            <button className="button primary" type="submit">Release and revalidate</button>
-          </fieldset>
+  if (task.category === "DeadLetter") {
+    return task.retryClassification === "safe-to-replay" ? (
+      <Panel title="Replay the message" description="The message runs again as a new command.">
+        <ConfirmDialog
+          triggerLabel="Replay message"
+          triggerVariant="primary"
+          title="Replay this message?"
+          confirmLabel="Replay message"
+          pendingLabel="Replaying…"
+          action={replayDeadLetterAction}
+          fields={{ deliveryId: task.entityId, returnTo: `/exceptions/${task.id}` }}
+        >
+          <p>The message runs again as a new command. Replay only when the cause is fixed.</p>
+          <TextField name="reason" label="Why a replay is safe now" width="full" required />
+        </ConfirmDialog>
+      </Panel>
+    ) : (
+      <Notice tone="info" title="This message cannot be replayed">
+        {task.latestEvidence ?? "The message type does not allow a replay."} Close it with a reason in Status.
+      </Notice>
+    );
+  }
+
+  return null;
+}
+
+/** Assign, comment and status: the same for every exception. */
+export function ExceptionWork({ task }: { task: ExceptionTask }) {
+  return (
+    <Columns>
+      <Panel title="Owner">
+        <form action={assignExceptionAction}>
+          <input type="hidden" name="id" value={task.id} />
+          <ReturnTo task={task} />
+          <FormLayout>
+            <TextField name="owner" label="Owner" hint="An email address. Leave empty to unassign" type="email" width="full" defaultValue={task.owner ?? ""} />
+            <FormActions>
+              <SubmitButton variant="secondary" pendingLabel="Saving…">Save owner</SubmitButton>
+            </FormActions>
+          </FormLayout>
         </form>
-      ) : null}
-
-      {task.category === "DeadLetter" ? (
-        canReplay ? (
-          <form
-            action={replayDeadLetterAction}
-            className="exception-form"
-            onSubmit={(event) => {
-              if (!window.confirm("Replay this message as a new command?")) {
-                event.preventDefault();
-              }
-            }}
-          >
-            <input name="deliveryId" type="hidden" value={task.entityId} />
-            <fieldset>
-              <legend>Replay the message</legend>
-              <label>
-                <span>Reason *</span>
-                <input name="reason" placeholder="Why replay is safe now" required />
-              </label>
-              <button className="button primary" type="submit">Replay</button>
-            </fieldset>
-          </form>
-        ) : (
-          <p className="field-note replay-blocked">
-            Replay is unavailable for this message. {task.latestEvidence}
-          </p>
-        )
-      ) : null}
-
-      <form action={assignExceptionAction} className="exception-form inline-form">
-        <input name="id" type="hidden" value={task.id} />
-        <label>
-          <span>Owner</span>
-          <input name="owner" defaultValue={task.owner ?? ""} placeholder="name@pvm.co.za" />
-        </label>
-        <button className="button secondary" type="submit">Assign</button>
-      </form>
-
-      <form action={commentOnExceptionAction} className="exception-form inline-form">
-        <input name="id" type="hidden" value={task.id} />
-        <label>
-          <span>Comment</span>
-          <input name="body" placeholder="What you found or did" required />
-        </label>
-        <button className="button secondary" type="submit">Add comment</button>
-      </form>
-
-      <form action={setExceptionStatusAction} className="exception-form inline-form">
-        <input name="id" type="hidden" value={task.id} />
-        <label>
-          <span>Status</span>
-          <select name="status" defaultValue={task.status}>
-            <option value="Open">Open</option>
-            <option value="InProgress">In progress</option>
-            <option value="WaitingForAcumatica">Waiting for Acumatica</option>
-            <option value="WaitingForShoprite">Waiting for Shoprite</option>
-            <option value="Suppressed">Suppressed</option>
-            <option value="Resolved">Resolved</option>
-          </select>
-        </label>
-        <label>
-          <span>Reason</span>
-          <input name="reason" placeholder="Required to resolve or suppress" required />
-        </label>
-        <button className="button secondary" type="submit">Save status</button>
-      </form>
-    </div>
+      </Panel>
+      <Panel title="Comment">
+        <form action={commentOnExceptionAction}>
+          <input type="hidden" name="id" value={task.id} />
+          <ReturnTo task={task} />
+          <FormLayout>
+            <TextField name="body" label="Comment" hint="What you found or did" width="full" required />
+            <FormActions>
+              <SubmitButton variant="secondary" pendingLabel="Adding…">Add comment</SubmitButton>
+            </FormActions>
+          </FormLayout>
+        </form>
+      </Panel>
+      <Panel title="Status">
+        <form action={setExceptionStatusAction}>
+          <input type="hidden" name="id" value={task.id} />
+          <ReturnTo task={task} />
+          <FormLayout>
+            <SelectField name="status" label="Status" width="full" required defaultValue={task.status} options={statuses} />
+            <TextField name="reason" label="Reason" hint="Needed to resolve or suppress" width="full" required />
+            <FormActions>
+              <SubmitButton variant="secondary" pendingLabel="Saving…">Save status</SubmitButton>
+            </FormActions>
+          </FormLayout>
+        </form>
+      </Panel>
+    </Columns>
   );
+}
+
+function ReturnTo({ task }: { task: ExceptionTask }) {
+  return <input type="hidden" name="returnTo" value={`/exceptions/${task.id}`} />;
 }

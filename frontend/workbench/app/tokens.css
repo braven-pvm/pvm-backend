@@ -150,6 +150,17 @@
   outline-offset: var(--focus-offset);
 }
 
+/* A plain link on a converted page. Components style their own links. */
+[data-ds] a:not([class]) {
+  color: var(--color-brand);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+[data-ds] a:not([class]):hover {
+  color: var(--color-brand-hover);
+}
+
 /* Text for screen readers only, such as a table caption or an icon button's name. */
 .sr-only {
   border: 0;

@@ -66,7 +66,7 @@ export async function saveInventoryMappingAction(formData: FormData) {
 
   if (errorMessage) {
     redirect(
-      `/admin/inventory-mappings?mappingError=${encodeURIComponent(errorMessage)}&newSku=${encodeURIComponent(inventoryId)}#add-mapping`,
+      `/admin/inventory-mappings/new?mappingError=${encodeURIComponent(errorMessage)}&newSku=${encodeURIComponent(inventoryId)}&uom=${encodeURIComponent(acumaticaUom)}`,
     );
   }
 
@@ -186,7 +186,7 @@ export async function setAutomationEmergencyStopAction(formData: FormData) {
     : "/automation?policyStatus=Emergency%20control%20updated.");
 }
 
-async function runExceptionAction(action: () => Promise<void>) {
+async function runExceptionAction(action: () => Promise<void>, formData?: FormData) {
   let errorMessage: string | undefined;
   try {
     await action();
@@ -194,30 +194,34 @@ async function runExceptionAction(action: () => Promise<void>) {
     errorMessage = error instanceof Error ? error.message : "The exception action failed.";
   }
 
+  // A form on an exception's own page returns there. Only exception paths are accepted.
+  const returnTo = formData?.get("returnTo");
+  const target = typeof returnTo === "string" && /^\/exceptions(\/[\w-]+)?$/.test(returnTo) ? returnTo : "/exceptions";
+
   revalidatePath("/exceptions");
   revalidatePath("/invoices");
   redirect(errorMessage
-    ? `/exceptions?exceptionError=${encodeURIComponent(errorMessage)}`
-    : "/exceptions?exceptionStatus=Exception%20updated.");
+    ? `${target}?exceptionError=${encodeURIComponent(errorMessage)}`
+    : `${target}?exceptionStatus=Exception%20updated.`);
 }
 
 export async function assignExceptionAction(formData: FormData) {
   const id = requiredString(formData, "id");
   const owner = optionalString(formData, "owner") ?? null;
-  await runExceptionAction(() => assignException(id, owner));
+  await runExceptionAction(() => assignException(id, owner), formData);
 }
 
 export async function commentOnExceptionAction(formData: FormData) {
   const id = requiredString(formData, "id");
   const body = requiredString(formData, "body");
-  await runExceptionAction(() => commentOnException(id, body));
+  await runExceptionAction(() => commentOnException(id, body), formData);
 }
 
 export async function setExceptionStatusAction(formData: FormData) {
   const id = requiredString(formData, "id");
   const status = requiredString(formData, "status");
   const reason = requiredString(formData, "reason");
-  await runExceptionAction(() => setExceptionStatus(id, status, reason));
+  await runExceptionAction(() => setExceptionStatus(id, status, reason), formData);
 }
 
 export async function resolveAmbiguousSubmissionAction(formData: FormData) {
@@ -226,38 +230,38 @@ export async function resolveAmbiguousSubmissionAction(formData: FormData) {
   const evidence = requiredString(formData, "evidence");
   const reason = requiredString(formData, "reason");
   await runExceptionAction(() =>
-    resolveAmbiguousSubmission(submissionOperationId, outcome, evidence, reason));
+    resolveAmbiguousSubmission(submissionOperationId, outcome, evidence, reason), formData);
 }
 
 export async function holdInvoiceAction(formData: FormData) {
   const id = requiredString(formData, "invoiceCandidateId");
   const reason = requiredString(formData, "reason");
-  await runExceptionAction(() => holdInvoice(id, reason));
+  await runExceptionAction(() => holdInvoice(id, reason), formData);
 }
 
 export async function releaseInvoiceAction(formData: FormData) {
   const id = requiredString(formData, "invoiceCandidateId");
   const reason = requiredString(formData, "reason");
-  await runExceptionAction(() => releaseInvoice(id, reason));
+  await runExceptionAction(() => releaseInvoice(id, reason), formData);
 }
 
 export async function retrySubmissionAction(formData: FormData) {
   const id = requiredString(formData, "invoiceCandidateId");
   const reason = requiredString(formData, "reason");
-  await runExceptionAction(() => retrySubmission(id, reason));
+  await runExceptionAction(() => retrySubmission(id, reason), formData);
 }
 
 export async function replayDeadLetterAction(formData: FormData) {
   const deliveryId = requiredString(formData, "deliveryId");
   const reason = requiredString(formData, "reason");
-  await runExceptionAction(() => replayDeadLetter(deliveryId, reason));
+  await runExceptionAction(() => replayDeadLetter(deliveryId, reason), formData);
 }
 
 export async function resolveDeadLettersAction(formData: FormData) {
   const reason = requiredString(formData, "reason");
   const queueName = optionalString(formData, "queueName") ?? null;
   const olderThanDays = requiredInteger(formData, "olderThanDays");
-  await runExceptionAction(() => resolveDeadLetters(reason, queueName, olderThanDays));
+  await runExceptionAction(() => resolveDeadLetters(reason, queueName, olderThanDays), formData);
 }
 
 // The bank import screens keep the chosen file in the browser and render the outcome in

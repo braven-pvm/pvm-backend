@@ -1,114 +1,89 @@
-import Link from "next/link";
-import { getPurchaseOrderFreshness, getPurchaseOrders } from "../../src/api/client";
-import { requireWorkbenchUser } from "../../src/auth/session";
+import { getPurchaseOrderFreshness, getPurchaseOrders, type PurchaseOrderSummary } from "../../src/api/client";
+import { hasAnyRole, requireWorkbenchUser } from "../../src/auth/session";
+import { formatDate, formatDateTime } from "../../src/formatters.mjs";
+import { ButtonLink, DataTable, EmptyState, FilterChips, ListPage, Notice, type Column } from "../../src/ui";
+import { ShopriteSections } from "../shoprite-sections";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Shoprite purchase orders" };
 
-export default async function PurchaseOrdersPage() {
-  await requireWorkbenchUser("/purchase-orders");
-  const [purchaseOrders, freshness] = await Promise.all([
-    getPurchaseOrders(),
-    getPurchaseOrderFreshness(),
-  ]);
-  const normalCount = purchaseOrders.filter((order) => order.orderTypeCode === "220").length;
-  const allocationCount = purchaseOrders.filter((order) => order.orderTypeCode === "258").length;
+type PurchaseOrdersPageProps = {
+  searchParams: Promise<{ type?: string }>;
+};
+
+const orderTypes = [
+  { value: undefined, label: "All" },
+  { value: "220", label: "Normal" },
+  { value: "258", label: "Allocation" },
+] as const;
+
+const columns: Column<PurchaseOrderSummary>[] = [
+  { key: "po", header: "PO", render: (row) => row.purchaseOrderNumber, mono: true },
+  { key: "type", header: "Type", render: (row) => [row.orderTypeCode, row.orderTypeLabel].filter(Boolean).join(" · ") || "Unknown" },
+  { key: "location", header: "Deliver to", render: (row) => row.deliveryLocationName ?? row.deliveryLocationCode ?? row.deliveryGln ?? "Unknown" },
+  { key: "gln", header: "Delivery GLN", render: (row) => row.deliveryGln ?? "—", mono: true },
+  { key: "lines", header: "Lines", render: (row) => row.lineCount, align: "end" },
+  { key: "seen", header: "Last received", render: (row) => formatDateTime(row.lastSeenAt), weak: true },
+];
+
+export default async function PurchaseOrdersPage({ searchParams }: PurchaseOrdersPageProps) {
+  const user = await requireWorkbenchUser("/purchase-orders");
+  const { type } = await searchParams;
+  const [purchaseOrders, freshness] = await Promise.all([getPurchaseOrders(), getPurchaseOrderFreshness()]);
+  const rows = type ? purchaseOrders.filter((order) => order.orderTypeCode === type) : purchaseOrders;
 
   return (
-    <main className="page-shell">
-      <section className="page-heading">
-        <div>
-          <h1>Shoprite PO Inbox</h1>
+    <ListPage
+      header={{
+        eyebrow: "Shoprite",
+        title: "Purchase orders",
+        description: `Orders received before order reading was switched off. Last received: ${
+          freshness.lastSuccessfulRefreshAt ? formatDate(freshness.lastSuccessfulRefreshAt) : "never"
+        }.`,
+      }}
+      sections={<ShopriteSections current="purchase-orders" isAdmin={hasAnyRole(user, ["Admin"])} />}
+      notice={
+        <Notice tone="info" title="Reading Shoprite orders is switched off">
           <p>
-            Shoprite orders received before order reading was switched off. Invoices no longer
-            need them: the store GLN and item GTINs come from Shoprite reference data.
+            Shoprite marks an order as downloaded when anything reads it, which takes it away from the people who work
+            orders on the Shoprite portal. This list no longer grows. Invoices get the store GLN and item GTINs from
+            Shoprite reference data instead.
           </p>
-        </div>
-      </section>
-
-      <div className="alert-banner" role="status">
-        <strong>Reading Shoprite orders is switched off</strong>
-        <span>
-          Shoprite marks an order as downloaded the moment anything reads it, which removes it
-          from the people who work orders on the Shoprite portal. This list no longer refreshes.
-        </span>
-      </div>
-
-      <section className="metric-strip" aria-label="Purchase order summary">
-        <div>
-          <span>Purchase orders</span>
-          <strong>{purchaseOrders.length}</strong>
-        </div>
-        <div>
-          <span>Normal orders</span>
-          <strong>{normalCount}</strong>
-        </div>
-        <div>
-          <span>Last received</span>
-          <strong className="metric-text">
-            {freshness.lastSuccessfulRefreshAt
-              ? new Date(freshness.lastSuccessfulRefreshAt).toLocaleDateString()
-              : "Never"}
-          </strong>
-        </div>
-      </section>
-
-      <section className="compact-stats" aria-label="Purchase order type counts">
-        <span>Normal: <strong>{normalCount}</strong></span>
-        <span>Allocation: <strong>{allocationCount}</strong></span>
-      </section>
-
-      <section className="table-panel" aria-label="Shoprite purchase orders">
-        <div className="table-toolbar">
-          <h2>PO inbox</h2>
-          <span>{purchaseOrders.length} records</span>
-        </div>
-        {purchaseOrders.length === 0 ? (
-          <div className="empty-state">
-            <strong>No Shoprite purchase orders loaded</strong>
-            <p>
-              Invoices are completed from Shoprite reference data, so this list can stay empty.
-            </p>
-          </div>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>PO</th>
-                <th>Type</th>
-                <th>Location</th>
-                <th>Supplier GLN</th>
-                <th>Lines</th>
-                <th>Last seen</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {purchaseOrders.map((order) => (
-                <tr key={order.id}>
-                  <td data-label="PO">{order.purchaseOrderNumber}</td>
-                  <td data-label="Type">
-                    {order.orderTypeCode ?? "-"}
-                    <span>{order.orderTypeLabel ?? "Unknown"}</span>
-                  </td>
-                  <td data-label="Location">
-                    {order.deliveryLocationCode ?? order.deliveryGln ?? "-"}
-                    <span>{order.deliveryLocationName ?? order.deliveryLocationSource}</span>
-                  </td>
-                  <td data-label="Supplier GLN">{order.supplierGln ?? "-"}</td>
-                  <td data-label="Lines">{order.lineCount}</td>
-                  <td data-label="Last seen">
-                    {new Date(order.lastSeenAt).toLocaleString()}
-                  </td>
-                  <td className="table-action" data-label="Action">
-                    <Link href={`/purchase-orders/${order.id}`}>Open</Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-    </main>
+        </Notice>
+      }
+      filters={
+        <FilterChips
+          label="Filter purchase orders by type"
+          chips={orderTypes.map((orderType) => ({
+            label: orderType.label,
+            count: orderType.value ? purchaseOrders.filter((order) => order.orderTypeCode === orderType.value).length : purchaseOrders.length,
+            href: orderType.value ? `/purchase-orders?type=${orderType.value}` : "/purchase-orders",
+            current: type === orderType.value,
+          }))}
+        />
+      }
+      table={
+        <DataTable
+          caption="Shoprite purchase orders"
+          columns={columns}
+          rows={rows}
+          rowKey={(row) => row.id}
+          rowHref={(row) => `/purchase-orders/${row.id}`}
+          empty={
+            purchaseOrders.length === 0 ? (
+              <EmptyState
+                title="No purchase orders stored"
+                description="Invoices are completed from Shoprite reference data, so this list can stay empty."
+              />
+            ) : (
+              <EmptyState
+                title="No purchase orders of this type"
+                action={<ButtonLink href="/purchase-orders">Show all purchase orders</ButtonLink>}
+              />
+            )
+          }
+        />
+      }
+    />
   );
 }
-

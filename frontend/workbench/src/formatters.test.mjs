@@ -49,3 +49,18 @@ test("formatDayAndDate names the weekday, so a weekend gap explains itself", () 
   assert.equal(formatDayAndDate("2026-09-13"), "Sunday 13 September");
   assert.equal(formatDayAndDate("2026-09-14"), "Monday 14 September");
 });
+
+test("formatDateTime shows South African time and leaves out the current year", async () => {
+  const { formatDateTime } = await import("./formatters.mjs");
+  const now = new Date("2026-11-11T08:00:00Z");
+  assert.equal(formatDateTime("2026-11-11T03:00:00Z", now), "11 Nov, 05:00");
+  assert.equal(formatDateTime("2025-12-31T23:30:00Z", now), "1 Jan, 01:30");
+  assert.equal(formatDateTime("2025-06-01T10:15:00Z", now), "1 Jun 2025, 12:15");
+  assert.equal(formatDateTime(null, now), "—");
+});
+
+test("formatDate shows the South African calendar day", async () => {
+  const { formatDate } = await import("./formatters.mjs");
+  assert.equal(formatDate("2026-11-10T23:30:00Z"), "11 Nov 2026");
+  assert.equal(formatDate(undefined), "—");
+});

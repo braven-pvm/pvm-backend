@@ -57,3 +57,49 @@ export function formatDayAndDate(iso) {
 
   return `${DAYS[date.getUTCDay()]} ${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]}`;
 }
+
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// Date and time parts in South African time, whatever the server's own time zone is.
+function sastParts(iso) {
+  if (!iso) {
+    return null;
+  }
+
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  // South Africa has no daylight saving, so a fixed +2 hours is exact.
+  const shifted = new Date(date.getTime() + 2 * 60 * 60 * 1000);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth(),
+    day: shifted.getUTCDate(),
+    hours: String(shifted.getUTCHours()).padStart(2, "0"),
+    minutes: String(shifted.getUTCMinutes()).padStart(2, "0"),
+  };
+}
+
+// "11 Nov, 05:00" in the current year, "11 Nov 2025, 05:00" in another year.
+export function formatDateTime(iso, now = new Date()) {
+  const parts = sastParts(iso);
+  if (!parts) {
+    return "—";
+  }
+
+  const current = sastParts(now.toISOString());
+  const year = current && current.year === parts.year ? "" : ` ${parts.year}`;
+  return `${parts.day} ${SHORT_MONTHS[parts.month]}${year}, ${parts.hours}:${parts.minutes}`;
+}
+
+// "11 Nov 2026".
+export function formatDate(iso) {
+  const parts = sastParts(iso);
+  if (!parts) {
+    return "—";
+  }
+
+  return `${parts.day} ${SHORT_MONTHS[parts.month]} ${parts.year}`;
+}
