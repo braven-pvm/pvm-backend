@@ -114,6 +114,12 @@ param stockSyncMode string = 'Shadow'
 @description('Cron expression for the stock sync, in UTC.')
 param stockSyncCron string = '*/30 * * * *'
 
+@description('Loads Acumatica sell-in into the reports schema each night. It only reads Acumatica.')
+param sellInEnabled bool = false
+
+@description('Cron expression for the sell-in load. The default is 02:00 UTC, which is 04:00 in South Africa.')
+param sellInCron string = '0 2 * * *'
+
 param acumaticaEndpointName string = 'Default'
 param acumaticaEndpointVersion string = '24.200.001'
 param acumaticaCustomerAccounts array = []
@@ -144,6 +150,7 @@ var acumaticaInvoiceReconciliationJobName = 'job-pvm-invoice-reconcile-${suffix}
 var acumaticaInvoiceLookbackJobName = 'job-pvm-invoice-lookback-${suffix}'
 var investecBankFeedJobName = 'job-pvm-investec-feed-${suffix}'
 var stockSyncJobName = 'job-pvm-stock-sync-${suffix}'
+var sellInJobName = 'job-pvm-sell-in-${suffix}'
 var logName = 'log-pvm-integrations-${suffix}'
 var appInsightsName = 'appi-pvm-integrations-${suffix}'
 var containerAppsEnvironmentName = 'cae-pvm-integrations-${suffix}'
@@ -1297,6 +1304,64 @@ resource stockSyncJob 'Microsoft.App/jobs@2025-01-01' = if (hasWooCommerceCreden
   ]
 }
 
+// The sell-in load reads the Acumatica inquiry PVM-Sales-Lines each night into the reports schema.
+// It reads the current posting period, two before it and one after it. It writes nothing to Acumatica.
+resource sellInJob 'Microsoft.App/jobs@2025-01-01' = if (sellInEnabled && hasAcumaticaCredentials) {
+  name: sellInJobName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identity.id}': {}
+    }
+  }
+  properties: {
+    environmentId: containerAppsEnvironment.id
+    configuration: {
+      triggerType: 'Schedule'
+      replicaTimeout: 1800
+      replicaRetryLimit: 1
+      scheduleTriggerConfig: {
+        cronExpression: sellInCron
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      registries: [
+        {
+          server: acr.properties.loginServer
+          identity: identity.id
+        }
+      ]
+      secrets: commonRuntimeSecrets
+    }
+    template: {
+      containers: [
+        {
+          name: sellInJobName
+          image: '${acr.properties.loginServer}/pvm-worker:${workerImageTag}'
+          args: [
+            '--sync-sell-in'
+          ]
+          env: concat(workerEnvironment, [
+            {
+              name: 'SellIn__Enabled'
+              value: 'true'
+            }
+          ])
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    identityAcrPullRole
+  ]
+}
+
 resource operationsActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   name: 'ag-pvm-integrations-${suffix}'
   location: 'global'
@@ -1455,3 +1520,4 @@ output invoiceReconciliationJobName string = acumaticaInvoiceReconciliationJobNa
 output invoiceLookbackJobName string = acumaticaInvoiceLookbackJobName
 output investecBankFeedJobName string = investecBankFeedJobName
 output stockSyncJobName string = stockSyncJobName
+output sellInJobName string = sellInEnabled ? sellInJobName : ''
