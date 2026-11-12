@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 /**
- * Old URLs from before the Shoprite module moved under /shoprite. Bookmarks and
+ * Old URLs from before the Shoprite pages moved under /shoprite and the
+ * automation policy moved under /automations. Bookmarks and
  * links in emails keep working. Remove these after a few months.
  */
 const movedPaths = [
@@ -11,6 +12,7 @@ const movedPaths = [
   { source: "/purchase-orders/:id", destination: "/shoprite/purchase-orders/:id" },
   { source: "/admin/inventory-mappings", destination: "/shoprite/settings/inventory-mappings" },
   { source: "/admin/inventory-mappings/new", destination: "/shoprite/settings/inventory-mappings/new" },
+  { source: "/automation", destination: "/automations/shoprite-submission" },
 ];
 
 const nextConfig: NextConfig = {

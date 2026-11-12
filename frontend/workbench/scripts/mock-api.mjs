@@ -18,11 +18,12 @@ const minutesAgo = (minutes) => new Date(now - minutes * 60_000).toISOString();
 const daysAgo = (days) => minutesAgo(days * 24 * 60);
 
 const runs = [
-  run("6f1d0c2a-0001-4a7e-9a10-000000000001", "AcumaticaInvoiceDiscovery", "Schedule", "Succeeded", 8, { receivedCount: 3, createdCount: 1, updatedCount: 2 }),
-  run("6f1d0c2a-0002-4a7e-9a10-000000000002", "AcumaticaInvoiceReconciliation", "Schedule", "Succeeded", 18, { receivedCount: 12, unchangedCount: 12 }),
-  run("6f1d0c2a-0003-4a7e-9a10-000000000003", "InvestecStatementFeed", "Schedule", "Failed", 340, { errorCode: "AcumaticaSignInTimeout", errorSummary: "Acumatica sign-in timed out after 100 s." }),
-  run("6f1d0c2a-0004-4a7e-9a10-000000000004", "AcumaticaInvoiceLookback", "Schedule", "Succeeded", 520, { receivedCount: 41, unchangedCount: 41 }),
-  run("6f1d0c2a-0005-4a7e-9a10-000000000005", "ShopritePurchaseOrderRefresh", "Manual", "Running", 2, {}),
+  run("6f1d0c2a-0001-4a7e-9a10-000000000001", "acumatica-invoice-reconciliation", "scheduled", "Succeeded", 8, { receivedCount: 3, createdCount: 1, updatedCount: 2 }),
+  run("6f1d0c2a-0002-4a7e-9a10-000000000002", "acumatica-invoice-reconciliation", "scheduled", "Failed", 18, { errorCode: "AcumaticaTimeout", errorSummary: "Acumatica did not answer within 100 s." }),
+  run("6f1d0c2a-0003-4a7e-9a10-000000000003", "acumatica-invoice-reconciliation", "scheduled", "Succeeded", 28, { receivedCount: 12, unchangedCount: 12 }),
+  run("6f1d0c2a-0004-4a7e-9a10-000000000004", "acumatica-invoice-reconciliation", "daily-lookback", "Succeeded", 520, { receivedCount: 41, unchangedCount: 41 }),
+  run("6f1d0c2a-0005-4a7e-9a10-000000000005", "acumatica-invoice-reconciliation", "manual", "Running", 2, {}),
+  run("6f1d0c2a-0006-4a7e-9a10-000000000006", "shoprite-po-refresh", "scheduled", "Succeeded", 50000, { receivedCount: 4, unchangedCount: 4 }),
 ];
 
 function run(id, runType, trigger, status, startedMinutesAgo, counts) {
@@ -30,7 +31,7 @@ function run(id, runType, trigger, status, startedMinutesAgo, counts) {
     id,
     runType,
     trigger,
-    initiatedBy: trigger === "Manual" ? "developer@pvm.co.za" : "scheduler",
+    initiatedBy: trigger === "manual" ? "developer@pvm.co.za" : "scheduler",
     environmentName: "Production",
     correlationId: `corr-${id.slice(-4)}`,
     messageId: `msg-${id.slice(-4)}`,
@@ -270,7 +271,7 @@ const routes = {
   "GET /api/shoprite/purchase-orders": () => (empty ? [] : purchaseOrders),
   "GET /api/shoprite/purchase-orders/freshness": () => freshness,
   "GET /api/shoprite/purchase-orders/:id": (id) => poDetail(purchaseOrders.find((p) => p.id === id) ?? purchaseOrders[0]),
-  "POST /api/shoprite/purchase-orders/refresh": () => ({ runId: runs[4].id, messageId: "msg-0005", created: true }),
+  "POST /api/shoprite/purchase-orders/refresh": () => ({ runId: runs[5].id, messageId: "msg-0005", created: true }),
   "POST /api/shoprite/purchase-orders/:id/seed-test-invoice": () => candidates[1],
   "GET /api/integration-runs": () => (empty ? [] : runs),
   "GET /api/integration-runs/:id": (id) => runs.find((r) => r.id === id) ?? runs[0],

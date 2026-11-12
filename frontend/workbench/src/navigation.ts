@@ -54,7 +54,7 @@ export const navigation: NavGroup[] = [
   {
     label: "Automation",
     items: [
-      { label: "Automations", href: "/automation", icon: "automations" },
+      { label: "Automations", href: "/automations", icon: "automations" },
       { label: "Runs", href: "/runs", icon: "runs" },
       {
         label: "Events",
