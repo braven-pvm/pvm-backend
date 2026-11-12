@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
-import { saveInventoryMappingAction } from "../../../actions";
+import { saveInventoryMappingAction } from "../../../../actions";
 import {
   getAcumaticaInventoryItem,
   getShopriteCatalogItems,
   type AcumaticaInventoryItem,
-} from "../../../../src/api/client";
-import { hasAnyRole, requireWorkbenchUser } from "../../../../src/auth/session";
+} from "../../../../../src/api/client";
+import { hasAnyRole, requireWorkbenchUser } from "../../../../../src/auth/session";
 import {
   Button,
   ButtonLink,
@@ -19,7 +19,7 @@ import {
   SubmitButton,
   TaskPage,
   TextField,
-} from "../../../../src/ui";
+} from "../../../../../src/ui";
 import { defaultShopriteUnit, shopriteUnits } from "../mapping-rules";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +32,7 @@ type NewMappingPageProps = {
 const steps = ["Find the Acumatica item", "Choose the Shoprite item and unit", "Done"];
 
 export default async function NewMappingPage({ searchParams }: NewMappingPageProps) {
-  const user = await requireWorkbenchUser("/admin/inventory-mappings/new");
+  const user = await requireWorkbenchUser("/shoprite/settings/inventory-mappings/new");
   if (!hasAnyRole(user, ["Admin"])) {
     notFound();
   }
@@ -59,7 +59,7 @@ export default async function NewMappingPage({ searchParams }: NewMappingPagePro
   };
 
   return (
-    <TaskPage back={{ href: "/admin/inventory-mappings", label: "Inventory mappings" }} header={header} steps={steps} current={item ? 1 : 0}>
+    <TaskPage back={{ href: "/shoprite/settings/inventory-mappings", label: "Inventory mappings" }} header={header} steps={steps} current={item ? 1 : 0}>
       {params.mappingError ? (
         <Notice tone="error" title="Mapping not saved" live>
           {params.mappingError}
@@ -68,7 +68,7 @@ export default async function NewMappingPage({ searchParams }: NewMappingPagePro
 
       {!item ? (
         <Panel>
-          <form method="get" action="/admin/inventory-mappings/new">
+          <form method="get" action="/shoprite/settings/inventory-mappings/new">
             {params.shopriteItem ? <input type="hidden" name="shopriteItem" value={params.shopriteItem} /> : null}
             <FormLayout>
               {sku && !lookupError ? (
@@ -148,7 +148,7 @@ export default async function NewMappingPage({ searchParams }: NewMappingPagePro
                 <TextField name="reason" label="Reason for the audit log" hint="Why this mapping is correct" width="l" required />
                 <FormActions>
                   <SubmitButton pendingLabel="Saving…">Save mapping</SubmitButton>
-                  <ButtonLink href="/admin/inventory-mappings/new" variant="tertiary">
+                  <ButtonLink href="/shoprite/settings/inventory-mappings/new" variant="tertiary">
                     Choose another item
                   </ButtonLink>
                 </FormActions>

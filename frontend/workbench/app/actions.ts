@@ -28,8 +28,8 @@ import {
 
 export async function refreshCandidatesAction() {
   await refreshInvoiceCandidates();
-  revalidatePath("/invoices");
-  redirect("/invoices");
+  revalidatePath("/shoprite/invoices");
+  redirect("/shoprite/invoices");
 }
 
 export async function submitInvoiceAction(formData: FormData) {
@@ -40,10 +40,10 @@ export async function submitInvoiceAction(formData: FormData) {
   }
 
   const result = await submitInvoice(id);
-  revalidatePath("/invoices");
-  revalidatePath(`/invoices/${id}`);
+  revalidatePath("/shoprite/invoices");
+  revalidatePath(`/shoprite/invoices/${id}`);
   const successful = ["Submitted", "InProgress", "Ambiguous"].includes(result.status);
-  redirect(`/invoices/${id}?${successful ? "submissionStatus" : "submissionError"}=${encodeURIComponent(result.message)}`);
+  redirect(`/shoprite/invoices/${id}?${successful ? "submissionStatus" : "submissionError"}=${encodeURIComponent(result.message)}`);
 }
 
 export async function saveInventoryMappingAction(formData: FormData) {
@@ -66,20 +66,20 @@ export async function saveInventoryMappingAction(formData: FormData) {
 
   if (errorMessage) {
     redirect(
-      `/admin/inventory-mappings/new?mappingError=${encodeURIComponent(errorMessage)}&newSku=${encodeURIComponent(inventoryId)}&uom=${encodeURIComponent(acumaticaUom)}`,
+      `/shoprite/settings/inventory-mappings/new?mappingError=${encodeURIComponent(errorMessage)}&newSku=${encodeURIComponent(inventoryId)}&uom=${encodeURIComponent(acumaticaUom)}`,
     );
   }
 
-  revalidatePath("/invoices");
-  revalidatePath("/admin/inventory-mappings");
+  revalidatePath("/shoprite/invoices");
+  revalidatePath("/shoprite/settings/inventory-mappings");
   redirect(
-    `/admin/inventory-mappings?mappingStatus=${encodeURIComponent(`${inventoryId} mapping saved and invoice candidates revalidated.`)}&search=${encodeURIComponent(inventoryId)}`,
+    `/shoprite/settings/inventory-mappings?mappingStatus=${encodeURIComponent(`${inventoryId} mapping saved and invoice candidates revalidated.`)}&search=${encodeURIComponent(inventoryId)}`,
   );
 }
 
 export async function refreshPurchaseOrdersAction() {
   const run = await refreshPurchaseOrders();
-  revalidatePath("/purchase-orders");
+  revalidatePath("/shoprite/purchase-orders");
   revalidatePath("/runs");
   redirect(`/runs/${run.runId}`);
 }
@@ -88,10 +88,10 @@ export async function seedInvoiceFromPurchaseOrderAction(formData: FormData) {
   const id = requiredString(formData, "id");
   const candidate = await seedInvoiceCandidateFromPurchaseOrder(id);
 
-  revalidatePath("/invoices");
-  revalidatePath("/purchase-orders");
-  revalidatePath(`/purchase-orders/${id}`);
-  redirect(`/invoices/${candidate.id}`);
+  revalidatePath("/shoprite/invoices");
+  revalidatePath("/shoprite/purchase-orders");
+  revalidatePath(`/shoprite/purchase-orders/${id}`);
+  redirect(`/shoprite/invoices/${candidate.id}`);
 }
 
 export async function createUserAction(formData: FormData) {
@@ -199,7 +199,7 @@ async function runExceptionAction(action: () => Promise<void>, formData?: FormDa
   const target = typeof returnTo === "string" && /^\/exceptions(\/[\w-]+)?$/.test(returnTo) ? returnTo : "/exceptions";
 
   revalidatePath("/exceptions");
-  revalidatePath("/invoices");
+  revalidatePath("/shoprite/invoices");
   redirect(errorMessage
     ? `${target}?exceptionError=${encodeURIComponent(errorMessage)}`
     : `${target}?exceptionStatus=Exception%20updated.`);

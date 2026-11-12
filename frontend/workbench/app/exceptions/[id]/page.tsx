@@ -79,7 +79,7 @@ export default async function ExceptionPage({ params, searchParams }: ExceptionP
             { label: "Due", value: task.dueAt ? formatDateTime(task.dueAt) : null },
             {
               label: "Invoice",
-              value: task.invoiceCandidateId ? <Link href={`/invoices/${task.invoiceCandidateId}`}>{task.invoiceNumber ?? "Open invoice"}</Link> : null,
+              value: task.invoiceCandidateId ? <Link href={`/shoprite/invoices/${task.invoiceCandidateId}`}>{task.invoiceNumber ?? "Open invoice"}</Link> : null,
             },
           ]}
         />

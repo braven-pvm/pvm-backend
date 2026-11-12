@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
-import { seedInvoiceFromPurchaseOrderAction } from "../../actions";
-import { getPurchaseOrder, type PurchaseOrderDetail } from "../../../src/api/client";
-import { hasAnyRole, requireWorkbenchUser } from "../../../src/auth/session";
-import { formatDateTime, formatMoneyZar } from "../../../src/formatters.mjs";
+import { seedInvoiceFromPurchaseOrderAction } from "../../../actions";
+import { getPurchaseOrder, type PurchaseOrderDetail } from "../../../../src/api/client";
+import { hasAnyRole, requireWorkbenchUser } from "../../../../src/auth/session";
+import { formatDateTime, formatMoneyZar } from "../../../../src/formatters.mjs";
 import {
   CodeBlock,
   ConfirmDialog,
@@ -15,7 +15,7 @@ import {
   TabNav,
   Timeline,
   type Column,
-} from "../../../src/ui";
+} from "../../../../src/ui";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Shoprite purchase order" };
@@ -47,16 +47,16 @@ const invoiceColumns: Column<LinkedInvoice>[] = [
 export default async function PurchaseOrderDetailPage({ params, searchParams }: PurchaseOrderDetailPageProps) {
   const { id } = await params;
   const { tab: requestedTab } = await searchParams;
-  const user = await requireWorkbenchUser(`/purchase-orders/${id}`);
+  const user = await requireWorkbenchUser(`/shoprite/purchase-orders/${id}`);
   const order = await loadPurchaseOrder(id);
   const canWrite = hasAnyRole(user, ["Admin", "Operator"]);
   const isAdmin = hasAnyRole(user, ["Admin"]);
   const tab = requestedTab === "invoices" || (requestedTab === "raw" && isAdmin) ? requestedTab : "lines";
-  const base = `/purchase-orders/${id}`;
+  const base = `/shoprite/purchase-orders/${id}`;
 
   return (
     <RecordPage
-      back={{ href: "/purchase-orders", label: "Shoprite purchase orders" }}
+      back={{ href: "/shoprite/purchase-orders", label: "Shoprite purchase orders" }}
       header={{
         eyebrow: "Shoprite purchase order",
         title: order.purchaseOrderNumber,
@@ -137,7 +137,7 @@ export default async function PurchaseOrderDetailPage({ params, searchParams }: 
             columns={invoiceColumns}
             rows={order.linkedInvoiceCandidates}
             rowKey={(row) => row.id}
-            rowHref={(row) => `/invoices/${row.id}`}
+            rowHref={(row) => `/shoprite/invoices/${row.id}`}
             empty={<EmptyState title="No invoices use this PO number yet" description="An invoice links here when its customer order number matches this PO." />}
           />
         </Panel>

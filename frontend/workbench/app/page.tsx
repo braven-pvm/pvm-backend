@@ -46,7 +46,7 @@ function attentionItems(view: OperationsSummary): AttentionItem[] {
       status: "NeedsReview",
       title: summary.needsReview === 1 ? "1 Shoprite invoice needs review" : `${summary.needsReview} Shoprite invoices need review`,
       detail: "Each one names the problem and where to fix it.",
-      action: <ButtonLink href="/invoices?status=NeedsReview">Open invoices</ButtonLink>,
+      action: <ButtonLink href="/shoprite/invoices?status=NeedsReview">Open invoices</ButtonLink>,
     });
   }
   if (view.acumaticaReconciliationFreshness.status === "Stale") {
@@ -118,12 +118,12 @@ export default async function HomePage() {
       numbers={{
         content: (
           <TileGrid>
-            <StatTile label="Shoprite invoices" value={String(view.summary.candidateInvoices)} detail="Read from Acumatica" href="/invoices" />
+            <StatTile label="Shoprite invoices" value={String(view.summary.candidateInvoices)} detail="Read from Acumatica" href="/shoprite/invoices" />
             <StatTile
               label="Need review"
               value={String(view.summary.needsReview)}
               tone={view.summary.needsReview > 0 ? "warning" : "default"}
-              href="/invoices?status=NeedsReview"
+              href="/shoprite/invoices?status=NeedsReview"
             />
             <StatTile label="Messages waiting" value={String(view.summary.pendingMessages)} detail={view.summary.activeRuns === 1 ? "1 run in progress" : `${view.summary.activeRuns} runs in progress`} href="/admin/messages" />
             <StatTile

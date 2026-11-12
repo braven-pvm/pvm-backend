@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { submitInvoiceAction } from "../../actions";
-import { getInvoiceCandidate, type InvoiceCandidateDetail, type InvoiceSubmissionAttempt, type ValidationIssue } from "../../../src/api/client";
-import { hasAnyRole, requireWorkbenchUser } from "../../../src/auth/session";
-import { formatDateTime, formatMoneyZar } from "../../../src/formatters.mjs";
+import { submitInvoiceAction } from "../../../actions";
+import { getInvoiceCandidate, type InvoiceCandidateDetail, type InvoiceSubmissionAttempt, type ValidationIssue } from "../../../../src/api/client";
+import { hasAnyRole, requireWorkbenchUser } from "../../../../src/auth/session";
+import { formatDateTime, formatMoneyZar } from "../../../../src/formatters.mjs";
 import {
   CodeBlock,
   ConfirmDialog,
@@ -17,7 +17,7 @@ import {
   TabNav,
   Timeline,
   type Column,
-} from "../../../src/ui";
+} from "../../../../src/ui";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Shoprite invoice" };
@@ -67,7 +67,7 @@ const attemptColumns: Column<InvoiceSubmissionAttempt>[] = [
 export default async function InvoiceDetailPage({ params, searchParams }: InvoiceDetailPageProps) {
   const { id } = await params;
   const query = await searchParams;
-  const user = await requireWorkbenchUser(`/invoices/${id}`);
+  const user = await requireWorkbenchUser(`/shoprite/invoices/${id}`);
   const candidate = await loadCandidate(id);
   const invoice = candidate.canonicalInvoice;
   const order = candidate.matchedPurchaseOrder;
@@ -75,12 +75,12 @@ export default async function InvoiceDetailPage({ params, searchParams }: Invoic
   const isAdmin = hasAnyRole(user, ["Admin"]);
   const blocking = candidate.validation.issues.filter((issue) => issue.severity === "Blocking");
   const tab = query.tab === "xml" || query.tab === "attempts" ? query.tab : "lines";
-  const base = `/invoices/${id}`;
+  const base = `/shoprite/invoices/${id}`;
   const number = invoice?.invoiceNumber ?? "Invoice";
 
   return (
     <RecordPage
-      back={{ href: "/invoices", label: "Shoprite invoices" }}
+      back={{ href: "/shoprite/invoices", label: "Shoprite invoices" }}
       header={{
         eyebrow: "Shoprite invoice",
         title: number,
@@ -141,7 +141,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: Invoic
             {
               label: "Shoprite PO",
               value: order ? (
-                <Link href={`/purchase-orders/${order.id}`}>{order.purchaseOrderNumber}</Link>
+                <Link href={`/shoprite/purchase-orders/${order.id}`}>{order.purchaseOrderNumber}</Link>
               ) : (
                 invoice?.shopritePurchaseOrderNumber
               ),
@@ -208,7 +208,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: Invoic
             flush
             title="Lines"
             description="Each line needs a GTIN and a verified Shoprite unit."
-            actions={isAdmin ? <Link href="/admin/inventory-mappings">Inventory mappings</Link> : undefined}
+            actions={isAdmin ? <Link href="/shoprite/settings/inventory-mappings">Inventory mappings</Link> : undefined}
           >
             <DataTable
               caption="Invoice lines"

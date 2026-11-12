@@ -4,8 +4,8 @@ import {
   getShopriteCatalogItems,
   type InventoryMappingView,
   type ShopriteCatalogItem,
-} from "../../../src/api/client";
-import { hasAnyRole, requireWorkbenchUser } from "../../../src/auth/session";
+} from "../../../../src/api/client";
+import { hasAnyRole, requireWorkbenchUser } from "../../../../src/auth/session";
 import {
   ButtonLink,
   DataTable,
@@ -17,7 +17,7 @@ import {
   StatusBadge,
   TextField,
   type Column,
-} from "../../../src/ui";
+} from "../../../../src/ui";
 import { ShopriteSections } from "../../shoprite-sections";
 import { describeItemMappings, isConfigured, selectedSuggestion } from "./mapping-rules";
 
@@ -34,7 +34,7 @@ function newMappingHref(params: { sku?: string; uom?: string; shopriteItem?: str
   if (params.uom) query.set("uom", params.uom);
   if (params.shopriteItem) query.set("shopriteItem", params.shopriteItem);
   const suffix = query.toString();
-  return `/admin/inventory-mappings/new${suffix ? `?${suffix}` : ""}`;
+  return `/shoprite/settings/inventory-mappings/new${suffix ? `?${suffix}` : ""}`;
 }
 
 const unmappedColumns: Column<ShopriteCatalogItem>[] = [
@@ -86,7 +86,7 @@ const mappingColumns: Column<InventoryMappingView>[] = [
 ];
 
 export default async function InventoryMappingsPage({ searchParams }: InventoryMappingsPageProps) {
-  const user = await requireWorkbenchUser("/admin/inventory-mappings");
+  const user = await requireWorkbenchUser("/shoprite/settings/inventory-mappings");
   const isAdmin = hasAnyRole(user, ["Admin"]);
   const params = await searchParams;
 
@@ -111,7 +111,7 @@ export default async function InventoryMappingsPage({ searchParams }: InventoryM
         title: "Inventory mappings",
         description: "How each Acumatica item and unit maps to a Shoprite item and unit. Mappings apply to every Shoprite invoice.",
         actions: (
-          <ButtonLink href="/admin/inventory-mappings/new" variant="primary">
+          <ButtonLink href="/shoprite/settings/inventory-mappings/new" variant="primary">
             <Plus aria-hidden="true" />
             Add mapping
           </ButtonLink>
@@ -143,7 +143,7 @@ export default async function InventoryMappingsPage({ searchParams }: InventoryM
         ) : null
       }
       filters={
-        <FilterBar action="/admin/inventory-mappings" label="Search mappings" activeCount={params.search ? 1 : 0}>
+        <FilterBar action="/shoprite/settings/inventory-mappings" label="Search mappings" activeCount={params.search ? 1 : 0}>
           <TextField
             name="search"
             label="Item, description, Shoprite item or GTIN"
@@ -162,9 +162,9 @@ export default async function InventoryMappingsPage({ searchParams }: InventoryM
           rowKey={(mapping) => `${mapping.inventoryId}:${mapping.acumaticaUom}`}
           empty={
             params.search ? (
-              <EmptyState title="No mappings match this search" action={<ButtonLink href="/admin/inventory-mappings">Show all mappings</ButtonLink>} />
+              <EmptyState title="No mappings match this search" action={<ButtonLink href="/shoprite/settings/inventory-mappings">Show all mappings</ButtonLink>} />
             ) : (
-              <EmptyState title="No mappings yet" action={<ButtonLink href="/admin/inventory-mappings/new">Add mapping</ButtonLink>} />
+              <EmptyState title="No mappings yet" action={<ButtonLink href="/shoprite/settings/inventory-mappings/new">Add mapping</ButtonLink>} />
             )
           }
         />
