@@ -29,6 +29,18 @@
   line-height: var(--leading-small);
 }
 
+/*
+ * The global reduced-motion rule in tokens.css stops every animation. A
+ * spinner is a status signal, not decoration: without the rotation the page
+ * looks frozen. It keeps a slower rotation instead.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
