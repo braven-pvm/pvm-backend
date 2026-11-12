@@ -58,9 +58,9 @@ export const navigation: NavGroup[] = [
       { label: "Runs", href: "/runs", icon: "runs" },
       {
         label: "Events",
-        href: "/admin/acumatica-events",
+        href: "/events",
         icon: "events",
-        matches: ["/admin/acumatica-events", "/admin/messages"],
+        roles: admin,
       },
     ],
   },
