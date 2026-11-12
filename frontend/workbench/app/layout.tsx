@@ -1,13 +1,19 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../src/auth/options";
 import { isDevelopmentBypass } from "../src/auth/config";
+import { getCurrentUser } from "../src/auth/session";
+import { navigationFor } from "../src/navigation";
+import { AppShell, type EnvironmentKind } from "../src/ui";
+import "./tokens.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PVM Integration Workbench",
-  description: "PVM integration operations workbench",
+  title: {
+    default: "PVM Backoffice",
+    template: "%s · PVM Backoffice",
+  },
+  description: "PVM back-office operations: Shoprite, banking, stock and automations",
 };
 
 export default async function RootLayout({
@@ -15,48 +21,37 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const session = isDevelopmentBypass()
-    ? { user: { email: "developer@pvm.co.za" } }
-    : await getServerSession(authOptions);
+  const bypass = isDevelopmentBypass();
+  const session = bypass ? null : await getServerSession(authOptions);
+  const user = await getCurrentUser();
+  const userName =
+    user?.displayName ?? user?.email ?? session?.user?.email ?? (bypass ? "developer@pvm.co.za" : undefined);
 
   return (
     <html lang="en">
       <body>
-        <header className="app-header">
-          <Link className="brand" href="/">
-            PVM Workbench
-          </Link>
-          <nav aria-label="Primary navigation">
-            <Link href="/">Control Room</Link>
-            <Link href="/invoices">Invoices</Link>
-            <Link href="/purchase-orders">PO Inbox</Link>
-            <Link href="/runs">Runs</Link>
-            <Link href="/banking">Bank import</Link>
-            <Link href="/admin/messages">Messages</Link>
-            <Link href="/admin/acumatica-events">Webhook Events</Link>
-            <Link href="/admin/inventory-mappings">Inventory mappings</Link>
-            <Link href="/exceptions">Exceptions</Link>
-            <Link href="/automation">Automation</Link>
-            <Link href="/admin/users">Users</Link>
-          </nav>
-          <div className="user-chip">
-            <span className="environment-badge">
-              {process.env.NEXT_PUBLIC_PVM_ENVIRONMENT_NAME ?? "Development"}
-            </span>
-            {session?.user?.email ? (
-              <>
-                <span>{session.user.email}</span>
-                {!isDevelopmentBypass() ? (
-                  <Link href="/api/auth/signout">Sign out</Link>
-                ) : null}
-              </>
-            ) : (
-              <Link href="/sign-in?callbackUrl=/invoices">Sign in</Link>
-            )}
-          </div>
-        </header>
-        {children}
+        <AppShell
+          groups={navigationFor(user?.roles ?? [])}
+          environment={environmentKind(process.env.NEXT_PUBLIC_PVM_ENVIRONMENT_NAME)}
+          userName={userName}
+          canSignOut={!bypass && Boolean(session)}
+        >
+          {children}
+        </AppShell>
       </body>
     </html>
   );
+}
+
+function environmentKind(name: string | undefined): EnvironmentKind {
+  const value = (name ?? "").trim().toLowerCase();
+  if (value === "prod" || value === "production") {
+    return "production";
+  }
+
+  if (value === "qa" || value === "test" || value === "staging") {
+    return "qa";
+  }
+
+  return "development";
 }

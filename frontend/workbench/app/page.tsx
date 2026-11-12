@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getOperationsSummary } from "../src/api/client";
 import { requireWorkbenchUser } from "../src/auth/session";
+import { PageHeader, StatusBadge } from "../src/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -13,18 +14,18 @@ export default async function HomePage() {
 
   return (
     <main className="page-shell">
-      <section className="page-heading">
-        <div>
-          <h1>Control Room</h1>
-          <p>Current integration health, workload, and recent execution history.</p>
-        </div>
-        <div className="mode-summary" aria-label="Environment and automation mode">
-          <span>{view.environmentName}</span>
-          <strong>{view.automationEmergencyStop
-            ? "Emergency stop active"
-            : `Automation ${view.automationMode}`} · policy v{view.automationPolicyVersion}</strong>
-        </div>
-      </section>
+      <PageHeader
+        title="Today"
+        description="Integration health, workload and recent runs."
+        actions={
+          <StatusBadge
+            status={view.automationEmergencyStop ? "Blocked" : view.automationMode}
+            label={view.automationEmergencyStop
+              ? "Emergency stop active"
+              : `Automation ${view.automationMode.toLowerCase()} · policy v${view.automationPolicyVersion}`}
+          />
+        }
+      />
 
       {view.automationEmergencyStop ? (
         <div className="alert-banner alert-error" role="alert">
@@ -93,7 +94,7 @@ export default async function HomePage() {
                 <td data-label="Created">{new Date(run.createdAt).toLocaleString()}</td>
                 <td data-label="Run">{run.runType}<span>{run.id}</span></td>
                 <td data-label="Trigger">{run.trigger}</td>
-                <td data-label="Status"><Status value={run.status} /></td>
+                <td data-label="Status"><StatusBadge status={run.status} /></td>
                 <td data-label="Result">{run.receivedCount} received / {run.failedCount} failed</td>
                 <td className="table-action" data-label="Action"><Link href={`/runs/${run.id}`}>Open</Link></td>
               </tr>
@@ -103,8 +104,4 @@ export default async function HomePage() {
       </section>
     </main>
   );
-}
-
-function Status({ value }: { value: string }) {
-  return <span className={`status-pill status-${value.toLowerCase()}`}>{value}</span>;
 }

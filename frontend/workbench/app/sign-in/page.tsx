@@ -15,7 +15,7 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
     <main className="auth-shell">
       <section className="auth-panel">
         <h1>Sign in</h1>
-        <p>Use your Microsoft account to access the PVM workbench.</p>
+        <p>Use your Microsoft account to sign in to PVM Backoffice.</p>
         {params.error ? (
           <p className="auth-error">Sign-in failed. Try again or contact an admin.</p>
         ) : null}
