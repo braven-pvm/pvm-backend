@@ -1,4 +1,5 @@
 import { getApiAuthHeaders } from "../auth/session";
+import { timedFetch } from "./timed-fetch";
 
 const apiBaseUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000";
@@ -17,7 +18,7 @@ export type AppUser = {
 
 export async function listUsers(): Promise<AppUser[]> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/admin/users`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/admin/users`, {
     headers,
     cache: "no-store",
   });
@@ -35,7 +36,7 @@ export async function createUser(input: {
   roles: string[];
 }) {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/admin/users`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/admin/users`, {
     method: "POST",
     headers: {
       ...headers,
@@ -52,7 +53,7 @@ export async function createUser(input: {
 
 export async function updateUserRoles(id: string, roles: string[]) {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/admin/users/${id}/roles`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/admin/users/${id}/roles`, {
     method: "PUT",
     headers: {
       ...headers,
@@ -69,7 +70,7 @@ export async function updateUserRoles(id: string, roles: string[]) {
 
 export async function updateUserStatus(id: string, status: string) {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/admin/users/${id}/status`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/admin/users/${id}/status`, {
     method: "PUT",
     headers: {
       ...headers,
