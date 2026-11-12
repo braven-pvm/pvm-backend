@@ -86,6 +86,31 @@ public sealed class StockSyncRunRecorderTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Write_that_fails_partway_keeps_its_lines_and_the_writes_made()
+    {
+        await using var db = await CreateDbContextAsync();
+        var result = new StockSyncResult(
+            StockSyncMode.Write,
+            [
+                Line("DYNA24", StockSyncAction.Update, current: 1, next: 20, level: 20m),
+                Line("ENER12", StockSyncAction.Update, current: 1, next: 30, level: 30m),
+            ],
+            Written: 1,
+            Refusal: null,
+            Failure: new string('x', 2500));
+
+        await Recorder(db).RecordAsync(result, Now, CancellationToken.None);
+        var run = await Recorder(db).GetLatestAsync(CancellationToken.None);
+
+        Assert.NotNull(run);
+        Assert.Equal("Failed", run.Status);
+        Assert.Equal(1, run.WrittenCount);
+        Assert.Equal(2, run.UpdateCount);
+        Assert.Equal(2, run.Lines.Count);
+        Assert.Equal(2000, run.Detail!.Length);
+    }
+
+    [Fact]
     public async Task Failed_run_is_recorded_and_is_the_latest()
     {
         await using var db = await CreateDbContextAsync();
