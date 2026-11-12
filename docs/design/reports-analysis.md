@@ -1,6 +1,19 @@
 # Reports: analysis and architecture proposal
 
-Status: proposal for discussion · Lane: Reports · 2026-11-12
+Status: proposal approved by the owner on 2026-11-12 · Lane: Reports
+
+## Decisions
+
+The owner approved this proposal on 2026-11-12, with these answers:
+
+| Question | Answer | Effect on the build |
+| --- | --- | --- |
+| 1. Definitions of the SQL views | No owner is known, and no definition is available | Slice R1 finds the rules from the data. It compares Acumatica lines with the workbook totals per financial month, rep and customer group, until they match or the owner accepts each difference |
+| 2. Read Acumatica through a Generic Inquiry | Yes | The sell-in source is a GI over OData. The backend does not use SQL Server |
+| 18. First surface after the sales report | Merchandiser statements | Slice R4 comes before the sell-out dashboard (R5) |
+
+The other open questions in [section 8](#8-open-questions-for-the-owner) are
+still open.
 
 This document examines the sales report and seven related files that PVM uses
 today. It then proposes a reports module for the workbench, which later reports
@@ -559,8 +572,8 @@ No chart library: the redesign document forbids one. `ColumnChart` and
 
 | Slice | Content | Done when |
 | --- | --- | --- |
-| R0 | Owner answers the open questions. Get the view definitions. | The rules of the two views are written down |
-| R1 | Shared model, `period` and financial-year rules, GI in QA, sell-in job, raw store | QA has the same monthly totals per rep as the workbook, for two financial years |
+| R0 | Owner answers the open questions. | Done for questions 1, 2 and 18. No view definitions exist |
+| R1 | Shared model, `period` and financial-year rules, GI in QA, sell-in job, raw store. The rules of the views come from a comparison with the workbook | QA has the same monthly totals per rep as the workbook for two financial years, or the owner accepts each difference |
 | R2 | Report registry and API, `PivotGrid`, `/reports`, `/reports/sales` with its tabs, CSV export | The sales report pages show the same numbers as the workbook |
 | R3 | File import framework, Makro and Shoprite adapters, store master, mappings page | October files import with no unmapped rows |
 | R4 | Merchandiser companies and assignments, statement pages, Excel export | The October statements match the four hand-made files |
