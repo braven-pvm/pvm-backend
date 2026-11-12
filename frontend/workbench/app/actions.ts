@@ -129,15 +129,13 @@ export async function enqueueIntegrationCommandAction(formData: FormData) {
   }
 
   await enqueueIntegrationCommand(command);
-  revalidatePath("/admin/messages");
+  revalidatePath("/events");
 
-  // Run now on an automation page returns there. Only automation paths are accepted.
+  // The form returns to its own page. Only an automation page or Events is accepted.
   const returnTo = formData.get("returnTo");
-  if (typeof returnTo === "string" && /^\/automations\/[\w-]+$/.test(returnTo)) {
-    revalidatePath(returnTo);
-    redirect(`${returnTo}?queued=1`);
-  }
-  redirect("/admin/messages");
+  const target = typeof returnTo === "string" && /^\/(automations\/[\w-]+|events)$/.test(returnTo) ? returnTo : "/events";
+  revalidatePath(target);
+  redirect(`${target}?queued=1`);
 }
 
 export async function changeAutomationPolicyAction(formData: FormData) {

@@ -13,6 +13,8 @@ const movedPaths = [
   { source: "/admin/inventory-mappings", destination: "/shoprite/settings/inventory-mappings" },
   { source: "/admin/inventory-mappings/new", destination: "/shoprite/settings/inventory-mappings/new" },
   { source: "/automation", destination: "/automations/shoprite-submission" },
+  { source: "/admin/acumatica-events", destination: "/events?source=webhook" },
+  { source: "/admin/messages", destination: "/events?source=delivery" },
 ];
 
 const nextConfig: NextConfig = {

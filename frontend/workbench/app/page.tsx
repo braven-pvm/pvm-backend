@@ -110,7 +110,7 @@ export default async function HomePage() {
               title="Acumatica webhook"
               status={<StatusBadge status={webhook.status === "Healthy" ? "Healthy" : webhook.status === "Waiting" ? "Late" : "Off"} label={webhook.status === "NotConfigured" ? "Not configured" : undefined} />}
               meta={webhook.lastReceivedAt ? `Last event ${formatDateTime(webhook.lastReceivedAt)}` : "No events yet"}
-              href="/admin/acumatica-events"
+              href="/events?source=webhook"
             />
           </TileGrid>
         ),
@@ -125,7 +125,7 @@ export default async function HomePage() {
               tone={view.summary.needsReview > 0 ? "warning" : "default"}
               href="/shoprite/invoices?status=NeedsReview"
             />
-            <StatTile label="Messages waiting" value={String(view.summary.pendingMessages)} detail={view.summary.activeRuns === 1 ? "1 run in progress" : `${view.summary.activeRuns} runs in progress`} href="/admin/messages" />
+            <StatTile label="Messages waiting" value={String(view.summary.pendingMessages)} detail={view.summary.activeRuns === 1 ? "1 run in progress" : `${view.summary.activeRuns} runs in progress`} href="/events?source=outbox" />
             <StatTile
               label="Dead letters"
               value={String(view.summary.deadLetters)}

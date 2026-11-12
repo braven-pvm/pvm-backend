@@ -8,6 +8,7 @@ test("a viewer sees no write or admin items", () => {
   const groups = navigationFor(["Viewer"]);
   assert.ok(!labels(groups).includes("Banking"));
   assert.ok(!labels(groups).includes("Users"));
+  assert.ok(!labels(groups).includes("Events"));
 });
 
 test("an operator sees banking but not admin settings", () => {
