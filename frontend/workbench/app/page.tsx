@@ -1,4 +1,5 @@
 import { getOperationsSummary, type OperationsSummary } from "../src/api/client";
+import { startEarly } from "../src/api/early";
 import { requireWorkbenchUser } from "../src/auth/session";
 import { formatDateTime } from "../src/formatters.mjs";
 import {
@@ -62,8 +63,9 @@ function attentionItems(view: OperationsSummary): AttentionItem[] {
 }
 
 export default async function HomePage() {
+  const summaryCall = startEarly(getOperationsSummary());
   await requireWorkbenchUser("/");
-  const view = await getOperationsSummary();
+  const view = await summaryCall;
   const items = attentionItems(view);
   const reconciliation = view.acumaticaReconciliationFreshness;
   const webhook = view.acumaticaPushNotificationHealth;

@@ -1,4 +1,5 @@
 import { getAutomationPolicy, getInvoiceCandidates, getShopriteCatalogItems, type InvoiceCandidateSummary } from "../../src/api/client";
+import { startEarly } from "../../src/api/early";
 import { hasAnyRole, requireWorkbenchUser } from "../../src/auth/session";
 import { formatDateTime } from "../../src/formatters.mjs";
 import {
@@ -29,12 +30,14 @@ const count = (rows: InvoiceCandidateSummary[], status: string) => rows.filter((
 
 /** The Shoprite module overview: what needs a person, the automation, and the invoice numbers. */
 export default async function ShopriteOverviewPage() {
+  // The data calls start at once; the catalogue is an Admin endpoint, so it is read only for Admins.
+  const candidatesCall = startEarly(getInvoiceCandidates());
+  const policyCall = startEarly(getAutomationPolicy());
   const user = await requireWorkbenchUser("/shoprite");
   const isAdmin = hasAnyRole(user, ["Admin"]);
-  // The catalogue is an Admin endpoint, so other roles skip the unmapped-items check.
   const [candidates, policyView, catalog] = await Promise.all([
-    getInvoiceCandidates(),
-    getAutomationPolicy(),
+    candidatesCall,
+    policyCall,
     isAdmin ? getShopriteCatalogItems() : Promise.resolve([]),
   ]);
   const policy = policyView.policy;

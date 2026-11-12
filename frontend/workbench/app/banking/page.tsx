@@ -1,5 +1,6 @@
 import { Upload } from "lucide-react";
 import { getBankingStatus, type BankAccountStatus, type BankStatementSummary } from "../../src/api/client";
+import { startEarly } from "../../src/api/early";
 import { hasAnyRole, requireWorkbenchUser } from "../../src/auth/session";
 import { formatMoneyZar, formatStatementDate } from "../../src/formatters.mjs";
 import { ButtonLink, DashboardPage, DataTable, EmptyState, StatTile, TileGrid, type Column } from "../../src/ui";
@@ -34,6 +35,7 @@ function accountDetail(account: BankAccountStatus) {
 
 /** The banking overview: each account, and the statements recently created in Acumatica. */
 export default async function BankingPage() {
+  const statusCall = startEarly(getBankingStatus());
   const user = await requireWorkbenchUser("/banking");
   const canImport = hasAnyRole(user, ["Admin", "Operator"]);
 
@@ -41,7 +43,7 @@ export default async function BankingPage() {
   let accounts: BankAccountStatus[] = [];
   let statusFailed = false;
   try {
-    accounts = (await getBankingStatus()).accounts;
+    accounts = (await statusCall).accounts;
   } catch {
     statusFailed = true;
   }

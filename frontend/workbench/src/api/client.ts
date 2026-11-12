@@ -1,4 +1,5 @@
 import { getApiAuthHeaders } from "../auth/session";
+import { timedFetch } from "./timed-fetch";
 
 const apiBaseUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000";
@@ -408,7 +409,7 @@ export async function getInvoiceCandidates(): Promise<
   InvoiceCandidateSummary[]
 > {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/invoices/candidates`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/invoices/candidates`, {
     headers,
     cache: "no-store",
   });
@@ -426,7 +427,7 @@ export async function getInvoiceCandidate(
   id: string,
 ): Promise<InvoiceCandidateDetail> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/invoices/candidates/${id}`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/invoices/candidates/${id}`, {
     headers,
     cache: "no-store",
   });
@@ -444,7 +445,7 @@ export async function refreshInvoiceCandidates(): Promise<{
   updated: number;
 }> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/invoices/refresh`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/invoices/refresh`, {
     method: "POST",
     headers,
     cache: "no-store",
@@ -459,7 +460,7 @@ export async function refreshInvoiceCandidates(): Promise<{
 
 export async function submitInvoice(id: string): Promise<SubmitInvoiceResult> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/invoices/${id}/submit`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/invoices/${id}/submit`, {
     method: "POST",
     headers,
     cache: "no-store",
@@ -482,7 +483,7 @@ export async function getInventoryMappings(
 ): Promise<InventoryMappingView[]> {
   const headers = await getApiAuthHeaders();
   const query = search ? `?search=${encodeURIComponent(search)}` : "";
-  const response = await fetch(
+  const response = await timedFetch(
     `${apiBaseUrl}/api/admin/inventory-mappings${query}`,
     { headers, cache: "no-store" },
   );
@@ -500,7 +501,7 @@ export async function getShopriteCatalogItems(
 ): Promise<ShopriteCatalogItem[]> {
   const headers = await getApiAuthHeaders();
   const query = search ? `?search=${encodeURIComponent(search)}` : "";
-  const response = await fetch(
+  const response = await timedFetch(
     `${apiBaseUrl}/api/admin/inventory-mappings/shoprite-items${query}`,
     { headers, cache: "no-store" },
   );
@@ -517,7 +518,7 @@ export async function getAcumaticaInventoryItem(
   inventoryId: string,
 ): Promise<AcumaticaInventoryItem | null> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(
+  const response = await timedFetch(
     `${apiBaseUrl}/api/admin/inventory-mappings/acumatica-items/${encodeURIComponent(inventoryId)}`,
     { headers, cache: "no-store" },
   );
@@ -542,7 +543,7 @@ export async function saveInventoryMapping(
   },
 ): Promise<{ revalidatedCandidateCount: number; message: string }> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(
+  const response = await timedFetch(
     `${apiBaseUrl}/api/admin/inventory-mappings/${encodeURIComponent(inventoryId)}/${encodeURIComponent(acumaticaUom)}`,
     {
       method: "PUT",
@@ -566,7 +567,7 @@ export async function saveInventoryMapping(
 
 export async function getAutomationPolicy(): Promise<AutomationPolicyView> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/automation/policy`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/automation/policy`, {
     headers,
     cache: "no-store",
   });
@@ -580,7 +581,7 @@ export async function changeAutomationPolicy(
   input: AutomationPolicyChange,
 ): Promise<AutomationPolicyView> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/automation/policy`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/automation/policy`, {
     method: "PUT",
     headers: { ...headers, "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -599,7 +600,7 @@ export async function setAutomationEmergencyStop(input: {
   reason: string;
 }): Promise<AutomationPolicyView> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/automation/emergency-stop`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/automation/emergency-stop`, {
     method: "POST",
     headers: { ...headers, "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -640,7 +641,7 @@ function isSubmitInvoiceResult(value: unknown): value is SubmitInvoiceResult {
 
 export async function getPurchaseOrders(): Promise<PurchaseOrderSummary[]> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/shoprite/purchase-orders`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/shoprite/purchase-orders`, {
     headers,
     cache: "no-store",
   });
@@ -656,7 +657,7 @@ export async function getPurchaseOrders(): Promise<PurchaseOrderSummary[]> {
 
 export async function getPurchaseOrder(id: string): Promise<PurchaseOrderDetail> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/shoprite/purchase-orders/${id}`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/shoprite/purchase-orders/${id}`, {
     headers,
     cache: "no-store",
   });
@@ -670,7 +671,7 @@ export async function getPurchaseOrder(id: string): Promise<PurchaseOrderDetail>
 
 export async function refreshPurchaseOrders(): Promise<QueuedIntegrationRun> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/shoprite/purchase-orders/refresh`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/shoprite/purchase-orders/refresh`, {
     method: "POST",
     headers,
     cache: "no-store",
@@ -685,7 +686,7 @@ export async function refreshPurchaseOrders(): Promise<QueuedIntegrationRun> {
 
 export async function getPurchaseOrderFreshness(): Promise<ShopritePurchaseOrderFreshness> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(
+  const response = await timedFetch(
     `${apiBaseUrl}/api/shoprite/purchase-orders/freshness`,
     { headers, cache: "no-store" },
   );
@@ -699,7 +700,7 @@ export async function getPurchaseOrderFreshness(): Promise<ShopritePurchaseOrder
 
 export async function getIntegrationRuns(): Promise<IntegrationRun[]> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/integration-runs`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/integration-runs`, {
     headers,
     cache: "no-store",
   });
@@ -713,7 +714,7 @@ export async function getIntegrationRuns(): Promise<IntegrationRun[]> {
 
 export async function getIntegrationRun(id: string): Promise<IntegrationRun> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/integration-runs/${id}`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/integration-runs/${id}`, {
     headers,
     cache: "no-store",
   });
@@ -727,7 +728,7 @@ export async function getIntegrationRun(id: string): Promise<IntegrationRun> {
 
 export async function getOperationsSummary(): Promise<OperationsSummary> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/operations/summary`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/operations/summary`, {
     headers,
     cache: "no-store",
   });
@@ -741,7 +742,7 @@ export async function getOperationsSummary(): Promise<OperationsSummary> {
 
 export async function getAcumaticaPushNotificationEvents(): Promise<AcumaticaPushNotificationEventView> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/admin/acumatica-events`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/admin/acumatica-events`, {
     headers,
     cache: "no-store",
   });
@@ -757,7 +758,7 @@ export async function seedInvoiceCandidateFromPurchaseOrder(
   id: string,
 ): Promise<InvoiceCandidateSummary> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(
+  const response = await timedFetch(
     `${apiBaseUrl}/api/shoprite/purchase-orders/${id}/seed-test-invoice`,
     {
       method: "POST",
@@ -775,7 +776,7 @@ export async function seedInvoiceCandidateFromPurchaseOrder(
 
 export async function getIntegrationMessages(): Promise<IntegrationMessageView> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/admin/integration-messages`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/admin/integration-messages`, {
     headers,
     cache: "no-store",
   });
@@ -791,7 +792,7 @@ export async function enqueueIntegrationCommand(
   command: "acumatica-discovery" | "shoprite-po-refresh",
 ): Promise<{ messageId: string }> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(
+  const response = await timedFetch(
     `${apiBaseUrl}/api/admin/integration-messages/${command}`,
     { method: "POST", headers, cache: "no-store" },
   );
@@ -866,7 +867,7 @@ export async function getExceptions(
     query.set("category", category);
   }
   const suffix = query.size > 0 ? `?${query.toString()}` : "";
-  const response = await fetch(`${apiBaseUrl}/api/exceptions${suffix}`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/exceptions${suffix}`, {
     headers,
     cache: "no-store",
   });
@@ -880,7 +881,7 @@ export async function getExceptions(
 
 async function postException(path: string, body: unknown): Promise<void> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/exceptions/${path}`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/exceptions/${path}`, {
     method: "POST",
     headers: { ...headers, "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -1003,7 +1004,7 @@ export type NedbankImportResult = {
 
 export async function getBankingStatus(): Promise<BankingStatus> {
   const headers = await getApiAuthHeaders();
-  const response = await fetch(`${apiBaseUrl}/api/banking/status`, {
+  const response = await timedFetch(`${apiBaseUrl}/api/banking/status`, {
     headers,
     cache: "no-store",
   });
@@ -1025,7 +1026,7 @@ async function postStatementFile<T>(path: string, file: File): Promise<T> {
   body.append("file", file);
 
   // Do not set Content-Type here. fetch must set it, so that it carries the multipart boundary.
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const response = await timedFetch(`${apiBaseUrl}${path}`, {
     method: "POST",
     headers,
     body,

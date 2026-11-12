@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { timedFetch } from "../api/timed-fetch";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "./options";
@@ -51,7 +52,7 @@ const loadCurrentUser = cache(async (): Promise<CurrentUserResult> => {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000";
   let response: Response;
   try {
-    response = await fetch(`${apiBaseUrl}/api/auth/me`, {
+    response = await timedFetch(`${apiBaseUrl}/api/auth/me`, {
       headers,
       cache: "no-store",
     });
@@ -59,7 +60,6 @@ const loadCurrentUser = cache(async (): Promise<CurrentUserResult> => {
     console.warn("auth.me.unreachable", { error: String(error) });
     return { status: "error", httpStatus: 0 };
   }
-  console.info("auth.me.response", { status: response.status });
 
   if (response.status === 401) {
     return { status: "signed-out" };
