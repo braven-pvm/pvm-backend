@@ -52,6 +52,20 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<ExceptionTaskCommentEntity> ExceptionTaskComments => Set<ExceptionTaskCommentEntity>();
 
+    public DbSet<ReportingCustomerEntity> ReportingCustomers => Set<ReportingCustomerEntity>();
+
+    public DbSet<ReportingProductEntity> ReportingProducts => Set<ReportingProductEntity>();
+
+    public DbSet<ReportingSalesRepEntity> ReportingSalesReps => Set<ReportingSalesRepEntity>();
+
+    public DbSet<ReportingWarehouseLocationEntity> ReportingWarehouseLocations
+        => Set<ReportingWarehouseLocationEntity>();
+
+    public DbSet<ReportingCustomerClassChannelEntity> ReportingCustomerClassChannels
+        => Set<ReportingCustomerClassChannelEntity>();
+
+    public DbSet<SellInLineEntity> SellInLines => Set<SellInLineEntity>();
+
     public DbSet<StockSyncRunEntity> StockSyncRuns => Set<StockSyncRunEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -504,6 +518,85 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
                 .WithMany()
                 .HasForeignKey(comment => comment.ExceptionTaskId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        ConfigureReporting(modelBuilder);
+    }
+
+    private static void ConfigureReporting(ModelBuilder modelBuilder)
+    {
+        const string schema = "reporting";
+
+        modelBuilder.Entity<ReportingCustomerEntity>(entity =>
+        {
+            entity.ToTable("customers", schema);
+            entity.HasKey(customer => customer.CustomerId);
+            entity.Property(customer => customer.CustomerId).HasMaxLength(64);
+            entity.Property(customer => customer.Name).HasMaxLength(256);
+            entity.Property(customer => customer.CustomerClassId).HasMaxLength(64);
+            entity.Property(customer => customer.CustomerClassName).HasMaxLength(256);
+            entity.Property(customer => customer.Province).HasMaxLength(64);
+            entity.HasIndex(customer => customer.CustomerClassId);
+        });
+
+        modelBuilder.Entity<ReportingProductEntity>(entity =>
+        {
+            entity.ToTable("products", schema);
+            entity.HasKey(product => product.InventoryId);
+            entity.Property(product => product.InventoryId).HasMaxLength(64);
+            entity.Property(product => product.Description).HasMaxLength(256);
+            entity.Property(product => product.ItemClassId).HasMaxLength(64);
+            entity.Property(product => product.ItemClassName).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<ReportingSalesRepEntity>(entity =>
+        {
+            entity.ToTable("sales_reps", schema);
+            entity.HasKey(rep => rep.SalesRepId);
+            entity.Property(rep => rep.SalesRepId).HasMaxLength(64);
+            entity.Property(rep => rep.Name).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<ReportingWarehouseLocationEntity>(entity =>
+        {
+            entity.ToTable("warehouse_locations", schema);
+            entity.HasKey(location => new { location.WarehouseId, location.LocationId });
+            entity.Property(location => location.WarehouseId).HasMaxLength(64);
+            entity.Property(location => location.LocationId).HasMaxLength(64);
+            entity.Property(location => location.WarehouseName).HasMaxLength(256);
+            entity.Property(location => location.LocationName).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<ReportingCustomerClassChannelEntity>(entity =>
+        {
+            entity.ToTable("customer_class_channels", schema);
+            entity.HasKey(channel => channel.CustomerClassId);
+            entity.Property(channel => channel.CustomerClassId).HasMaxLength(64);
+            entity.Property(channel => channel.Channel).HasMaxLength(64);
+            entity.Property(channel => channel.UpdatedBy).HasMaxLength(320);
+        });
+
+        modelBuilder.Entity<SellInLineEntity>(entity =>
+        {
+            entity.ToTable("sell_in_lines", schema);
+            entity.HasKey(line => line.Id);
+            entity.HasIndex(line => new { line.DocumentType, line.ReferenceNumber, line.LineNumber }).IsUnique();
+            entity.HasIndex(line => new { line.FinancialYear, line.FinancialMonth });
+            entity.HasIndex(line => line.CustomerId);
+            entity.HasIndex(line => line.InventoryId);
+            entity.HasIndex(line => line.SalesRepId);
+            entity.Property(line => line.DocumentType).HasConversion<string>().HasMaxLength(16);
+            entity.Property(line => line.ReferenceNumber).HasMaxLength(32);
+            entity.Property(line => line.PostPeriod).HasMaxLength(8);
+            entity.Property(line => line.CustomerId).HasMaxLength(64);
+            entity.Property(line => line.SalesRepId).HasMaxLength(64);
+            entity.Property(line => line.InventoryId).HasMaxLength(64);
+            entity.Property(line => line.WarehouseId).HasMaxLength(64);
+            entity.Property(line => line.LocationId).HasMaxLength(64);
+            entity.Property(line => line.Uom).HasMaxLength(16);
+            entity.Property(line => line.Quantity).HasPrecision(18, 4);
+            entity.Property(line => line.BaseQuantity).HasPrecision(18, 4);
+            entity.Property(line => line.Amount).HasPrecision(18, 2);
         });
     }
 }
