@@ -11,6 +11,10 @@ test("a viewer sees no write or admin items", () => {
   assert.ok(!labels(groups).includes("Events"));
 });
 
+test("a viewer sees the stock sync", () => {
+  assert.ok(labels(navigationFor(["Viewer"])).includes("Stock"));
+});
+
 test("an operator sees banking but not admin settings", () => {
   const groups = navigationFor(["Operator"]);
   assert.ok(labels(groups).includes("Banking"));
@@ -19,7 +23,7 @@ test("an operator sees banking but not admin settings", () => {
 
 test("an admin sees everything", () => {
   const groups = navigationFor(["Admin"]);
-  for (const label of ["Today", "Exceptions", "Shoprite", "Banking", "Automations", "Runs", "Events", "Users"]) {
+  for (const label of ["Today", "Exceptions", "Shoprite", "Banking", "Stock", "Automations", "Runs", "Events", "Users"]) {
     assert.ok(labels(groups).includes(label), label);
   }
 });

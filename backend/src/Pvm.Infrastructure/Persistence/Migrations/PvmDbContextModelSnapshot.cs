@@ -1330,6 +1330,58 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                     b.ToTable("shoprite_uom_mappings", (string)null);
                 });
 
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.StockSyncRunEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int>("ItemCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("LinesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<int>("SkippedCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<int>("UnchangedCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("UpdateCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("WrittenCount")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompletedAt");
+
+                    b.ToTable("stock_sync_runs", (string)null);
+                });
+
             modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.SubmissionOperationEntity", b =>
                 {
                     b.Property<Guid>("Id")

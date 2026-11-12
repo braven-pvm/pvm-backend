@@ -152,6 +152,25 @@ param investecRefreshLookbackDays int = 7
 @description('First date the Investec feed owns. It never reads earlier, so the manual import is not duplicated.')
 param investecFeedStartDate string = ''
 
+@description('WooCommerce store root for the stock sync.')
+param woocommerceBaseUrl string = ''
+
+@description('WooCommerce REST API consumer key for the stock sync.')
+@secure()
+param woocommerceConsumerKey string = ''
+
+@description('WooCommerce REST API consumer secret for the stock sync.')
+@secure()
+param woocommerceConsumerSecret string = ''
+
+@description('Disabled, Shadow or Write. Write sets stock in the live web store.')
+@allowed([
+  'Disabled'
+  'Shadow'
+  'Write'
+])
+param stockSyncMode string = 'Shadow'
+
 @description('Acumatica contract REST endpoint name.')
 param acumaticaEndpointName string = 'Default'
 
@@ -270,6 +289,10 @@ module platform 'modules/platform.bicep' = {
     investecCashAccount: investecCashAccount
     investecRefreshLookbackDays: investecRefreshLookbackDays
     investecFeedStartDate: investecFeedStartDate
+    woocommerceBaseUrl: woocommerceBaseUrl
+    woocommerceConsumerKey: woocommerceConsumerKey
+    woocommerceConsumerSecret: woocommerceConsumerSecret
+    stockSyncMode: stockSyncMode
     acumaticaEndpointName: acumaticaEndpointName
     acumaticaEndpointVersion: acumaticaEndpointVersion
     acumaticaCustomerAccounts: acumaticaCustomerAccounts

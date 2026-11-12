@@ -1061,3 +1061,52 @@ async function readBankImportError(response: Response): Promise<string> {
 
   return `Failed to import the Nedbank statement: ${response.status}`;
 }
+
+export type StockSyncLine = {
+  sku: string;
+  productId: number;
+  variationId: number | null;
+  /** Update, Unchanged or Skip. */
+  action: string;
+  currentQuantity: number | null;
+  newQuantity: number | null;
+  acumaticaLevel: number | null;
+  webPending: number;
+  reason: string | null;
+};
+
+export type StockSyncRun = {
+  id: string;
+  /** Disabled, Shadow or Write. */
+  mode: string;
+  /** Succeeded, Refused or Failed. */
+  status: string;
+  startedAt: string;
+  completedAt: string;
+  itemCount: number;
+  updateCount: number;
+  unchangedCount: number;
+  skippedCount: number;
+  writtenCount: number;
+  detail: string | null;
+  lines: StockSyncLine[];
+};
+
+/** The latest recorded stock-sync run, or null when no run is recorded yet. */
+export async function getLatestStockSyncRun(): Promise<StockSyncRun | null> {
+  const headers = await getApiAuthHeaders();
+  const response = await timedFetch(`${apiBaseUrl}/api/stock/sync/latest`, {
+    headers,
+    cache: "no-store",
+  });
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(`Failed to load the stock sync run: ${response.status}`);
+  }
+
+  return response.json();
+}

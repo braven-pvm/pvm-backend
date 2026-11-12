@@ -367,6 +367,27 @@ const routes = {
     summary: { ambiguous: 1, rejected: 0, needsReview: 1, deadLetters: 1, stuck: 0, held: 0, overdue: 1, resolved: 12 },
   }),
   "POST /api/exceptions/*": () => ({}),
+  "GET /api/stock/sync/latest": () => ({
+    id: "run-1",
+    mode: "Shadow",
+    status: "Succeeded",
+    startedAt: minutesAgo(14),
+    completedAt: minutesAgo(12),
+    itemCount: 6,
+    updateCount: 2,
+    unchangedCount: 2,
+    skippedCount: 2,
+    writtenCount: 0,
+    detail: null,
+    lines: [
+      { sku: "KLER6", productId: 812, variationId: null, action: "Update", currentQuantity: 35, newQuantity: 9, acumaticaLevel: 9, webPending: 0, reason: null },
+      { sku: "DYNA39", productId: 901, variationId: null, action: "Update", currentQuantity: 0, newQuantity: 6, acumaticaLevel: 6, webPending: 0, reason: null },
+      { sku: "DYNA22", productId: 640, variationId: null, action: "Unchanged", currentQuantity: 16, newQuantity: 16, acumaticaLevel: 16.5, webPending: 1, reason: null },
+      { sku: "PROT20", productId: 512, variationId: null, action: "Unchanged", currentQuantity: 0, newQuantity: 0, acumaticaLevel: 3, webPending: 0, reason: null },
+      { sku: "ENER1", productId: 300, variationId: 301, action: "Skip", currentQuantity: null, newQuantity: null, acumaticaLevel: null, webPending: 0, reason: "this variation takes its stock from the parent product" },
+      { sku: "BOTT8", productId: 410, variationId: null, action: "Skip", currentQuantity: null, newQuantity: null, acumaticaLevel: null, webPending: 0, reason: "the web store does not track stock for this item" },
+    ],
+  }),
   "GET /api/banking/status": () => ({
     accounts: [
       { bank: "Investec", cashAccount: "PVMINVEST", mode: "Automatic", available: true, importedThrough: daysAgo(1), closingBalance: -12480.33, recentStatements: statements("00", -8000, 14, -12480.33) },

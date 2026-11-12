@@ -9,6 +9,7 @@ export type NavIcon =
   | "exceptions"
   | "shoprite"
   | "banking"
+  | "stock"
   | "automations"
   | "runs"
   | "events"
@@ -49,6 +50,7 @@ export const navigation: NavGroup[] = [
         // The module's sections are tabs on its pages, not sidebar children.
       },
       { label: "Banking", href: "/banking", icon: "banking", roles: write },
+      { label: "Stock", href: "/stock", icon: "stock" },
     ],
   },
   {
