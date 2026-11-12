@@ -1,9 +1,9 @@
 import { RefreshCw } from "lucide-react";
-import { refreshCandidatesAction } from "../actions";
-import { getInvoiceCandidates, type InvoiceCandidateSummary } from "../../src/api/client";
-import { hasAnyRole, requireWorkbenchUser } from "../../src/auth/session";
-import { formatDateTime } from "../../src/formatters.mjs";
-import { ButtonLink, DataTable, EmptyState, FilterChips, ListPage, StatusBadge, SubmitButton, type Column } from "../../src/ui";
+import { refreshCandidatesAction } from "../../actions";
+import { getInvoiceCandidates, type InvoiceCandidateSummary } from "../../../src/api/client";
+import { hasAnyRole, requireWorkbenchUser } from "../../../src/auth/session";
+import { formatDateTime } from "../../../src/formatters.mjs";
+import { ButtonLink, DataTable, EmptyState, FilterChips, ListPage, StatusBadge, SubmitButton, type Column } from "../../../src/ui";
 import { ShopriteSections } from "../shoprite-sections";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +31,7 @@ const columns: Column<InvoiceCandidateSummary>[] = [
 ];
 
 export default async function InvoiceCandidatesPage({ searchParams }: InvoicesPageProps) {
-  const user = await requireWorkbenchUser("/invoices");
+  const user = await requireWorkbenchUser("/shoprite/invoices");
   const { status } = await searchParams;
   const candidates = await getInvoiceCandidates();
   const canWrite = hasAnyRole(user, ["Admin", "Operator"]);
@@ -59,7 +59,7 @@ export default async function InvoiceCandidatesPage({ searchParams }: InvoicesPa
           chips={filters.map((filter) => ({
             label: filter.label,
             count: filter.value ? candidates.filter((candidate) => candidate.status === filter.value).length : candidates.length,
-            href: filter.value ? `/invoices?status=${filter.value}` : "/invoices",
+            href: filter.value ? `/shoprite/invoices?status=${filter.value}` : "/shoprite/invoices",
             current: status === filter.value,
           }))}
         />
@@ -70,7 +70,7 @@ export default async function InvoiceCandidatesPage({ searchParams }: InvoicesPa
           columns={columns}
           rows={rows}
           rowKey={(row) => row.id}
-          rowHref={(row) => `/invoices/${row.id}`}
+          rowHref={(row) => `/shoprite/invoices/${row.id}`}
           empty={
             candidates.length === 0 ? (
               <EmptyState
@@ -80,7 +80,7 @@ export default async function InvoiceCandidatesPage({ searchParams }: InvoicesPa
             ) : (
               <EmptyState
                 title="No invoices match this filter"
-                action={<ButtonLink href="/invoices">Show all invoices</ButtonLink>}
+                action={<ButtonLink href="/shoprite/invoices">Show all invoices</ButtonLink>}
               />
             )
           }

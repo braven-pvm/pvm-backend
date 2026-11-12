@@ -1,4 +1,4 @@
-import type { InventoryMappingView, ShopriteCatalogItem } from "../../../src/api/client";
+import type { InventoryMappingView, ShopriteCatalogItem } from "../../../../src/api/client";
 
 export const shopriteUnits = ["EA", "CA", "CS", "KG"] as const;
 

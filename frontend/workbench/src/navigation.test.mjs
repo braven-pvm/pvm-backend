@@ -30,13 +30,23 @@ test("a group with nothing allowed disappears", () => {
 
 test("home is current only on the home page", () => {
   assert.equal(isCurrent({ href: "/" }, "/"), true);
-  assert.equal(isCurrent({ href: "/" }, "/invoices"), false);
+  assert.equal(isCurrent({ href: "/" }, "/shoprite/invoices"), false);
 });
 
 test("a section matches its own pages and its extra prefixes", () => {
-  const shoprite = { href: "/invoices", matches: ["/invoices", "/purchase-orders"] };
-  assert.equal(isCurrent(shoprite, "/invoices/abc"), true);
-  assert.equal(isCurrent(shoprite, "/purchase-orders"), true);
-  assert.equal(isCurrent(shoprite, "/invoices-archive"), false);
+  const shoprite = { href: "/shoprite/invoices", matches: ["/shoprite/invoices", "/shoprite/purchase-orders"] };
+  assert.equal(isCurrent(shoprite, "/shoprite/invoices/abc"), true);
+  assert.equal(isCurrent(shoprite, "/shoprite/purchase-orders"), true);
+  assert.equal(isCurrent(shoprite, "/shoprite/invoices-archive"), false);
+  assert.equal(isCurrent(shoprite, "/banking"), false);
+});
+
+test("the Shoprite entry is current on every page of the module", () => {
+  const shoprite = navigationFor(["Admin"])
+    .flatMap((group) => group.items)
+    .find((item) => item.label === "Shoprite");
+  assert.equal(shoprite.href, "/shoprite");
+  assert.equal(isCurrent(shoprite, "/shoprite/invoices/abc"), true);
+  assert.equal(isCurrent(shoprite, "/shoprite/settings/inventory-mappings"), true);
   assert.equal(isCurrent(shoprite, "/banking"), false);
 });

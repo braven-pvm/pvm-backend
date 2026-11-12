@@ -49,6 +49,8 @@ export function DashboardSection({
 
 type DashboardPageProps = {
   header: PageHeaderProps;
+  /** A TabNav for the sections of the module, when the dashboard is a module overview. */
+  sections?: ReactNode;
   /** Shown above everything else, such as an emergency stop. */
   notice?: ReactNode;
   attention: {
@@ -66,10 +68,11 @@ type DashboardPageProps = {
 };
 
 /** Today and each module overview. Order: attention, automations, numbers, activity. */
-export function DashboardPage({ header, notice, attention, automations, numbers, activity }: DashboardPageProps) {
+export function DashboardPage({ header, sections, notice, attention, automations, numbers, activity }: DashboardPageProps) {
   return (
     <PageFrame>
       <PageHeader {...header} />
+      {sections}
       <div className={styles.sections}>
         {notice}
         <DashboardSection title="Needs attention" link={attention.items.length > 0 ? attention.link : undefined}>

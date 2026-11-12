@@ -83,7 +83,7 @@ export async function getCurrentUser(): Promise<WorkbenchUser | null> {
   return result.status === "ok" ? result.user : null;
 }
 
-export async function requireWorkbenchUser(callbackPath = "/invoices"): Promise<WorkbenchUser> {
+export async function requireWorkbenchUser(callbackPath = "/"): Promise<WorkbenchUser> {
   const result = await loadCurrentUser();
 
   if (result.status === "signed-out") {
@@ -112,5 +112,5 @@ function signInPath(callbackPath: string) {
 function normalizeCallbackPath(callbackPath: string) {
   return callbackPath.startsWith("/") && !callbackPath.startsWith("//")
     ? callbackPath
-    : "/invoices";
+    : "/";
 }

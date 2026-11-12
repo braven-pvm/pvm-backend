@@ -201,15 +201,17 @@ Order, top to bottom. The order does not change:
 
 1. `header`. On Today, the eyebrow is the date. The description counts what
    needs the user: "3 items need you. Everything else is running."
-2. `notice` (optional): only for a state that blocks work, such as an emergency
+2. `sections` (optional): the `TabNav` of the module, when the dashboard is a
+   module overview such as `/shoprite`. The first tab is "Overview".
+3. `notice` (optional): only for a state that blocks work, such as an emergency
    stop.
-3. Needs attention: `attention.items` in an `AttentionList`. When there are no
+4. Needs attention: `attention.items` in an `AttentionList`. When there are no
    items, one quiet success line shows `attention.allClear`: "Nothing needs
    you. Last checked 10:40."
-4. Automations (optional): `Tile`s in a `TileGrid`, with the link "All
+5. Automations (optional): `Tile`s in a `TileGrid`, with the link "All
    automations".
-5. Key numbers (optional): 2 to 4 `StatTile`s in a `TileGrid`.
-6. Recent activity (optional): a `DataTable`, with the link "All runs". The
+6. Key numbers (optional): 2 to 4 `StatTile`s in a `TileGrid`.
+7. Recent activity (optional): a `DataTable`, with the link "All runs". The
    template puts it in a flush `Panel`. `activity.title` renames the section,
    such as "Recent statements". At most 5 rows on Today.
 

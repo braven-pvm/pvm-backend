@@ -141,7 +141,7 @@ export default async function AutomationPage({ searchParams }: AutomationPagePro
           columns={decisionColumns}
           rows={view.recentDecisions}
           rowKey={(decision) => decision.id}
-          rowHref={(decision) => `/invoices/${decision.invoiceCandidateId}`}
+          rowHref={(decision) => `/shoprite/invoices/${decision.invoiceCandidateId}`}
           empty={<EmptyState title="No decisions yet" description="Each invoice gets a decision when it is read from Acumatica." />}
         />
       </Panel>

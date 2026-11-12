@@ -44,10 +44,9 @@ export const navigation: NavGroup[] = [
     items: [
       {
         label: "Shoprite",
-        href: "/invoices",
+        href: "/shoprite",
         icon: "shoprite",
         // The module's sections are tabs on its pages, not sidebar children.
-        matches: ["/invoices", "/purchase-orders", "/admin/inventory-mappings"],
       },
       { label: "Banking", href: "/banking", icon: "banking", roles: write },
     ],
