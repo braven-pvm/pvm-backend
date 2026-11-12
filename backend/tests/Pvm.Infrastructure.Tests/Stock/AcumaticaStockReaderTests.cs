@@ -55,6 +55,10 @@ public sealed class AcumaticaStockReaderTests
         Assert.Equal(4m, snapshot.Figures["KLER5"].TransfersOut);
         Assert.Equal(7m, snapshot.Figures["KLER5"].TransfersIn);
         Assert.Contains("Status ne 'Released'", acumatica.TransferQuery, StringComparison.Ordinal);
+        Assert.Contains(
+            "$select=FromWarehouseID,ToWarehouseID,Details/InventoryID,Details/Qty,Details/FromLocationID,Details/ToLocationID",
+            acumatica.TransferQuery,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -91,6 +95,12 @@ public sealed class AcumaticaStockReaderTests
             StringComparison.Ordinal);
         Assert.Contains("OrderType eq 'S1'", acumatica.OpenOrderQueries[1], StringComparison.Ordinal);
         Assert.Contains("$expand=Details,Shipments", acumatica.OpenOrderQueries[0], StringComparison.Ordinal);
+
+        // Only the fields the sync uses: the full orders ran the job out of memory.
+        Assert.Contains(
+            "$select=OrderNbr,CustomerID,Details/InventoryID,Details/OrderQty,Shipments/ShipmentNbr",
+            acumatica.OpenOrderQueries[0],
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -111,6 +121,7 @@ public sealed class AcumaticaStockReaderTests
         Assert.Equal(15, CountOf(acumatica.WebOrderQueries[0], "CustomerOrder eq '"));
         Assert.Contains("CustomerOrder eq 'O''Brien'", acumatica.WebOrderQueries[1], StringComparison.Ordinal);
         Assert.Equal(1, CountOf(acumatica.WebOrderQueries[1], "CustomerOrder eq '"));
+        Assert.Contains("$select=CustomerOrder,Details/InventoryID,Details/OrderQty", acumatica.WebOrderQueries[0], StringComparison.Ordinal);
         Assert.Contains(snapshot.LoadedWebOrderLines, line => line.WebOrderId == "5001" && line.InventoryCd == "ENER1" && line.Quantity == 2m);
     }
 

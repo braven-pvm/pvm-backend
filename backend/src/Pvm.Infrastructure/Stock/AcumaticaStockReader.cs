@@ -26,6 +26,14 @@ public sealed class AcumaticaStockReader(
     internal const int ListLimit = 10000;
     internal const int WebOrderListLimit = 1000;
 
+    // Only the fields the sync uses. Without $select, 45 days of sales orders is over 40 MB of
+    // JSON, which ran the 0.5 GiB job out of memory; with it the same read is under 8 MB.
+    private const string TransferFields =
+        "FromWarehouseID,ToWarehouseID,Details/InventoryID,Details/Qty,Details/FromLocationID,Details/ToLocationID";
+    private const string OpenOrderFields =
+        "OrderNbr,CustomerID,Details/InventoryID,Details/OrderQty,Shipments/ShipmentNbr";
+    private const string WebOrderFields = "CustomerOrder,Details/InventoryID,Details/OrderQty";
+
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly AcumaticaOptions _acumatica = acumaticaOptions.Value;
     private readonly StockSyncOptions _stock = stockOptions.Value;
@@ -110,7 +118,7 @@ public sealed class AcumaticaStockReader(
     {
         var rows = await GetArrayAsync(
             cookie,
-            "TransferOrder?$filter=" + Uri.EscapeDataString("Status ne 'Released'") + "&$expand=Details",
+            "TransferOrder?$filter=" + Uri.EscapeDataString("Status ne 'Released'") + "&$expand=Details&$select=" + TransferFields,
             ListLimit,
             "unreleased transfer orders",
             cancellationToken);
@@ -163,7 +171,7 @@ public sealed class AcumaticaStockReader(
                 + "T00:00:00" + _stock.AcumaticaUtcOffset + "'";
             var rows = await GetArrayAsync(
                 cookie,
-                "SalesOrder?$filter=" + Uri.EscapeDataString(filter) + "&$expand=Details,Shipments",
+                "SalesOrder?$filter=" + Uri.EscapeDataString(filter) + "&$expand=Details,Shipments&$select=" + OpenOrderFields,
                 ListLimit,
                 $"{orderType} sales orders",
                 cancellationToken);
@@ -237,7 +245,7 @@ public sealed class AcumaticaStockReader(
             var filter = string.Join(" or ", batch.Select(id => $"CustomerOrder eq '{id.Replace("'", "''", StringComparison.Ordinal)}'"));
             var rows = await GetArrayAsync(
                 cookie,
-                "SalesOrder?$filter=" + Uri.EscapeDataString(filter) + "&$expand=Details",
+                "SalesOrder?$filter=" + Uri.EscapeDataString(filter) + "&$expand=Details&$select=" + WebOrderFields,
                 WebOrderListLimit,
                 "sales orders for web orders",
                 cancellationToken);
@@ -266,14 +274,16 @@ public sealed class AcumaticaStockReader(
         CancellationToken cancellationToken)
     {
         using var request = Request(HttpMethod.Get, EntityUri($"{relative}&$top={limit}"), cookie);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
                 $"Acumatica read of {what} failed with status {(int)response.StatusCode} ({response.StatusCode}).");
         }
 
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        // Parse from the stream: a string copy of a large list doubles the memory it needs.
+        await using var body = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(body, cancellationToken: cancellationToken);
         var rows = document.RootElement.ValueKind == JsonValueKind.Array
             ? document.RootElement.EnumerateArray().Select(element => element.Clone()).ToList()
             : [];
