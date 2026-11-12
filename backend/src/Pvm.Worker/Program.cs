@@ -115,6 +115,7 @@ if (syncWooCommerceStock)
     var stockRecorder = stockScope.ServiceProvider.GetRequiredService<StockSyncRunRecorder>();
     var stockMode = stockScope.ServiceProvider.GetRequiredService<IOptions<StockSyncOptions>>().Value.Mode;
     var stockStarted = DateTimeOffset.UtcNow;
+    string? stockFailure;
 
     try
     {
@@ -129,6 +130,7 @@ if (syncWooCommerceStock)
             result.Skipped,
             result.Written,
             result.Refusal ?? string.Empty);
+        stockFailure = result.Failure;
     }
     catch (Exception exception)
     {
@@ -144,6 +146,12 @@ if (syncWooCommerceStock)
         }
 
         throw;
+    }
+
+    if (stockFailure is not null)
+    {
+        // The run is recorded with what it wrote. Fail the replica so the job shows the failure.
+        throw new InvalidOperationException(stockFailure);
     }
 
     return;

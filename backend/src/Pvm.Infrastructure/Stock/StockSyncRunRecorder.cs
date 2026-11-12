@@ -55,19 +55,18 @@ public sealed class StockSyncRunRecorder(PvmDbContext db, TimeProvider timeProvi
 
         await AddAsync(
             result.Mode.ToString(),
-            result.Refusal is null ? "Succeeded" : "Refused",
+            result.Failure is not null ? "Failed" : result.Refusal is null ? "Succeeded" : "Refused",
             startedAt,
             lines,
             result.Written,
-            result.Refusal,
+            Truncate(result.Failure ?? result.Refusal),
             cancellationToken);
     }
 
     public Task RecordFailureAsync(StockSyncMode mode, DateTimeOffset startedAt, Exception exception, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(exception);
-        var detail = exception.Message.Length > 2000 ? exception.Message[..2000] : exception.Message;
-        return AddAsync(mode.ToString(), "Failed", startedAt, [], 0, detail, cancellationToken);
+        return AddAsync(mode.ToString(), "Failed", startedAt, [], 0, Truncate(exception.Message), cancellationToken);
     }
 
     public async Task<StockSyncRunView?> GetLatestAsync(CancellationToken cancellationToken)
@@ -109,6 +108,8 @@ public sealed class StockSyncRunRecorder(PvmDbContext db, TimeProvider timeProvi
         var cutoff = now.AddDays(-KeepDays);
         await db.StockSyncRuns.Where(entity => entity.CompletedAt < cutoff).ExecuteDeleteAsync(cancellationToken);
     }
+
+    private static string? Truncate(string? text) => text is { Length: > 2000 } ? text[..2000] : text;
 
     private static StockSyncRunView View(StockSyncRunEntity run)
         => new(

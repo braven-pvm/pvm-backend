@@ -56,6 +56,29 @@ public sealed class WooCommerceStockClientTests
     }
 
     [Fact]
+    public async Task A_list_that_fills_every_page_stops_the_run()
+    {
+        // Two full pages with MaxPages 2: a third page may exist, so the list may be incomplete.
+        using var handler = new RouteHandler(_ => Json("""
+            [{"id":5001,"line_items":[]},{"id":5002,"line_items":[]}]
+            """));
+        var client = new WooCommerceStockClient(new HttpClient(handler), Options.Create(new WooCommerceOptions
+        {
+            BaseUrl = "https://store.example",
+            ConsumerKey = "ck_test",
+            ConsumerSecret = "cs_test",
+            PageSize = 2,
+            MaxPages = 2,
+        }));
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => client.ListPendingOrderLinesAsync(CancellationToken.None));
+
+        Assert.Contains("may be incomplete", failure.Message, StringComparison.Ordinal);
+        Assert.Equal(2, handler.Calls);
+    }
+
+    [Fact]
     public async Task ListPendingOrderLinesAsync_asks_for_open_statuses_and_reads_each_line()
     {
         string? query = null;

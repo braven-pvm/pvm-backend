@@ -35,6 +35,24 @@ public sealed class StockSyncServiceTests
     }
 
     [Fact]
+    public async Task A_failed_write_reports_the_writes_already_made()
+    {
+        var store = new FakeStore([Item("DYNA24", 1), Item("ENER12", 1), Item("KLER5", 1)]) { FailOn = "ENER12" };
+        var service = NewService(
+            store,
+            new FakeAcumatica(("DYNA24", 20m), ("ENER12", 30m), ("KLER5", 40m)),
+            StockSyncMode.Write);
+
+        var result = await service.RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, result.Written);
+        Assert.Equal(("DYNA24", 20), Assert.Single(store.Writes));
+        Assert.NotNull(result.Failure);
+        Assert.Contains("ENER12", result.Failure, StringComparison.Ordinal);
+        Assert.Contains("after 1 of 3", result.Failure, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Write_mode_refuses_a_run_that_would_zero_too_many_items()
     {
         var items = Enumerable.Range(1, 4).Select(i => Item($"SKU{i}", 50)).ToList();
@@ -79,6 +97,8 @@ public sealed class StockSyncServiceTests
 
         public int Reads { get; private set; }
 
+        public string? FailOn { get; init; }
+
         public Task<IReadOnlyList<WebStockItem>> ListStockItemsAsync(CancellationToken cancellationToken)
         {
             Reads++;
@@ -90,6 +110,11 @@ public sealed class StockSyncServiceTests
 
         public Task SetStockQuantityAsync(WebStockItem item, int quantity, CancellationToken cancellationToken)
         {
+            if (item.Sku == FailOn)
+            {
+                throw new HttpRequestException("WooCommerce answered 500");
+            }
+
             Writes.Add((item.Sku, quantity));
             return Task.CompletedTask;
         }

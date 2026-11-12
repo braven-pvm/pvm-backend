@@ -230,7 +230,7 @@ var commonRuntimeSecrets = concat([
     name: 'shoprite-contractid'
     value: shopriteContractId
   }
-], acumaticaCredentialSecrets, investecCredentialSecrets, woocommerceCredentialSecrets)
+], acumaticaCredentialSecrets, investecCredentialSecrets)
 var hasAcumaticaWebhookSecret = !empty(acumaticaWebhookSecret)
 var apiSecrets = concat(commonRuntimeSecrets, hasAcumaticaWebhookSecret ? [
   {
@@ -451,7 +451,7 @@ var apiEnvironment = concat([
     name: 'AcumaticaReconciliation__StaleAfterMinutes'
     value: string(acumaticaReconciliationStaleAfterMinutes)
   }
-], acumaticaCredentialEnvironment, acumaticaCustomerEnvironment, acumaticaParentCustomerEnvironment, investecEnvironment, woocommerceEnvironment)
+], acumaticaCredentialEnvironment, acumaticaCustomerEnvironment, acumaticaParentCustomerEnvironment, investecEnvironment)
 var apiRuntimeEnvironment = concat(apiEnvironment, [
   {
     name: 'AcumaticaPushNotifications__EnvironmentName'
@@ -1271,7 +1271,8 @@ resource stockSyncJob 'Microsoft.App/jobs@2025-01-01' = if (hasWooCommerceCreden
           identity: identity.id
         }
       ]
-      secrets: commonRuntimeSecrets
+      // Only this job holds the WooCommerce key: the API and the worker app never call the web store.
+      secrets: concat(commonRuntimeSecrets, woocommerceCredentialSecrets)
     }
     template: {
       containers: [
@@ -1281,7 +1282,7 @@ resource stockSyncJob 'Microsoft.App/jobs@2025-01-01' = if (hasWooCommerceCreden
           args: [
             '--sync-woocommerce-stock'
           ]
-          env: workerEnvironment
+          env: concat(workerEnvironment, woocommerceEnvironment)
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'

@@ -22,6 +22,10 @@ public sealed class AcumaticaStockReader(
     // Acumatica rejects a long OR-chain in one filter; this many order numbers per call is safe.
     private const int WebOrderBatchSize = 15;
 
+    // Row caps on each list. A list that comes back full may be cut short, so the run stops.
+    internal const int ListLimit = 10000;
+    internal const int WebOrderListLimit = 1000;
+
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly AcumaticaOptions _acumatica = acumaticaOptions.Value;
     private readonly StockSyncOptions _stock = stockOptions.Value;
@@ -86,7 +90,7 @@ public sealed class AcumaticaStockReader(
     {
         // An item hidden by a restriction group reads as zero in the inquiries. Listing what the
         // user can see is how a hidden item is told apart from one that is really out of stock.
-        var rows = await GetArrayAsync(cookie, "StockItem?$select=InventoryID&$top=10000", "stock item list", cancellationToken);
+        var rows = await GetArrayAsync(cookie, "StockItem?$select=InventoryID", ListLimit, "stock item list", cancellationToken);
         var visible = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var row in rows)
         {
@@ -106,7 +110,8 @@ public sealed class AcumaticaStockReader(
     {
         var rows = await GetArrayAsync(
             cookie,
-            "TransferOrder?$filter=" + Uri.EscapeDataString("Status ne 'Released'") + "&$expand=Details&$top=10000",
+            "TransferOrder?$filter=" + Uri.EscapeDataString("Status ne 'Released'") + "&$expand=Details",
+            ListLimit,
             "unreleased transfer orders",
             cancellationToken);
 
@@ -158,7 +163,8 @@ public sealed class AcumaticaStockReader(
                 + "T00:00:00" + _stock.AcumaticaUtcOffset + "'";
             var rows = await GetArrayAsync(
                 cookie,
-                "SalesOrder?$filter=" + Uri.EscapeDataString(filter) + "&$expand=Details,Shipments&$top=10000",
+                "SalesOrder?$filter=" + Uri.EscapeDataString(filter) + "&$expand=Details,Shipments",
+                ListLimit,
                 $"{orderType} sales orders",
                 cancellationToken);
 
@@ -204,7 +210,20 @@ public sealed class AcumaticaStockReader(
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
         var root = document.RootElement;
-        return ((Number(root, "OnHand"), Number(root, "SOBooked"), Number(root, "SOAllocated")), null);
+
+        // A missing or empty figure is not a zero: the item is reported as a failure and skipped.
+        var onHand = RequiredNumber(root, "OnHand");
+        var booked = RequiredNumber(root, "SOBooked");
+        var allocated = RequiredNumber(root, "SOAllocated");
+        if (onHand is null || booked is null || allocated is null)
+        {
+            var missing = new[] { ("OnHand", onHand), ("SOBooked", booked), ("SOAllocated", allocated) }
+                .Where(pair => pair.Item2 is null)
+                .Select(pair => pair.Item1);
+            return (null, "Acumatica returned no " + string.Join(", ", missing));
+        }
+
+        return ((onHand.Value, booked.Value, allocated.Value), null);
     }
 
     private async Task<List<LoadedWebOrderLine>> ReadLoadedWebOrdersAsync(
@@ -218,7 +237,8 @@ public sealed class AcumaticaStockReader(
             var filter = string.Join(" or ", batch.Select(id => $"CustomerOrder eq '{id.Replace("'", "''", StringComparison.Ordinal)}'"));
             var rows = await GetArrayAsync(
                 cookie,
-                "SalesOrder?$filter=" + Uri.EscapeDataString(filter) + "&$expand=Details&$top=1000",
+                "SalesOrder?$filter=" + Uri.EscapeDataString(filter) + "&$expand=Details",
+                WebOrderListLimit,
                 "sales orders for web orders",
                 cancellationToken);
             foreach (var order in rows)
@@ -241,10 +261,11 @@ public sealed class AcumaticaStockReader(
     private async Task<List<JsonElement>> GetArrayAsync(
         string? cookie,
         string relative,
+        int limit,
         string what,
         CancellationToken cancellationToken)
     {
-        using var request = Request(HttpMethod.Get, EntityUri(relative), cookie);
+        using var request = Request(HttpMethod.Get, EntityUri($"{relative}&$top={limit}"), cookie);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
@@ -253,9 +274,16 @@ public sealed class AcumaticaStockReader(
         }
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
-        return document.RootElement.ValueKind == JsonValueKind.Array
+        var rows = document.RootElement.ValueKind == JsonValueKind.Array
             ? document.RootElement.EnumerateArray().Select(element => element.Clone()).ToList()
             : [];
+        if (rows.Count >= limit)
+        {
+            throw new InvalidOperationException(
+                $"Acumatica read of {what} returned {rows.Count} rows, the limit. The list may be incomplete, so the run stops.");
+        }
+
+        return rows;
     }
 
     private async Task<string?> SignInAsync(CancellationToken cancellationToken)
@@ -332,11 +360,14 @@ public sealed class AcumaticaStockReader(
             ? value.GetString()?.Trim()
             : null;
 
-    private static decimal Number(JsonElement element, string name)
+    // For document lines: an absent quantity on a line adds nothing.
+    private static decimal Number(JsonElement element, string name) => RequiredNumber(element, name) ?? 0m;
+
+    private static decimal? RequiredNumber(JsonElement element, string name)
         => element.TryGetProperty(name, out var field)
             && field.ValueKind == JsonValueKind.Object
             && field.TryGetProperty("value", out var value)
             && value.ValueKind == JsonValueKind.Number
             ? value.GetDecimal()
-            : 0m;
+            : null;
 }

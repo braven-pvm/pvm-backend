@@ -140,6 +140,10 @@ public sealed class WooCommerceStockClient(HttpClient httpClient, IOptions<WooCo
                 yield break;
             }
         }
+
+        // Every page came back full: there may be more, and a partial list must not be used.
+        throw new InvalidOperationException(
+            $"WooCommerce {path} filled all {_options.MaxPages} pages of {_options.PageSize}. The list may be incomplete, so the run stops.");
     }
 
     private HttpRequestMessage Request(HttpMethod method, string path, string? query)
