@@ -1,0 +1,59 @@
+.drop {
+  align-items: center;
+  background: var(--color-surface);
+  border: 2px dashed var(--color-stroke-strong);
+  border-radius: var(--radius-l);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-xl) var(--space-m);
+  text-align: center;
+  transition: border-color var(--duration-fast), background-color var(--duration-fast);
+}
+
+.drop[data-dragging] {
+  background: var(--color-brand-fill);
+  border-color: var(--color-brand);
+}
+
+.icon {
+  color: var(--color-brand);
+}
+
+.title {
+  color: var(--color-text-strong);
+  font-size: var(--text-body);
+  font-weight: var(--font-bold);
+  line-height: var(--leading-body);
+  margin: 0;
+}
+
+.hint {
+  color: var(--color-text-weak);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  margin: 0 0 var(--space-xs);
+  max-width: 52ch;
+}
+
+.button {
+  align-items: center;
+  background: var(--color-brand);
+  border-radius: var(--radius-m);
+  color: var(--color-on-brand);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: var(--text-small);
+  font-weight: var(--font-bold);
+  min-height: var(--control-height);
+  padding: 0 var(--space-s);
+}
+
+.button:hover {
+  background: var(--color-brand-hover);
+}
+
+.drop:has(input:focus-visible) .button {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}

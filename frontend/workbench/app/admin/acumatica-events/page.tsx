@@ -1,18 +1,44 @@
-import { getAcumaticaPushNotificationEvents } from "../../../src/api/client";
+import { getAcumaticaPushNotificationEvents, type AcumaticaPushNotificationEventView } from "../../../src/api/client";
 import { requireWorkbenchUser } from "../../../src/auth/session";
+import { formatDateTime } from "../../../src/formatters.mjs";
+import { DataTable, EmptyState, ListPage, Notice, StatTile, StatusBadge, TileGrid, type Column } from "../../../src/ui";
+import { EventsSections } from "../events-sections";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Acumatica webhooks" };
+
+type WebhookEvent = AcumaticaPushNotificationEventView["events"][number];
+
+const columns: Column<WebhookEvent>[] = [
+  { key: "transaction", header: "Transaction", render: (event) => event.transactionId, mono: true },
+  { key: "received", header: "Received", render: (event) => formatDateTime(event.receivedAt) },
+  { key: "query", header: "Acumatica query", render: (event) => event.queryName },
+  { key: "rows", header: "Rows", render: (event) => `${event.insertedCount} added · ${event.deletedCount} removed`, align: "end" },
+  { key: "queued", header: "Queued", render: (event) => event.enqueuedCount, align: "end" },
+  {
+    key: "duplicate",
+    header: "Result",
+    render: (event) =>
+      event.duplicateCount > 0 ? <StatusBadge status="Skipped" label="Duplicate" /> : <StatusBadge status="Processed" />,
+  },
+];
 
 export default async function AcumaticaWebhookEventsPage() {
   const user = await requireWorkbenchUser("/admin/acumatica-events");
+  const header = {
+    eyebrow: "Automation · events",
+    title: "Acumatica webhooks",
+    description: "Notifications that Acumatica sends when an invoice is finalised. Each one starts an invoice read.",
+  };
+
   if (!user.roles.includes("Admin")) {
     return (
-      <main className="page-shell">
-        <section className="empty-state">
-          <strong>Admin access required</strong>
-          <p>Acumatica webhook delivery records are restricted to administrators.</p>
-        </section>
-      </main>
+      <ListPage
+        header={header}
+        sections={<EventsSections current="webhooks" />}
+        notice={<Notice tone="info" title="Admin access needed">Webhook records are for Admins only.</Notice>}
+        table={null}
+      />
     );
   }
 
@@ -20,64 +46,30 @@ export default async function AcumaticaWebhookEventsPage() {
   const health = view.health;
 
   return (
-    <main className="page-shell">
-      <section className="page-heading">
-        <div>
-          <h1>Acumatica Webhook Events</h1>
-          <p>Inspect authenticated notification receipt, deduplication, and discovery handoff.</p>
-        </div>
-        <span className={`status-pill status-${health.status.toLowerCase()}`}>
-          {health.status}
-        </span>
-      </section>
-
-      <section className="metric-strip four-up" aria-label="Webhook summary">
-        <div><span>Events</span><strong>{health.eventCount}</strong></div>
-        <div><span>Duplicates</span><strong>{health.duplicateCount}</strong></div>
-        <div>
-          <span>Last received</span>
-          <strong className="metric-date">
-            {health.lastReceivedAt ? new Date(health.lastReceivedAt).toLocaleString() : "Never"}
-          </strong>
-        </div>
-        <div>
-          <span>Latest lag</span>
-          <strong className="metric-text">
-            {health.lastEventLagSeconds === null || health.lastEventLagSeconds === undefined
-              ? "-"
-              : `${Math.round(health.lastEventLagSeconds)}s`}
-          </strong>
-        </div>
-      </section>
-
-      <section className="table-panel" aria-label="Acumatica webhook event inbox">
-        <div className="table-toolbar">
-          <h2>Event inbox</h2>
-          <span>Latest {view.events.length} of {health.eventCount}</span>
-        </div>
-        {view.events.length === 0 ? (
-          <div className="empty-state">
-            <strong>No webhook events received</strong>
-            <p>The endpoint is ready for an allowed Acumatica notification source.</p>
-          </div>
-        ) : (
-          <table>
-            <thead>
-              <tr><th>Received</th><th>Source</th><th>Transaction</th><th>Rows</th><th>Queued</th><th>Duplicates</th></tr>
-            </thead>
-            <tbody>{view.events.map((event) => (
-              <tr key={event.id}>
-                <td data-label="Received">{new Date(event.receivedAt).toLocaleString()}<span>Last {new Date(event.lastReceivedAt).toLocaleString()}</span></td>
-                <td data-label="Source">{event.companyId}<span>{event.queryName} / {event.sourceEnvironment}</span></td>
-                <td data-label="Transaction">{event.transactionId}<span>{event.payloadHash}</span></td>
-                <td data-label="Rows">{event.insertedCount} inserted / {event.deletedCount} deleted</td>
-                <td data-label="Queued">{event.enqueuedCount}</td>
-                <td data-label="Duplicates">{event.duplicateCount}</td>
-              </tr>
-            ))}</tbody>
-          </table>
-        )}
-      </section>
-    </main>
+    <ListPage
+      header={{ ...header, actions: <StatusBadge status={health.status === "Waiting" ? "Late" : health.status} label={health.status === "NotConfigured" ? "Not configured" : undefined} /> }}
+      sections={<EventsSections current="webhooks" />}
+      attention={
+        <TileGrid>
+          <StatTile label="Events" value={String(health.eventCount)} detail="Since the webhook was set up" />
+          <StatTile label="Duplicates" value={String(health.duplicateCount)} detail="Skipped, nothing read twice" />
+          <StatTile label="Last received" value={health.lastReceivedAt ? formatDateTime(health.lastReceivedAt) : "Never"} />
+          <StatTile
+            label="Delay"
+            value={health.lastEventLagSeconds === null || health.lastEventLagSeconds === undefined ? "—" : `${Math.round(health.lastEventLagSeconds)} s`}
+            detail="From Acumatica to the backoffice"
+          />
+        </TileGrid>
+      }
+      table={
+        <DataTable
+          caption="Acumatica webhook events"
+          columns={columns}
+          rows={view.events}
+          rowKey={(event) => event.id}
+          empty={<EmptyState title="No webhook events yet" description="Events show here when Acumatica finalises an invoice for a Shoprite customer." />}
+        />
+      }
+    />
   );
 }

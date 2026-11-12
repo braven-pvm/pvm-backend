@@ -1,4 +1,7 @@
+import { AuthCard, Notice } from "../../src/ui";
 import { SignInButton } from "./sign-in-button";
+
+export const metadata = { title: "Sign in" };
 
 type SignInPageProps = {
   searchParams: Promise<{
@@ -12,26 +15,28 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
   const callbackUrl = normalizeCallbackUrl(params.callbackUrl);
 
   return (
-    <main className="auth-shell">
-      <section className="auth-panel">
-        <h1>Sign in</h1>
-        <p>Use your Microsoft account to sign in to PVM Backoffice.</p>
-        {params.error ? (
-          <p className="auth-error">Sign-in failed. Try again or contact an admin.</p>
-        ) : null}
-        <SignInButton callbackUrl={callbackUrl} />
-      </section>
-    </main>
+    <AuthCard
+      title="Sign in"
+      description="Use your Microsoft work account."
+      notice={
+        params.error ? (
+          <Notice tone="error" title="Sign-in failed">
+            Try again. If it fails again, ask an Admin to check that your account is added.
+          </Notice>
+        ) : null
+      }
+      action={<SignInButton callbackUrl={callbackUrl} />}
+    />
   );
 }
 
 function normalizeCallbackUrl(callbackUrl: string | undefined) {
   if (!callbackUrl || !callbackUrl.startsWith("/") || callbackUrl.startsWith("//")) {
-    return "/invoices";
+    return "/";
   }
 
   if (callbackUrl.startsWith("/api/auth")) {
-    return "/invoices";
+    return "/";
   }
 
   return callbackUrl;

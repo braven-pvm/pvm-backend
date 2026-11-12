@@ -1,47 +1,62 @@
-import Link from "next/link";
 import { getIntegrationRuns } from "../../src/api/client";
 import { requireWorkbenchUser } from "../../src/auth/session";
+import { ButtonLink, DataTable, EmptyState, FilterChips, ListPage } from "../../src/ui";
+import { runColumns } from "../run-columns";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Runs" };
 
-export default async function IntegrationRunsPage() {
+type RunsPageProps = {
+  searchParams: Promise<{ status?: string }>;
+};
+
+const filters = [
+  { value: undefined, label: "All" },
+  { value: "Failed", label: "Failed" },
+  { value: "Running", label: "Running" },
+  { value: "Succeeded", label: "Succeeded" },
+] as const;
+
+export default async function IntegrationRunsPage({ searchParams }: RunsPageProps) {
   await requireWorkbenchUser("/runs");
+  const { status } = await searchParams;
   const runs = await getIntegrationRuns();
+  const rows = status ? runs.filter((run) => run.status === status) : runs;
 
   return (
-    <main className="page-shell">
-      <section className="page-heading">
-        <div>
-          <h1>Integration Runs</h1>
-          <p>Scheduled and manual execution history across integration workflows.</p>
-        </div>
-      </section>
-
-      <section className="table-panel" aria-label="Integration runs">
-        <div className="table-toolbar"><h2>Runs</h2><span>Latest {runs.length}</span></div>
-        {runs.length === 0 ? (
-          <div className="empty-state"><strong>No integration runs recorded</strong></div>
-        ) : (
-          <table>
-            <thead><tr><th>Created</th><th>Run</th><th>Trigger</th><th>Status</th><th>Attempts</th><th>Result</th><th></th></tr></thead>
-            <tbody>{runs.map((run) => (
-              <tr key={run.id}>
-                <td data-label="Created">{new Date(run.createdAt).toLocaleString()}</td>
-                <td data-label="Run">{run.runType}<span>{run.id}</span></td>
-                <td data-label="Trigger">{run.trigger}<span>{run.initiatedBy}</span></td>
-                <td data-label="Status"><Status value={run.status} /></td>
-                <td data-label="Attempts">{run.attemptCount}</td>
-                <td data-label="Result">{run.receivedCount} received<span>{run.revalidatedCount} candidates revalidated</span></td>
-                <td className="table-action" data-label="Action"><Link href={`/runs/${run.id}`}>Open</Link></td>
-              </tr>
-            ))}</tbody>
-          </table>
-        )}
-      </section>
-    </main>
+    <ListPage
+      header={{
+        eyebrow: "Automation",
+        title: "Runs",
+        description: "Every execution of every scheduled and manual job, newest first.",
+      }}
+      filters={
+        <FilterChips
+          label="Filter runs by status"
+          chips={filters.map((filter) => ({
+            label: filter.label,
+            count: filter.value ? runs.filter((run) => run.status === filter.value).length : runs.length,
+            href: filter.value ? `/runs?status=${filter.value}` : "/runs",
+            current: status === filter.value,
+          }))}
+        />
+      }
+      table={
+        <DataTable
+          caption="Runs"
+          columns={runColumns}
+          rows={rows}
+          rowKey={(run) => run.id}
+          rowHref={(run) => `/runs/${run.id}`}
+          empty={
+            runs.length === 0 ? (
+              <EmptyState title="No runs yet" description="Scheduled jobs record a run each time they start." />
+            ) : (
+              <EmptyState title="No runs match this filter" action={<ButtonLink href="/runs">Show all runs</ButtonLink>} />
+            )
+          }
+        />
+      }
+    />
   );
-}
-
-function Status({ value }: { value: string }) {
-  return <span className={`status-pill status-${value.toLowerCase()}`}>{value}</span>;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { signIn } from "next-auth/react";
+import { Button } from "../../src/ui";
 
 type SignInButtonProps = {
   callbackUrl: string;
@@ -8,12 +9,8 @@ type SignInButtonProps = {
 
 export function SignInButton({ callbackUrl }: SignInButtonProps) {
   return (
-    <button
-      className="button"
-      type="button"
-      onClick={() => signIn("azure-ad", { callbackUrl })}
-    >
+    <Button variant="primary" onClick={() => signIn("azure-ad", { callbackUrl })}>
       Sign in with Microsoft
-    </button>
+    </Button>
   );
 }

@@ -17,6 +17,7 @@ import {
   KeyValueList,
   ModeSwitch,
   Notice,
+  PageFrame,
   PageHeader,
   Pagination,
   Panel,
@@ -121,7 +122,7 @@ export default function UiKitPage() {
   }
 
   return (
-    <main className="page-shell" data-ds>
+    <PageFrame>
       <Stack gap="xl">
         <PageHeader
           eyebrow="Design system"
@@ -469,7 +470,7 @@ export default function UiKitPage() {
           </Panel>
         </Section>
       </Stack>
-    </main>
+    </PageFrame>
   );
 }
 

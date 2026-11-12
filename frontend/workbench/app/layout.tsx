@@ -6,7 +6,7 @@ import { getCurrentUser } from "../src/auth/session";
 import { navigationFor } from "../src/navigation";
 import { AppShell, type EnvironmentKind } from "../src/ui";
 import "./tokens.css";
-import "./globals.css";
+import "./base.css";
 
 export const metadata: Metadata = {
   title: {

@@ -1,6 +1,6 @@
 # PVM Backoffice — UI redesign
 
-Status: approved direction, steps A1 and A2 (design system) done, step B next · Owner: Marius Bloemhof · 2026-11-11
+Status: approved direction, steps A and B done (design system, every page converted), step C next · Owner: Marius Bloemhof · 2026-11-11
 
 The workbench started as an admin console for one integration (Shoprite invoice
 submission). It is becoming the operating surface for PVM's back office:

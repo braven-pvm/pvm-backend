@@ -1,6 +1,6 @@
 # PVM Backoffice design system
 
-Status: steps A1 and A2 · Owner: Marius Bloemhof · 2026-11-11
+Status: steps A1, A2, B1 and B2 · Owner: Marius Bloemhof · 2026-11-11
 
 This document is the authority for every visual and interaction decision in the
 workbench (`frontend/workbench`). The live reference is `/ui-kit`, which shows
@@ -22,9 +22,11 @@ Rules that apply to every screen:
 - No literal colour, size or space in a component or page. Use a token.
 - No inline `style` in a page. Use `Stack` for layout. The only inline styles
   are inside `src/ui`, for computed values such as a bar width.
-- Every page uses one of the five [page templates](#page-templates). The
-  templates render `PageFrame`, which sets `data-ds`, so old element rules in
-  `globals.css` do not apply.
+- Every page uses one of the five [page templates](#page-templates), or
+  `AuthCard` when there is no signed-in user.
+- To check a page locally, run `npm run mock-api` and the dev server with
+  `AUTH_MODE=DevelopmentBypass` and `NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:59999`.
+  The mock returns example data in the shape of `src/api/client.ts`.
 - No UI framework, CSS framework or component kit. The dependency rule is in
   section 6.1 of the redesign document.
 
@@ -36,8 +38,9 @@ Rules that apply to every screen:
 - Components:
   - Layout: [PageFrame](#pageframe), [Columns](#columns), [Stack](#stack), [Panel](#panel), [PageHeader](#pageheader), [TileGrid](#tilegrid), [AppShell](#appshell).
   - Actions: [Button](#button), [ButtonLink](#buttonlink), [SubmitButton](#submitbutton), [ConfirmDialog](#confirmdialog).
+  - Content: [CodeBlock](#codeblock).
   - Status: [StatusBadge](#statusbadge), [Notice](#notice), [Spinner](#spinner), [EmptyState](#emptystate).
-  - Forms: [Fields](#fields).
+  - Forms: [Fields](#fields), [FileDrop](#filedrop).
   - Lists: [DataTable](#datatable), [FilterChips](#filterchips), [FilterBar](#filterbar), [Pagination](#pagination).
   - Navigation: [TabNav and Tabs](#tabs), [BackLink](#backlink), [Stepper](#stepper).
   - Records: [KeyValueList](#keyvaluelist), [Timeline](#timeline).
@@ -53,10 +56,9 @@ Rules that apply to every screen:
 All values live in `app/tokens.css`. The light theme is on `:root`. The dark
 theme is on `:root[data-theme="dark"]`.
 
-The dark theme is visible only in `/ui-kit` (through its theme switch) until
-step B2. The reason: pages that still use `globals.css` have light-only
-colours, and a dark canvas behind them is unreadable. Step B2 adds the
-`prefers-color-scheme` rule.
+The dark theme follows the operating-system setting through
+`prefers-color-scheme`. `data-theme="light"` or `data-theme="dark"` on `<html>`
+overrides it. The `/ui-kit` theme switch sets that attribute.
 
 ### Colour
 
@@ -207,8 +209,9 @@ Order, top to bottom. The order does not change:
 4. Automations (optional): `Tile`s in a `TileGrid`, with the link "All
    automations".
 5. Key numbers (optional): 2 to 4 `StatTile`s in a `TileGrid`.
-6. Recent activity (optional): a `DataTable` or a `Timeline`, with the link
-   "All runs". At most 5 rows.
+6. Recent activity (optional): a `DataTable`, with the link "All runs". The
+   template puts it in a flush `Panel`. `activity.title` renames the section,
+   such as "Recent statements". At most 5 rows on Today.
 
 Do not add other sections. Put more detail on the List pages of the module.
 
@@ -220,9 +223,13 @@ flush panel.
 
 - The header action is the primary action for the list, such as "Import
   statement". It is never a filter.
-- `filters`: `FilterChips` for one value with up to 6 options, otherwise
+- `filters`: `FilterChips` for one value with up to 8 options, otherwise
   `FilterBar`.
 - Each row opens its Record page through `rowHref`.
+- `attention` (optional): a short second list that needs a person before the
+  main list is useful, in a flush `Panel`, above the filters. Example: the
+  Shoprite items without a mapping, above the mappings.
+- `table` can be `null` when the user has no access. Then the `notice` says why.
 - Bulk actions: none yet. When a page needs them, add row selection to
   `DataTable` and a selection bar to this document first.
 
@@ -241,6 +248,8 @@ side (one column on a phone), then `sections` (a `TabNav`), then `children`.
 - `summary`: a `KeyValueList` of 4 to 8 facts.
 - `activity`: a `Timeline`, newest first, at most 10 entries.
 - `sections`: Details and Raw. Raw (payloads) is for Admin only.
+- `back` is optional only for a record that has no list yet, such as the
+  Shoprite automation policy until step C2.
 
 ### TaskPage
 
@@ -276,6 +285,12 @@ own form, its own server action and its own save button.
 - `result`: after a save, a success `Notice` with the time ("Schedule saved at
   10:52"), or an error `Notice` with the number of errors.
 - Fields follow [Fields](#fields).
+
+### Signed-out pages
+
+`AuthCard` is the only layout for a page without a signed-in user: sign-in and
+"No access yet". It has the product name, a title, one sentence, an optional
+`Notice` and one action. The sidebar does not show on these pages.
 
 ### Page states
 
@@ -459,6 +474,12 @@ Use a dialog for: production actions that reach an outside system (Shoprite
 submission, a bank import), and deletes. Do not use a dialog for a mode change
 (use `ModeSwitch`) or for information (use `Notice`).
 
+### CodeBlock
+
+A read-only payload: generated XML, a raw JSON response. It scrolls inside
+itself, up to 480px high. `language="json"` formats JSON with indents. `empty`
+says why there is no payload. Payloads are for Admins: put them in a Raw tab.
+
 ---
 
 ## Status
@@ -557,6 +578,16 @@ Layout: put the fields in `FormLayout` (one column, `--space-l` between fields,
 Cancel. Validate on the server. When the server returns errors, show an error
 `Notice` above the form with the number of errors, and the error on each field.
 
+### FileDrop
+
+The first step of a Task page that starts from a file. Drop a file on it, or
+press "Choose a file". `onFile` receives the file, and the page checks it at
+once, without a second button. `busy` shows a spinner with `busyLabel` while
+the page reads the file. The hint names the file type and where to get it.
+
+`CheckboxGroup` puts several `CheckboxField`s under one label, for a choice of
+more than one option, such as user roles.
+
 ---
 
 ## Lists
@@ -584,6 +615,8 @@ Rules:
 - The first column identifies the record. If the row has a page, the first
   column is the link.
 - At most 7 columns. Put more detail on the record page.
+- An action column is the last column. It holds one tertiary `ButtonLink` per
+  row, such as "Map item". Use it only when the row has no record page.
 - A status column uses `StatusBadge`.
 - On a phone, the table scrolls sideways inside its panel.
 
@@ -591,7 +624,7 @@ Rules:
 
 Quick filters above a list, one choice at a time. Each chip is a link that sets
 a URL parameter. Show `count` when the API returns it. The first chip is "All".
-For more than 6 values or for combined filters, use `FilterBar`.
+For more than 8 values or for combined filters, use `FilterBar`.
 
 ### FilterBar
 
