@@ -1,5 +1,7 @@
+using System.Data.Common;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Pvm.Application.Exceptions;
 using Pvm.Application.Messaging;
 using Pvm.Application.Shoprite;
@@ -451,6 +453,112 @@ public sealed class ExceptionOperationsServiceTests : IAsyncLifetime
         Assert.Equal("DeadLettered", (await db.IntegrationMessageDeliveries.SingleAsync()).Status);
     }
 
+    [Fact]
+    public async Task Replay_safety_for_many_dead_letters_uses_a_fixed_number_of_queries()
+    {
+        var counter = new CommandCounter();
+        await using var db = CreateDbContext(counter);
+        await db.Database.EnsureCreatedAsync();
+        var service = Service(db);
+        var expected = new Dictionary<Guid, DeadLetterReplaySafety>();
+
+        for (var index = 0; index < 8; index++)
+        {
+            var refresh = await SeedDeadLetterAsync(
+                db,
+                IntegrationQueues.ShopritePurchaseOrderRefresh,
+                IntegrationMessageTypes.ShopritePurchaseOrderRefreshV1,
+                invoiceCandidateId: null);
+            expected[refresh.Id] = await service.EvaluateReplaySafetyAsync(refresh, CancellationToken.None);
+        }
+
+        for (var index = 0; index < 4; index++)
+        {
+            var blocked = await SeedCandidateAsync(db, status: "Ready", suffix: $"{index * 2}");
+            await SeedOperationAsync(db, blocked.Id, index % 2 == 0 ? "Submitted" : "Ambiguous");
+            var blockedDelivery = await SeedDeadLetterAsync(
+                db,
+                IntegrationQueues.ShopriteInvoiceSubmit,
+                IntegrationMessageTypes.ShopriteInvoiceSubmitV1,
+                blocked.Id);
+            expected[blockedDelivery.Id] = await service.EvaluateReplaySafetyAsync(blockedDelivery, CancellationToken.None);
+
+            var open = await SeedCandidateAsync(db, status: "Ready", suffix: $"{index * 2 + 1}");
+            await SeedOperationAsync(db, open.Id, "Rejected");
+            var openDelivery = await SeedDeadLetterAsync(
+                db,
+                IntegrationQueues.ShopriteInvoiceSubmit,
+                IntegrationMessageTypes.ShopriteInvoiceSubmitV1,
+                open.Id);
+            expected[openDelivery.Id] = await service.EvaluateReplaySafetyAsync(openDelivery, CancellationToken.None);
+        }
+
+        var malformed = await SeedDeadLetterAsync(
+            db,
+            IntegrationQueues.ShopritePurchaseOrderRefresh,
+            IntegrationMessageTypes.ShopritePurchaseOrderRefreshV1,
+            invoiceCandidateId: null);
+        malformed.ErrorCode = "invalid-message-data";
+        var orphan = await SeedDeadLetterAsync(
+            db,
+            IntegrationQueues.ShopritePurchaseOrderRefresh,
+            IntegrationMessageTypes.ShopritePurchaseOrderRefreshV1,
+            invoiceCandidateId: null);
+        db.IntegrationOutboxMessages.Remove(
+            await db.IntegrationOutboxMessages.SingleAsync(message => message.Id == Guid.Parse(orphan.MessageId)));
+        await db.SaveChangesAsync();
+        expected[malformed.Id] = await service.EvaluateReplaySafetyAsync(malformed, CancellationToken.None);
+        expected[orphan.Id] = await service.EvaluateReplaySafetyAsync(orphan, CancellationToken.None);
+
+        var deliveries = await db.IntegrationMessageDeliveries.AsNoTracking().ToListAsync();
+        counter.Reset();
+        var actual = await service.EvaluateReplaySafetyAsync(deliveries, CancellationToken.None);
+
+        Assert.InRange(counter.Count, 1, 3);
+        Assert.Equal(expected.Count, actual.Count);
+        foreach (var (deliveryId, safety) in expected)
+        {
+            Assert.Equal(safety, actual[deliveryId]);
+        }
+
+        Assert.Equal(12, actual.Values.Count(safety => safety.Safe));
+        Assert.Equal(4, actual.Values.Count(safety => safety.BlockingState is "Submitted" or "Ambiguous"));
+        Assert.False(actual[malformed.Id].Safe);
+        Assert.False(actual[orphan.Id].Safe);
+    }
+
+    [Fact]
+    public async Task Synchronization_classifies_each_dead_letter_with_the_set_based_assessment()
+    {
+        await using var db = CreateDbContext();
+        await db.Database.EnsureCreatedAsync();
+        var service = Service(db);
+        var candidate = await SeedCandidateAsync(db, status: "Ready");
+        await SeedOperationAsync(db, candidate.Id, "Sending");
+        var blocked = await SeedDeadLetterAsync(
+            db,
+            IntegrationQueues.ShopriteInvoiceSubmit,
+            IntegrationMessageTypes.ShopriteInvoiceSubmitV1,
+            candidate.Id);
+        var safe = await SeedDeadLetterAsync(
+            db,
+            IntegrationQueues.ShopritePurchaseOrderRefresh,
+            IntegrationMessageTypes.ShopritePurchaseOrderRefreshV1,
+            invoiceCandidateId: null);
+
+        await service.SynchronizeAsync(DateTimeOffset.UtcNow, CancellationToken.None);
+
+        var tasks = await db.ExceptionTasks
+            .Where(task => task.Category == ExceptionCategories.DeadLetter)
+            .ToDictionaryAsync(task => task.EntityId);
+        Assert.Equal(2, tasks.Count);
+        Assert.Equal(ExceptionRetryClassifications.ManualResolutionRequired, tasks[blocked.Id.ToString()].RetryClassification);
+        Assert.Equal(ExceptionSeverities.Critical, tasks[blocked.Id.ToString()].Severity);
+        Assert.Contains("may have reached, Shoprite", tasks[blocked.Id.ToString()].LatestEvidence);
+        Assert.Equal(ExceptionRetryClassifications.SafeToReplay, tasks[safe.Id.ToString()].RetryClassification);
+        Assert.Equal(ExceptionSeverities.High, tasks[safe.Id.ToString()].Severity);
+    }
+
     private static ExceptionOperationsService Service(PvmDbContext db)
         => new(db, new ShopriteInvoiceCandidateMatcher(db));
 
@@ -636,11 +744,34 @@ public sealed class ExceptionOperationsServiceTests : IAsyncLifetime
         return delivery;
     }
 
-    private PvmDbContext CreateDbContext()
+    private PvmDbContext CreateDbContext(CommandCounter? counter = null)
     {
-        var options = new DbContextOptionsBuilder<PvmDbContext>()
-            .UseNpgsql(_postgres.GetConnectionString())
-            .Options;
-        return new PvmDbContext(options);
+        var builder = new DbContextOptionsBuilder<PvmDbContext>()
+            .UseNpgsql(_postgres.GetConnectionString());
+        if (counter is not null)
+        {
+            builder.AddInterceptors(counter);
+        }
+
+        return new PvmDbContext(builder.Options);
+    }
+
+    private sealed class CommandCounter : DbCommandInterceptor
+    {
+        private int _count;
+
+        public int Count => Volatile.Read(ref _count);
+
+        public void Reset() => Interlocked.Exchange(ref _count, 0);
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _count);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
     }
 }

@@ -49,6 +49,8 @@ builder.Services.AddPvmAuth(builder.Configuration, builder.Environment);
 builder.Services.AddAcumaticaInvoiceSource(builder.Configuration);
 builder.Services.AddNedbankStatementImport(builder.Configuration);
 builder.Services.AddInvestecBankFeed(builder.Configuration);
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<BankingStatusCache>();
 builder.Services.AddShopritePurchaseOrderClient(builder.Configuration);
 builder.Services.AddScoped<SubmitShopriteInvoiceHandler>();
 builder.Services.AddConfiguredShopriteInvoiceClient(builder.Configuration);

@@ -15,6 +15,7 @@ public sealed class ExceptionOperationsService(
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private const long SynchronizationLockKey = 5788934893304272;
     private static readonly TimeSpan StuckThreshold = TimeSpan.FromMinutes(15);
+    private static readonly string[] BlockingSubmissionStates = ["Sending", "Submitted", "Ambiguous"];
     private static readonly string[] ActiveStatuses =
     [
         ExceptionTaskStatuses.Open,
@@ -559,55 +560,126 @@ public sealed class ExceptionOperationsService(
         IntegrationMessageDeliveryEntity delivery,
         CancellationToken cancellationToken)
     {
-        if (delivery.Status != "DeadLettered")
+        var safety = await EvaluateReplaySafetyAsync([delivery], cancellationToken);
+        return safety[delivery.Id];
+    }
+
+    /// <summary>
+    /// The replay assessment for many dead letters at once, keyed by delivery id. It runs a
+    /// fixed number of queries whatever the number of deliveries: one for the original
+    /// messages, one for the submission payloads, and one for the submission states.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, DeadLetterReplaySafety>> EvaluateReplaySafetyAsync(
+        IReadOnlyCollection<IntegrationMessageDeliveryEntity> deliveries,
+        CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<Guid, DeadLetterReplaySafety>(deliveries.Count);
+        var pending = new List<(IntegrationMessageDeliveryEntity Delivery, Guid MessageId)>(deliveries.Count);
+        foreach (var delivery in deliveries)
         {
-            return new DeadLetterReplaySafety(false, "Only a dead-lettered message can be replayed.", delivery.Status);
+            if (delivery.Status != "DeadLettered")
+            {
+                result[delivery.Id] = new DeadLetterReplaySafety(
+                    false, "Only a dead-lettered message can be replayed.", delivery.Status);
+            }
+            else if (!Guid.TryParse(delivery.MessageId, out var messageId))
+            {
+                result[delivery.Id] = new DeadLetterReplaySafety(false, "The original message identity cannot be read.");
+            }
+            else
+            {
+                pending.Add((delivery, messageId));
+            }
         }
 
-        if (!Guid.TryParse(delivery.MessageId, out var messageId))
+        if (pending.Count == 0)
         {
-            return new DeadLetterReplaySafety(false, "The original message identity cannot be read.");
+            return result;
         }
 
-        var source = await dbContext.IntegrationOutboxMessages
+        var messageIds = pending.Select(item => item.MessageId).Distinct().ToArray();
+        var existing = (await dbContext.IntegrationOutboxMessages
+                .AsNoTracking()
+                .Where(message => messageIds.Contains(message.Id))
+                .Select(message => message.Id)
+                .ToListAsync(cancellationToken))
+            .ToHashSet();
+
+        var submissions = new List<(IntegrationMessageDeliveryEntity Delivery, Guid MessageId)>();
+        foreach (var (delivery, messageId) in pending)
+        {
+            if (!existing.Contains(messageId))
+            {
+                result[delivery.Id] = new DeadLetterReplaySafety(
+                    false, "The original message payload is no longer available.");
+            }
+            else if (delivery.ErrorCode is "invalid-message-envelope" or "invalid-message-data" or "message-contract-mismatch")
+            {
+                result[delivery.Id] = new DeadLetterReplaySafety(
+                    false,
+                    "The message itself is malformed. Replay would fail again.",
+                    delivery.ErrorCode);
+            }
+            else if (delivery.MessageType != IntegrationMessageTypes.ShopriteInvoiceSubmitV1)
+            {
+                result[delivery.Id] = new DeadLetterReplaySafety(
+                    true, "This command is idempotent and carries no external side effect.");
+            }
+            else
+            {
+                submissions.Add((delivery, messageId));
+            }
+        }
+
+        if (submissions.Count == 0)
+        {
+            return result;
+        }
+
+        var submissionMessageIds = submissions.Select(item => item.MessageId).Distinct().ToArray();
+        var payloads = await dbContext.IntegrationOutboxMessages
             .AsNoTracking()
-            .SingleOrDefaultAsync(message => message.Id == messageId, cancellationToken);
-        if (source is null)
+            .Where(message => submissionMessageIds.Contains(message.Id))
+            .Select(message => new { message.Id, message.PayloadJson })
+            .ToDictionaryAsync(message => message.Id, message => message.PayloadJson, cancellationToken);
+        var candidateByMessage = payloads.ToDictionary(pair => pair.Key, pair => ReadSubmitCandidateId(pair.Value));
+
+        var candidateIds = candidateByMessage.Values
+            .Where(candidateId => candidateId is not null)
+            .Select(candidateId => candidateId!.Value)
+            .Distinct()
+            .ToArray();
+        var blockingByCandidate = candidateIds.Length == 0
+            ? new Dictionary<Guid, string>()
+            : (await dbContext.SubmissionOperations
+                    .AsNoTracking()
+                    .Where(operation =>
+                        candidateIds.Contains(operation.InvoiceCandidateId)
+                        && BlockingSubmissionStates.Contains(operation.Status))
+                    .Select(operation => new { operation.InvoiceCandidateId, operation.Status })
+                    .ToListAsync(cancellationToken))
+                .GroupBy(operation => operation.InvoiceCandidateId)
+                .ToDictionary(group => group.Key, group => group.First().Status);
+
+        foreach (var (delivery, messageId) in submissions)
         {
-            return new DeadLetterReplaySafety(false, "The original message payload is no longer available.");
+            var candidateId = candidateByMessage[messageId];
+            if (candidateId is null)
+            {
+                result[delivery.Id] = new DeadLetterReplaySafety(
+                    false, "The submission command does not name an invoice candidate.");
+                continue;
+            }
+
+            result[delivery.Id] = blockingByCandidate.TryGetValue(candidateId.Value, out var blocking)
+                ? new DeadLetterReplaySafety(
+                    false,
+                    "This invoice already has a submission that reached, or may have reached, Shoprite.",
+                    blocking)
+                : new DeadLetterReplaySafety(true, "No submission has reached Shoprite for this invoice.");
         }
 
-        if (delivery.ErrorCode is "invalid-message-envelope" or "invalid-message-data" or "message-contract-mismatch")
-        {
-            return new DeadLetterReplaySafety(
-                false,
-                "The message itself is malformed. Replay would fail again.",
-                delivery.ErrorCode);
-        }
-
-        if (delivery.MessageType != IntegrationMessageTypes.ShopriteInvoiceSubmitV1)
-        {
-            return new DeadLetterReplaySafety(true, "This command is idempotent and carries no external side effect.");
-        }
-
-        var candidateId = ReadSubmitCandidateId(source.PayloadJson);
-        if (candidateId is null)
-        {
-            return new DeadLetterReplaySafety(false, "The submission command does not name an invoice candidate.");
-        }
-
-        var states = await dbContext.SubmissionOperations
-            .AsNoTracking()
-            .Where(operation => operation.InvoiceCandidateId == candidateId)
-            .Select(operation => operation.Status)
-            .ToListAsync(cancellationToken);
-        var blocking = states.FirstOrDefault(state => state is "Sending" or "Submitted" or "Ambiguous");
-        return blocking is null
-            ? new DeadLetterReplaySafety(true, "No submission has reached Shoprite for this invoice.")
-            : new DeadLetterReplaySafety(
-                false,
-                "This invoice already has a submission that reached, or may have reached, Shoprite.",
-                blocking);
+        return result;
     }
 
     public async Task<ExceptionOperationResult> ReplayDeadLetterAsync(
@@ -1056,13 +1128,17 @@ public sealed class ExceptionOperationsService(
     private async Task<IReadOnlyList<DerivedException>> DeadLetterExceptionsAsync(CancellationToken cancellationToken)
     {
         var deliveries = await dbContext.IntegrationMessageDeliveries
+            .AsNoTracking()
             .Where(delivery => delivery.Status == "DeadLettered")
             .ToListAsync(cancellationToken);
 
-        var derived = new List<DerivedException>();
+        // One set-based assessment for every dead letter. Production holds thousands of them,
+        // and a query for each made every synchronization take seconds.
+        var safetyByDelivery = await EvaluateReplaySafetyAsync(deliveries, cancellationToken);
+        var derived = new List<DerivedException>(deliveries.Count);
         foreach (var delivery in deliveries)
         {
-            var safety = await EvaluateReplaySafetyAsync(delivery, cancellationToken);
+            var safety = safetyByDelivery[delivery.Id];
             derived.Add(new DerivedException(
                 DeadLetterKey(delivery.Id),
                 ExceptionCategories.DeadLetter,

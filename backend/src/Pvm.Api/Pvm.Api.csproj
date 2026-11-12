@@ -22,6 +22,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Pvm.Api.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Content Update="Features\Invoices\Fixtures\shoprite-invoice-basic.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
