@@ -7,6 +7,11 @@
   margin-bottom: var(--space-l);
 }
 
+/* On a converted page the template sets the space below the header. */
+:global([data-ds]) .header {
+  margin-bottom: 0;
+}
+
 .text {
   display: flex;
   flex-direction: column;

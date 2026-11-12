@@ -20,11 +20,14 @@ export {
   type FieldWidth,
   type Option,
 } from "./field";
+export { FilterBar } from "./filter-bar";
 export { FilterChips, type FilterChip } from "./filter-chips";
 export { KeyValueList, type KeyValue } from "./key-value-list";
 export { ModeSwitch, type AutomationMode } from "./mode-switch";
 export { Notice, type NoticeTone } from "./notice";
-export { PageHeader } from "./page-header";
+export { PageFrame } from "./page-frame";
+export { PageHeader, type PageHeaderProps } from "./page-header";
+export { PageError, PageLoading } from "./page-state";
 export { Pagination } from "./pagination";
 export { Panel } from "./panel";
 export { Spinner } from "./spinner";
@@ -34,5 +37,15 @@ export { StatusBadge, statusLabel, toneFor, type StatusTone } from "./status-bad
 export { Stepper } from "./stepper";
 export { SubmitButton } from "./submit-button";
 export { TabNav, Tabs, type TabLink, type TabPanel } from "./tabs";
+export {
+  Columns,
+  DashboardPage,
+  DashboardSection,
+  ListPage,
+  RecordPage,
+  SettingsPage,
+  SettingsSection,
+  TaskPage,
+} from "./templates";
 export { Tile } from "./tile";
 export { Timeline, type TimelineEntry } from "./timeline";

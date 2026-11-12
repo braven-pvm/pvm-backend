@@ -1,0 +1,37 @@
+.bar {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-s);
+}
+
+.fields {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-s);
+}
+
+.fields > * {
+  flex: 0 1 auto;
+}
+
+.actions {
+  align-items: center;
+  display: flex;
+  gap: var(--space-s);
+}
+
+.clear {
+  color: var(--color-brand);
+  font-size: var(--text-small);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 600px) {
+  .fields,
+  .fields > * {
+    width: 100%;
+  }
+}

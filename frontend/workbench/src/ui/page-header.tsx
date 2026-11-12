@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import styles from "./page-header.module.css";
 
-type PageHeaderProps = {
+export type PageHeaderProps = {
   /** The module or area the page belongs to, such as "Banking". */
   eyebrow?: string;
   title: string;

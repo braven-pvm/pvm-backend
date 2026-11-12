@@ -1,6 +1,6 @@
 # PVM Backoffice design system
 
-Status: step A1 · Owner: Marius Bloemhof · 2026-11-11
+Status: steps A1 and A2 · Owner: Marius Bloemhof · 2026-11-11
 
 This document is the authority for every visual and interaction decision in the
 workbench (`frontend/workbench`). The live reference is `/ui-kit`, which shows
@@ -22,21 +22,23 @@ Rules that apply to every screen:
 - No literal colour, size or space in a component or page. Use a token.
 - No inline `style` in a page. Use `Stack` for layout. The only inline styles
   are inside `src/ui`, for computed values such as a bar width.
-- A converted page sets `data-ds` on its `<main className="page-shell">`. Old
-  element rules in `globals.css` then do not apply to it.
+- Every page uses one of the five [page templates](#page-templates). The
+  templates render `PageFrame`, which sets `data-ds`, so old element rules in
+  `globals.css` do not apply.
 - No UI framework, CSS framework or component kit. The dependency rule is in
   section 6.1 of the redesign document.
 
 ## Contents
 
 - [Foundations](#foundations): colour, spacing, type, shape, motion, layers, focus.
+- [Page templates](#page-templates): Dashboard, List, Record, Task, Settings, and the page states.
 - [Choose a component](#choose-a-component).
 - Components:
-  - Layout: [Stack](#stack), [Panel](#panel), [PageHeader](#pageheader), [TileGrid](#tilegrid), [AppShell](#appshell).
+  - Layout: [PageFrame](#pageframe), [Columns](#columns), [Stack](#stack), [Panel](#panel), [PageHeader](#pageheader), [TileGrid](#tilegrid), [AppShell](#appshell).
   - Actions: [Button](#button), [ButtonLink](#buttonlink), [SubmitButton](#submitbutton), [ConfirmDialog](#confirmdialog).
   - Status: [StatusBadge](#statusbadge), [Notice](#notice), [Spinner](#spinner), [EmptyState](#emptystate).
   - Forms: [Fields](#fields).
-  - Lists: [DataTable](#datatable), [FilterChips](#filterchips), [Pagination](#pagination).
+  - Lists: [DataTable](#datatable), [FilterChips](#filterchips), [FilterBar](#filterbar), [Pagination](#pagination).
   - Navigation: [TabNav and Tabs](#tabs), [BackLink](#backlink), [Stepper](#stepper).
   - Records: [KeyValueList](#keyvaluelist), [Timeline](#timeline).
   - Dashboards: [AttentionList](#attentionlist), [StatTile](#stattile), [Tile](#tile), [BarList](#barlist).
@@ -169,11 +171,134 @@ for table captions and for the names of icon-only buttons.
 
 ---
 
+## Page templates
+
+Every page is one of five templates. A template fixes the order of the parts
+and the space between them. The page supplies the content. Examples with
+example data are at `/ui-kit/templates` in development.
+
+| Template | Use for | Component | Width |
+| --- | --- | --- | --- |
+| Dashboard | Today and each module overview | `DashboardPage` | Wide, 1280px |
+| List | Records with filters, sorting and pages | `ListPage` | Wide |
+| Record | One invoice, statement, run or automation | `RecordPage` | Wide |
+| Task | A guided job that writes to another system | `TaskPage` | Narrow, 864px |
+| Settings | Forms, saved one section at a time | `SettingsPage` and `SettingsSection` | Narrow |
+
+To choose a template:
+
+- If the page shows many records, use List.
+- If the page shows one record, use Record.
+- If the user changes data in Acumatica, Shoprite, a bank or the web store, use Task.
+- If the user changes how the backoffice behaves, use Settings.
+- If the page summarises a module, use Dashboard.
+
+### DashboardPage
+
+Order, top to bottom. The order does not change:
+
+1. `header`. On Today, the eyebrow is the date. The description counts what
+   needs the user: "3 items need you. Everything else is running."
+2. `notice` (optional): only for a state that blocks work, such as an emergency
+   stop.
+3. Needs attention: `attention.items` in an `AttentionList`. When there are no
+   items, one quiet success line shows `attention.allClear`: "Nothing needs
+   you. Last checked 10:40."
+4. Automations (optional): `Tile`s in a `TileGrid`, with the link "All
+   automations".
+5. Key numbers (optional): 2 to 4 `StatTile`s in a `TileGrid`.
+6. Recent activity (optional): a `DataTable` or a `Timeline`, with the link
+   "All runs". At most 5 rows.
+
+Do not add other sections. Put more detail on the List pages of the module.
+
+### ListPage
+
+Order: `header`, `sections` (a `TabNav` when the list is one section of a
+module), `notice`, `filters`, then `table` and `pagination` together in one
+flush panel.
+
+- The header action is the primary action for the list, such as "Import
+  statement". It is never a filter.
+- `filters`: `FilterChips` for one value with up to 6 options, otherwise
+  `FilterBar`.
+- Each row opens its Record page through `rowHref`.
+- Bulk actions: none yet. When a page needs them, add row selection to
+  `DataTable` and a selection bar to this document first.
+
+### RecordPage
+
+Order: `back` link, `header`, `notice`, then `summary` and `activity` side by
+side (one column on a phone), then `sections` (a `TabNav`), then `children`.
+
+- `header.title` is the identifier: "INV190970". `header.description` is the
+  one-line context: store, date, total.
+- `header.actions`: the `StatusBadge` first, then at most one primary action.
+  The primary action leads to the next step for the record in its current
+  status. For an invoice that needs review, that is "Open in Acumatica", not
+  "Submit invoice".
+- `notice`: why the record needs a person, and what to do.
+- `summary`: a `KeyValueList` of 4 to 8 facts.
+- `activity`: a `Timeline`, newest first, at most 10 entries.
+- `sections`: Details and Raw. Raw (payloads) is for Admin only.
+
+### TaskPage
+
+Order: `back` link, `header`, `Stepper`, then the content of the current step.
+
+Steps:
+
+1. Choose input: a form in one `Panel`, with a `SubmitButton` that checks the
+   input: "Check statement".
+2. Check what will change: a summary `Panel` (`KeyValueList`) and a `Panel`
+   with a `DataTable` that shows each change and what will happen to it. The
+   action names the count: "Import 3 lines". A tertiary link starts again.
+3. Confirm (optional): a `ConfirmDialog` when the change reaches Shoprite, a
+   bank or production data that cannot be undone.
+4. Done: a success `Notice` with `live`, then two links: back to the module
+   (primary) and "do another" (secondary).
+
+Rules:
+
+- Every page that writes to Acumatica, Shoprite, a bank or the web store is a
+  Task page with a "check what will change" step. No write without a preview.
+- Keep the current step in the URL (`?step=`) or in the server response, so a
+  reload does not lose the place of the user.
+- If a step fails, stay on the step and show an error `Notice` above its panel.
+
+### SettingsPage and SettingsSection
+
+A `SettingsPage` holds one `SettingsSection` per topic. Each section has its
+own form, its own server action and its own save button.
+
+- `submitLabel` names the topic: "Save schedule". Never "Save" alone.
+- The save button is secondary, because a page has several of them.
+- `result`: after a save, a success `Notice` with the time ("Schedule saved at
+  10:52"), or an error `Notice` with the number of errors.
+- Fields follow [Fields](#fields).
+
+### Page states
+
+Every route has three states in addition to its content:
+
+| State | File | Component |
+| --- | --- | --- |
+| Loading | `loading.tsx` | `PageLoading` with the page title and a label: "Loading invoices…" |
+| Error | `error.tsx` | `PageError` with the page title, what could not load, and "Try again" |
+| Empty | in the page | `EmptyState` inside the panel where the content goes |
+
+`PageError` says what failed and what to do. It does not show the technical
+error to the user. The server logs it.
+
+---
+
 ## Choose a component
 
 | You need to | Use |
 | --- | --- |
+| Build a page | One of the [page templates](#page-templates) |
 | Lay out siblings with a gap | `Stack` |
+| Put two or three panels side by side | `Columns` |
 | Group content with a title on a surface | `Panel` |
 | Title a page, with its actions | `PageHeader` |
 | Start the main action of the screen | `Button variant="primary"` (one per screen) |
@@ -184,6 +309,7 @@ for table captions and for the names of icon-only buttons.
 | Tell the user about the page, or the result of an action | `Notice` |
 | Show a list of records | `DataTable` in a flush `Panel` |
 | Filter a list by one value | `FilterChips` |
+| Filter a list by several values | `FilterBar` |
 | Page through a long list | `Pagination` |
 | Sections of a module or record, each with a URL | `TabNav` |
 | Two views inside one page, no URL | `Tabs` |
@@ -203,6 +329,21 @@ for table captions and for the names of icon-only buttons.
 ---
 
 ## Layout
+
+### PageFrame
+
+The `<main>` element of a converted page. It sets the width (`wide`, 1280px,
+or `narrow`, 864px), the page padding and `data-ds`. The space between its
+children is `--space-l`. The templates use it. A page uses it directly only
+when the page is not one of the five templates, such as `/ui-kit`.
+
+Inside a `PageFrame`, `PageHeader` has no bottom margin. The template sets the
+space.
+
+### Columns
+
+Two or three panels side by side, each at least 340px wide. On a narrow
+screen, they stack. `RecordPage` uses it for the summary and the activity.
 
 ### Stack
 
@@ -394,6 +535,7 @@ control, so the keyboard and autofill do not cover them.
 | `error` | What is wrong and how to fix it: "Enter a date after 13 Sep 2026" |
 | `required` | Required fields show " *". Fields without `required` show "(optional)" |
 | `width` | `s` (160px), `m` (240px), `l` (400px), `full`. Match the expected input |
+| `showOptional` | `false` hides "(optional)". Use it only in a `FilterBar` |
 
 States: default, hover (darker border), focus (ring and brand border), invalid
 (2px error border, `aria-invalid`, error text linked by `aria-describedby`),
@@ -449,8 +591,28 @@ Rules:
 
 Quick filters above a list, one choice at a time. Each chip is a link that sets
 a URL parameter. Show `count` when the API returns it. The first chip is "All".
-For more than 6 values or for combined filters, use fields in a filter form
-(step A2 adds the `FilterBar` pattern).
+For more than 6 values or for combined filters, use `FilterBar`.
+
+### FilterBar
+
+Filters for a list with more than one value to filter by. It is a GET form, so
+the filters go in the URL and it works without JavaScript.
+
+| Prop | Notes |
+| --- | --- |
+| `action` | The path of the list |
+| `label` | For screen readers: "Filter invoices" |
+| `keep` | URL parameters to keep, such as the tab or the sort |
+| `activeCount` | The number of filters in use. With 1 or more, "Clear filters (n)" shows |
+| `children` | Fields, each with `showOptional={false}` |
+
+Fields in a filter bar:
+
+- A search `TextField` with `type="search"`. The label names what it searches: "Invoice or store".
+- A `SelectField` with a placeholder such as "All stores".
+- Date `TextField`s.
+
+Use at most 4 fields. The button is "Apply filters".
 
 ### Pagination
 
@@ -579,10 +741,7 @@ The sentence for the current mode shows under the switch at all times.
 | A result after an action | A `Notice` with `live` at the top of the area the user acted on |
 | Toasts | Not used. Refer to `Notice` |
 | A destructive action | Tertiary trigger, `ConfirmDialog` with `tone="danger"` |
-| Loading a page | Next.js `loading.tsx` with a `Spinner` and a label |
-| A failed page load | An error `Notice` that says what failed and offers "Try again" |
+| Loading a page | `loading.tsx` with `PageLoading`. Refer to [Page states](#page-states) |
+| A failed page load | `error.tsx` with `PageError` |
 | Production safety | The red environment band, plus a `ConfirmDialog` for actions that reach Shoprite, a bank or Acumatica |
 | Icons | `lucide-react`, 16px in buttons, 18px in navigation and notices, always with a word |
-
-Step A2 adds the page templates (Dashboard, List, Record, Task, Settings) and
-the `FilterBar` pattern to this document.

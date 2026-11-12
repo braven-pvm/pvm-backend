@@ -1,6 +1,6 @@
 # PVM Backoffice — UI redesign
 
-Status: approved direction, step A (design system) in progress · Owner: Marius Bloemhof · 2026-11-11
+Status: approved direction, steps A1 and A2 (design system) done, step B next · Owner: Marius Bloemhof · 2026-11-11
 
 The workbench started as an admin console for one integration (Shoprite invoice
 submission). It is becoming the operating surface for PVM's back office:
@@ -156,7 +156,8 @@ backend task for the same step.
 
 ## 5. Page templates
 
-Five templates. Every screen is one of these.
+Five templates. Every screen is one of these. The components, the rules and
+the examples are in [`design-system.md`](design-system.md#page-templates).
 
 **Dashboard** — page header, then in this order: needs attention (a list, most
 severe first), automation status (tiles), key numbers, recent activity.
