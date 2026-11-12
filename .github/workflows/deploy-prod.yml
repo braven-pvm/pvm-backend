@@ -98,6 +98,9 @@ jobs:
           investec_client_id="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name investec--clientid --query value -o tsv 2>/dev/null || true)"
           investec_client_secret="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name investec--clientsecret --query value -o tsv 2>/dev/null || true)"
           investec_api_key="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name investec--apikey --query value -o tsv 2>/dev/null || true)"
+          woocommerce_base_url="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name woocommerce--baseurl --query value -o tsv 2>/dev/null || true)"
+          woocommerce_consumer_key="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name woocommerce--consumerkey --query value -o tsv 2>/dev/null || true)"
+          woocommerce_consumer_secret="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name woocommerce--consumersecret --query value -o tsv 2>/dev/null || true)"
 
           if [ -z "$postgres_password" ]; then
             echo "Key Vault secret postgres--adminpassword is missing." >&2
@@ -140,6 +143,8 @@ jobs:
           if [ -n "$investec_client_id" ]; then echo "::add-mask::$investec_client_id"; fi
           if [ -n "$investec_client_secret" ]; then echo "::add-mask::$investec_client_secret"; fi
           if [ -n "$investec_api_key" ]; then echo "::add-mask::$investec_api_key"; fi
+          if [ -n "$woocommerce_consumer_key" ]; then echo "::add-mask::$woocommerce_consumer_key"; fi
+          if [ -n "$woocommerce_consumer_secret" ]; then echo "::add-mask::$woocommerce_consumer_secret"; fi
 
           {
             echo "image_tag=$image_tag"
@@ -185,6 +190,15 @@ jobs:
             echo "EOF"
             echo "investec_api_key<<EOF"
             echo "$investec_api_key"
+            echo "EOF"
+            echo "woocommerce_base_url<<EOF"
+            echo "$woocommerce_base_url"
+            echo "EOF"
+            echo "woocommerce_consumer_key<<EOF"
+            echo "$woocommerce_consumer_key"
+            echo "EOF"
+            echo "woocommerce_consumer_secret<<EOF"
+            echo "$woocommerce_consumer_secret"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -259,6 +273,9 @@ jobs:
             --parameters investecClientId='${{ steps.values.outputs.investec_client_id }}' \
             --parameters investecClientSecret='${{ steps.values.outputs.investec_client_secret }}' \
             --parameters investecApiKey='${{ steps.values.outputs.investec_api_key }}' \
+            --parameters woocommerceBaseUrl='${{ steps.values.outputs.woocommerce_base_url }}' \
+            --parameters woocommerceConsumerKey='${{ steps.values.outputs.woocommerce_consumer_key }}' \
+            --parameters woocommerceConsumerSecret='${{ steps.values.outputs.woocommerce_consumer_secret }}' \
             --parameters containerAppMinReplicas=1 \
             --only-show-errors
 

@@ -9,6 +9,7 @@ using Pvm.Infrastructure.Operations;
 using Pvm.Infrastructure.PayloadArchive;
 using Pvm.Infrastructure.Investec;
 using Pvm.Infrastructure.Persistence;
+using Pvm.Infrastructure.Stock;
 using Pvm.Infrastructure.Shoprite;
 using Pvm.Worker;
 
@@ -25,6 +26,9 @@ var enqueueAcumaticaLookback = args.Contains(
     StringComparer.OrdinalIgnoreCase);
 var refreshInvestecFeed = args.Contains(
     "--refresh-investec-bank-feed",
+    StringComparer.OrdinalIgnoreCase);
+var syncWooCommerceStock = args.Contains(
+    "--sync-woocommerce-stock",
     StringComparer.OrdinalIgnoreCase);
 
 if (enqueueShopriteRefresh || enqueueAcumaticaReconciliation || enqueueAcumaticaLookback)
@@ -91,6 +95,55 @@ if (enqueueShopriteRefresh || enqueueAcumaticaReconciliation || enqueueAcumatica
             IntegrationRunTypes.AcumaticaInvoiceReconciliation,
             queued,
             scheduleKey);
+    }
+
+    return;
+}
+
+if (syncWooCommerceStock)
+{
+    // The stock sync runs inline, like the Investec feed: one short pass, no queue or consumer.
+    builder.Services.AddAcumaticaInvoiceSource(builder.Configuration);
+    builder.Services.AddStockSync(builder.Configuration);
+
+    using var stockHost = builder.Build();
+    await using var stockScope = stockHost.Services.CreateAsyncScope();
+    var stockLogger = stockScope.ServiceProvider
+        .GetRequiredService<ILoggerFactory>()
+        .CreateLogger("WooCommerceStockSync");
+    var stockSync = stockScope.ServiceProvider.GetRequiredService<StockSyncService>();
+    var stockRecorder = stockScope.ServiceProvider.GetRequiredService<StockSyncRunRecorder>();
+    var stockMode = stockScope.ServiceProvider.GetRequiredService<IOptions<StockSyncOptions>>().Value.Mode;
+    var stockStarted = DateTimeOffset.UtcNow;
+
+    try
+    {
+        var result = await stockSync.RunAsync(CancellationToken.None);
+        await stockRecorder.RecordAsync(result, stockStarted, CancellationToken.None);
+        stockLogger.LogInformation(
+            "integration.run.completed RunType=woocommerce-stock-sync Mode={Mode} Items={Items} Updates={Updates} Unchanged={Unchanged} Skipped={Skipped} Written={Written} Refusal={Refusal}",
+            result.Mode,
+            result.Lines.Count,
+            result.Updates,
+            result.Unchanged,
+            result.Skipped,
+            result.Written,
+            result.Refusal ?? string.Empty);
+    }
+    catch (Exception exception)
+    {
+        // Rethrow so that the Container Apps job reports a failed replica.
+        stockLogger.LogError(exception, "integration.run.failed RunType=woocommerce-stock-sync");
+        try
+        {
+            await stockRecorder.RecordFailureAsync(stockMode, stockStarted, exception, CancellationToken.None);
+        }
+        catch (Exception recordException)
+        {
+            stockLogger.LogError(recordException, "stock.sync.record.failed");
+        }
+
+        throw;
     }
 
     return;

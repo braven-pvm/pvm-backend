@@ -52,6 +52,8 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<ExceptionTaskCommentEntity> ExceptionTaskComments => Set<ExceptionTaskCommentEntity>();
 
+    public DbSet<StockSyncRunEntity> StockSyncRuns => Set<StockSyncRunEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<InvoiceCandidateEntity>(entity =>
@@ -413,6 +415,17 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(delivery => delivery.ErrorCode).HasMaxLength(128);
             entity.Property(delivery => delivery.ErrorSummary).HasMaxLength(1024);
             entity.Property(delivery => delivery.DeadLetterReason).HasMaxLength(128);
+        });
+
+        modelBuilder.Entity<StockSyncRunEntity>(entity =>
+        {
+            entity.ToTable("stock_sync_runs");
+            entity.HasKey(run => run.Id);
+            entity.HasIndex(run => run.CompletedAt);
+            entity.Property(run => run.Mode).HasMaxLength(16);
+            entity.Property(run => run.Status).HasMaxLength(16);
+            entity.Property(run => run.Detail).HasMaxLength(2000);
+            entity.Property(run => run.LinesJson).HasColumnType("jsonb");
         });
 
         modelBuilder.Entity<IntegrationRunEntity>(entity =>

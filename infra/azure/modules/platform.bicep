@@ -92,6 +92,28 @@ param investecFeedStartDate string = ''
 @description('Cron expression for the Investec feed. The default is 03:00 UTC, which is 05:00 in South Africa.')
 param investecFeedCron string = '0 3 * * *'
 
+@description('WooCommerce store root for the stock sync, for example https://www.pvm.co.za.')
+param woocommerceBaseUrl string = ''
+
+@description('WooCommerce REST API consumer key for the stock sync.')
+@secure()
+param woocommerceConsumerKey string = ''
+
+@description('WooCommerce REST API consumer secret for the stock sync.')
+@secure()
+param woocommerceConsumerSecret string = ''
+
+@description('Disabled, Shadow (read and log, write nothing) or Write. Write sets stock in the live web store.')
+@allowed([
+  'Disabled'
+  'Shadow'
+  'Write'
+])
+param stockSyncMode string = 'Shadow'
+
+@description('Cron expression for the stock sync, in UTC.')
+param stockSyncCron string = '*/30 * * * *'
+
 param acumaticaEndpointName string = 'Default'
 param acumaticaEndpointVersion string = '24.200.001'
 param acumaticaCustomerAccounts array = []
@@ -121,6 +143,7 @@ var purchaseOrderRefreshJobName = 'job-pvm-po-refresh-${suffix}'
 var acumaticaInvoiceReconciliationJobName = 'job-pvm-invoice-reconcile-${suffix}'
 var acumaticaInvoiceLookbackJobName = 'job-pvm-invoice-lookback-${suffix}'
 var investecBankFeedJobName = 'job-pvm-investec-feed-${suffix}'
+var stockSyncJobName = 'job-pvm-stock-sync-${suffix}'
 var logName = 'log-pvm-integrations-${suffix}'
 var appInsightsName = 'appi-pvm-integrations-${suffix}'
 var containerAppsEnvironmentName = 'cae-pvm-integrations-${suffix}'
@@ -136,6 +159,35 @@ var postgresAdminUser = 'pvmadmin'
 var databaseName = 'pvm'
 var pvmConnectionString = 'Host=${postgres.properties.fullyQualifiedDomainName};Port=5432;Database=${databaseName};Username=${postgresAdminUser};Password=${postgresAdminPassword};Ssl Mode=Require;Trust Server Certificate=true'
 var hasAcumaticaCredentials = !empty(acumaticaUsername) && !empty(acumaticaPassword)
+var hasWooCommerceCredentials = !empty(woocommerceBaseUrl) && !empty(woocommerceConsumerKey) && !empty(woocommerceConsumerSecret)
+var woocommerceCredentialSecrets = hasWooCommerceCredentials ? [
+  {
+    name: 'woocommerce-consumerkey'
+    value: woocommerceConsumerKey
+  }
+  {
+    name: 'woocommerce-consumersecret'
+    value: woocommerceConsumerSecret
+  }
+] : []
+var woocommerceEnvironment = hasWooCommerceCredentials ? [
+  {
+    name: 'WooCommerce__BaseUrl'
+    value: woocommerceBaseUrl
+  }
+  {
+    name: 'WooCommerce__ConsumerKey'
+    secretRef: 'woocommerce-consumerkey'
+  }
+  {
+    name: 'WooCommerce__ConsumerSecret'
+    secretRef: 'woocommerce-consumersecret'
+  }
+  {
+    name: 'StockSync__Mode'
+    value: stockSyncMode
+  }
+] : []
 var hasInvestecCredentials = !empty(investecClientId) && !empty(investecClientSecret) && !empty(investecApiKey)
 var investecCredentialSecrets = hasInvestecCredentials ? [
   {
@@ -178,7 +230,7 @@ var commonRuntimeSecrets = concat([
     name: 'shoprite-contractid'
     value: shopriteContractId
   }
-], acumaticaCredentialSecrets, investecCredentialSecrets)
+], acumaticaCredentialSecrets, investecCredentialSecrets, woocommerceCredentialSecrets)
 var hasAcumaticaWebhookSecret = !empty(acumaticaWebhookSecret)
 var apiSecrets = concat(commonRuntimeSecrets, hasAcumaticaWebhookSecret ? [
   {
@@ -399,7 +451,7 @@ var apiEnvironment = concat([
     name: 'AcumaticaReconciliation__StaleAfterMinutes'
     value: string(acumaticaReconciliationStaleAfterMinutes)
   }
-], acumaticaCredentialEnvironment, acumaticaCustomerEnvironment, acumaticaParentCustomerEnvironment, investecEnvironment)
+], acumaticaCredentialEnvironment, acumaticaCustomerEnvironment, acumaticaParentCustomerEnvironment, investecEnvironment, woocommerceEnvironment)
 var apiRuntimeEnvironment = concat(apiEnvironment, [
   {
     name: 'AcumaticaPushNotifications__EnvironmentName'
@@ -1190,6 +1242,59 @@ resource investecBankFeedJob 'Microsoft.App/jobs@2025-01-01' = if (hasInvestecCr
   ]
 }
 
+// The stock sync reads Acumatica and sets stock in the web store every half hour. It deploys only
+// when both sets of credentials exist. stockSyncMode decides whether it writes; Shadow writes nothing.
+resource stockSyncJob 'Microsoft.App/jobs@2025-01-01' = if (hasWooCommerceCredentials && hasAcumaticaCredentials) {
+  name: stockSyncJobName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identity.id}': {}
+    }
+  }
+  properties: {
+    environmentId: containerAppsEnvironment.id
+    configuration: {
+      triggerType: 'Schedule'
+      replicaTimeout: 900
+      replicaRetryLimit: 0
+      scheduleTriggerConfig: {
+        cronExpression: stockSyncCron
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      registries: [
+        {
+          server: acr.properties.loginServer
+          identity: identity.id
+        }
+      ]
+      secrets: commonRuntimeSecrets
+    }
+    template: {
+      containers: [
+        {
+          name: stockSyncJobName
+          image: '${acr.properties.loginServer}/pvm-worker:${workerImageTag}'
+          args: [
+            '--sync-woocommerce-stock'
+          ]
+          env: workerEnvironment
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    identityAcrPullRole
+  ]
+}
+
 resource operationsActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   name: 'ag-pvm-integrations-${suffix}'
   location: 'global'
@@ -1347,3 +1452,4 @@ output purchaseOrderRefreshJobName string = shopritePoRefreshEnabled ? purchaseO
 output invoiceReconciliationJobName string = acumaticaInvoiceReconciliationJobName
 output invoiceLookbackJobName string = acumaticaInvoiceLookbackJobName
 output investecBankFeedJobName string = investecBankFeedJobName
+output stockSyncJobName string = stockSyncJobName
