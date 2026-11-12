@@ -14,8 +14,23 @@ public static class ExceptionEndpoints
         read.MapGet("/{id:guid}", GetAsync);
         read.MapPost("/refresh", RefreshAsync);
 
+        // An admin action can change what the synchronization derives (a hold, a replay, a
+        // resolved dead letter). The next read of the queue must synchronize again.
         var admin = app.MapGroup("/api/exceptions")
-            .RequireAuthorization("Admin");
+            .RequireAuthorization("Admin")
+            .AddEndpointFilter(async (context, next) =>
+            {
+                try
+                {
+                    return await next(context);
+                }
+                finally
+                {
+                    context.HttpContext.RequestServices
+                        .GetRequiredService<ExceptionSynchronizationThrottle>()
+                        .Expire();
+                }
+            });
         admin.MapPost("/{id:guid}/assign", AssignAsync);
         admin.MapPost("/{id:guid}/comments", CommentAsync);
         admin.MapPost("/{id:guid}/status", SetStatusAsync);
@@ -30,12 +45,18 @@ public static class ExceptionEndpoints
 
     private static async Task<IResult> ListAsync(
         ExceptionOperationsService service,
+        ExceptionSynchronizationThrottle throttle,
         CancellationToken cancellationToken,
         string? status = null,
         string? category = null)
     {
+        // The full synchronization runs at most once a minute for each API replica. The
+        // refresh action below still runs it on demand.
         var now = DateTimeOffset.UtcNow;
-        await service.SynchronizeAsync(now, cancellationToken);
+        await throttle.RunIfDueAsync(
+            now,
+            token => service.SynchronizeAsync(now, token),
+            cancellationToken);
         var listing = await service.ListAsync(status, category, now, cancellationToken);
         return Results.Ok(listing);
     }
@@ -53,10 +74,12 @@ public static class ExceptionEndpoints
 
     private static async Task<IResult> RefreshAsync(
         ExceptionOperationsService service,
+        ExceptionSynchronizationThrottle throttle,
         CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
         var derived = await service.SynchronizeAsync(now, cancellationToken);
+        throttle.MarkSynchronized(now);
         var listing = await service.ListAsync(null, null, now, cancellationToken);
         return Results.Ok(new { derived, listing.Summary });
     }

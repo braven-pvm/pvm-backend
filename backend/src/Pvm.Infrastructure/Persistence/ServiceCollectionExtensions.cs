@@ -44,6 +44,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ShopritePurchaseOrderFreshnessService>();
         services.AddScoped<AutomationPolicyService>();
         services.AddScoped<ExceptionOperationsService>();
+        services.AddSingleton(new ExceptionSynchronizationThrottle(ExceptionSynchronizationThrottle.DefaultInterval));
         services.AddScoped<IAutomationSubmissionGate>(provider => provider.GetRequiredService<AutomationPolicyService>());
         return services;
     }

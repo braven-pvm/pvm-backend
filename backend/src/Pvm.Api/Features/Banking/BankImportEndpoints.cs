@@ -23,6 +23,12 @@ public static class BankImportEndpoints
 {
     private const int RecentStatementCount = 5;
 
+    /// <summary>
+    /// Each account read signs in to Acumatica with its own API session. The cap keeps the
+    /// number of sessions open at once well under the Acumatica API login limit of the user.
+    /// </summary>
+    internal const int MaxConcurrentAccountReads = 3;
+
     public static IEndpointRouteBuilder MapBankImportEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/banking");
@@ -48,25 +54,55 @@ public static class BankImportEndpoints
         IAcumaticaBankStatementClient acumaticaClient,
         IOptions<NedbankOptions> nedbankOptions,
         IOptions<InvestecOptions> investecOptions,
+        BankingStatusCache statusCache,
+        CancellationToken cancellationToken)
+    {
+        var status = await statusCache.GetOrReadAsync(
+            token => ReadStatusAsync(acumaticaClient, nedbankOptions.Value, investecOptions.Value, token),
+            cancellationToken);
+        return Results.Ok(status);
+    }
+
+    /// <summary>
+    /// Reads every cash account from Acumatica at the same time. Each read is a live Acumatica
+    /// call of a second or more, so one after the other made the page wait for their sum.
+    /// Each account reports its own failure; one failed read does not fail the others.
+    /// </summary>
+    internal static async Task<BankingStatusRead> ReadStatusAsync(
+        IAcumaticaBankStatementClient acumaticaClient,
+        NedbankOptions nedbankOptions,
+        InvestecOptions investecOptions,
         CancellationToken cancellationToken)
     {
         // One row per configured Nedbank account, ordered so the list does not shuffle.
-        var accounts = new List<BankAccountStatus>();
-        foreach (var cashAccount in nedbankOptions.Value.Accounts.Values
-                     .Distinct(StringComparer.OrdinalIgnoreCase)
-                     .OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
+        // Task.WhenAll keeps that order whatever order the reads finish in.
+        var accounts = nedbankOptions.Accounts.Values
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .Select(cashAccount => (Bank: "Nedbank", CashAccount: (string?)cashAccount, Mode: "Upload"))
+            .Append((Bank: "Investec", CashAccount: investecOptions.CashAccount, Mode: "Automatic"))
+            .ToList();
+
+        using var throttle = new SemaphoreSlim(MaxConcurrentAccountReads);
+        var results = await Task.WhenAll(accounts.Select(async account =>
         {
-            accounts.Add(await ReadAccountAsync(
-                acumaticaClient, "Nedbank", cashAccount, "Upload", cancellationToken));
-        }
-
-        accounts.Add(await ReadAccountAsync(
-            acumaticaClient, "Investec", investecOptions.Value.CashAccount, "Automatic", cancellationToken));
-
-        return Results.Ok(new BankingStatusResponse(accounts));
+            await throttle.WaitAsync(cancellationToken);
+            try
+            {
+                return await ReadAccountAsync(
+                    acumaticaClient, account.Bank, account.CashAccount, account.Mode, cancellationToken);
+            }
+            finally
+            {
+                throttle.Release();
+            }
+        }));
+        return new BankingStatusRead(
+            new BankingStatusResponse(results.Select(result => result.Status).ToList()),
+            results.All(result => !result.ReadFailed));
     }
 
-    private static async Task<BankAccountStatus> ReadAccountAsync(
+    private static async Task<(BankAccountStatus Status, bool ReadFailed)> ReadAccountAsync(
         IAcumaticaBankStatementClient acumaticaClient,
         string bank,
         string? cashAccount,
@@ -75,7 +111,7 @@ public static class BankImportEndpoints
     {
         if (string.IsNullOrWhiteSpace(cashAccount))
         {
-            return new BankAccountStatus(bank, string.Empty, mode, false, null, null, []);
+            return (new BankAccountStatus(bank, string.Empty, mode, false, null, null, []), false);
         }
 
         try
@@ -84,24 +120,24 @@ public static class BankImportEndpoints
                 cashAccount, RecentStatementCount, cancellationToken);
             var latest = recent.Count == 0 ? null : recent[0];
 
-            return new BankAccountStatus(
+            return (new BankAccountStatus(
                 bank,
                 cashAccount,
                 mode,
                 true,
                 latest?.EndBalanceDate,
                 latest?.EndingBalance,
-                recent);
+                recent), false);
         }
         catch (InvalidOperationException)
         {
             // Acumatica is unreachable or misconfigured. The page still renders, and says so,
             // rather than failing whole. The import path reports the real error if it is tried.
-            return new BankAccountStatus(bank, cashAccount, mode, false, null, null, []);
+            return (new BankAccountStatus(bank, cashAccount, mode, false, null, null, []), true);
         }
         catch (HttpRequestException)
         {
-            return new BankAccountStatus(bank, cashAccount, mode, false, null, null, []);
+            return (new BankAccountStatus(bank, cashAccount, mode, false, null, null, []), true);
         }
     }
 
@@ -114,15 +150,17 @@ public static class BankImportEndpoints
             async ofx => Results.Ok(await importer.PreviewAsync(ofx, cancellationToken)),
             cancellationToken);
 
-    private static async Task<IResult> ImportNedbankAsync(
+    internal static async Task<IResult> ImportNedbankAsync(
         IFormFile file,
         NedbankStatementImportService importer,
+        BankingStatusCache statusCache,
         CancellationToken cancellationToken)
         => await ReadAndRunAsync(
             file,
             async ofx =>
             {
                 var result = await importer.ImportAsync(ofx, cancellationToken);
+                statusCache.Invalidate();
                 return Results.Ok(new NedbankImportResponse(
                     file.FileName,
                     result.LinesImported,
@@ -176,6 +214,7 @@ public static class BankImportEndpoints
         DateOnly? fromDate,
         DateOnly? toDate,
         InvestecBankFeedRefreshService refreshService,
+        BankingStatusCache statusCache,
         CancellationToken cancellationToken)
     {
         var to = toDate ?? DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime);
@@ -188,6 +227,7 @@ public static class BankImportEndpoints
         try
         {
             var result = await refreshService.RefreshAsync(from, to, cancellationToken);
+            statusCache.Invalidate();
             return Results.Ok(result);
         }
         catch (InvalidOperationException exception)
