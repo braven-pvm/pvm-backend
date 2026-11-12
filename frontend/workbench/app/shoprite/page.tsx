@@ -48,7 +48,7 @@ export default async function ShopriteOverviewPage() {
       status: "Blocked",
       title: "Every Shoprite submission is blocked",
       detail: "Submissions by hand and by the automation are refused until an Admin clears the stop.",
-      action: <ButtonLink href="/automation">Open automation</ButtonLink>,
+      action: <ButtonLink href="/automations/shoprite-submission">Open automation</ButtonLink>,
     });
   }
   if (needsReview > 0) {
@@ -88,7 +88,7 @@ export default async function ShopriteOverviewPage() {
               title="Shoprite submission"
               status={<StatusBadge status={policy.emergencyStop ? "Blocked" : policy.mode} />}
               meta={`Policy v${policy.version} · ${policyView.decisionSummary.wouldSubmit} would send`}
-              href="/automation"
+              href="/automations/shoprite-submission"
             />
           </TileGrid>
         ),

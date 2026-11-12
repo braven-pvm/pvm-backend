@@ -130,6 +130,13 @@ export async function enqueueIntegrationCommandAction(formData: FormData) {
 
   await enqueueIntegrationCommand(command);
   revalidatePath("/admin/messages");
+
+  // Run now on an automation page returns there. Only automation paths are accepted.
+  const returnTo = formData.get("returnTo");
+  if (typeof returnTo === "string" && /^\/automations\/[\w-]+$/.test(returnTo)) {
+    revalidatePath(returnTo);
+    redirect(`${returnTo}?queued=1`);
+  }
   redirect("/admin/messages");
 }
 
@@ -161,10 +168,10 @@ export async function changeAutomationPolicyAction(formData: FormData) {
   }
 
   revalidatePath("/");
-  revalidatePath("/automation");
+  revalidatePath("/automations/shoprite-submission");
   redirect(errorMessage
-    ? `/automation?policyError=${encodeURIComponent(errorMessage)}`
-    : "/automation?policyStatus=Automation%20policy%20saved%20and%20candidates%20evaluated.");
+    ? `/automations/shoprite-submission?policyError=${encodeURIComponent(errorMessage)}`
+    : "/automations/shoprite-submission?policyStatus=Automation%20policy%20saved%20and%20candidates%20evaluated.");
 }
 
 export async function setAutomationEmergencyStopAction(formData: FormData) {
@@ -180,10 +187,10 @@ export async function setAutomationEmergencyStopAction(formData: FormData) {
   }
 
   revalidatePath("/");
-  revalidatePath("/automation");
+  revalidatePath("/automations/shoprite-submission");
   redirect(errorMessage
-    ? `/automation?policyError=${encodeURIComponent(errorMessage)}`
-    : "/automation?policyStatus=Emergency%20control%20updated.");
+    ? `/automations/shoprite-submission?policyError=${encodeURIComponent(errorMessage)}`
+    : "/automations/shoprite-submission?policyStatus=Emergency%20control%20updated.");
 }
 
 async function runExceptionAction(action: () => Promise<void>, formData?: FormData) {

@@ -1,9 +1,11 @@
 import type { IntegrationRun } from "../src/api/client";
+import { automations, runsFor } from "../src/automations";
 import { formatDateTime } from "../src/formatters.mjs";
 import { StatusBadge, statusLabel, type Column } from "../src/ui";
 
-/** "AcumaticaInvoiceDiscovery" -> "Acumatica invoice discovery". */
-export const runName = (run: Pick<IntegrationRun, "runType">) => statusLabel(run.runType);
+/** The automation's name for a run, or the run type in words when no automation owns it. */
+export const runName = (run: IntegrationRun) =>
+  automations.find((automation) => runsFor(automation, [run]).length > 0)?.name ?? statusLabel(run.runType);
 
 export function runResult(run: IntegrationRun) {
   if (run.errorSummary) {

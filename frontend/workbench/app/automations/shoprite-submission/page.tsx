@@ -1,7 +1,7 @@
-import { changeAutomationPolicyAction, setAutomationEmergencyStopAction } from "../actions";
-import { getAutomationPolicy, type AutomationMode, type AutomationPolicyView } from "../../src/api/client";
-import { hasAnyRole, requireWorkbenchUser } from "../../src/auth/session";
-import { formatDateTime } from "../../src/formatters.mjs";
+import { changeAutomationPolicyAction, setAutomationEmergencyStopAction } from "../../actions";
+import { getAutomationPolicy, type AutomationMode, type AutomationPolicyView } from "../../../src/api/client";
+import { hasAnyRole, requireWorkbenchUser } from "../../../src/auth/session";
+import { formatDateTime } from "../../../src/formatters.mjs";
 import {
   CheckboxField,
   ConfirmDialog,
@@ -22,7 +22,7 @@ import {
   TileGrid,
   Timeline,
   type Column,
-} from "../../src/ui";
+} from "../../../src/ui";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Shoprite submission automation" };
@@ -49,7 +49,7 @@ const decisionColumns: Column<Decision>[] = [
 ];
 
 export default async function AutomationPage({ searchParams }: AutomationPageProps) {
-  const user = await requireWorkbenchUser("/automation");
+  const user = await requireWorkbenchUser("/automations/shoprite-submission");
   const isAdmin = hasAnyRole(user, ["Admin"]);
   const params = await searchParams;
   const view = await getAutomationPolicy();
@@ -58,6 +58,7 @@ export default async function AutomationPage({ searchParams }: AutomationPagePro
 
   return (
     <RecordPage
+      back={{ href: "/automations", label: "Automations" }}
       header={{
         eyebrow: "Shoprite · automation",
         title: "Shoprite submission",

@@ -80,7 +80,7 @@ export default async function HomePage() {
       }}
       notice={
         view.automationEmergencyStop ? (
-          <Notice tone="error" title="Emergency stop: every Shoprite submission is blocked" action={<ButtonLink href="/automation">Open automation</ButtonLink>}>
+          <Notice tone="error" title="Emergency stop: every Shoprite submission is blocked" action={<ButtonLink href="/automations/shoprite-submission">Open automation</ButtonLink>}>
             Submissions by hand and by the automation are refused. Reading and checking invoices continues.
           </Notice>
         ) : null
@@ -91,14 +91,14 @@ export default async function HomePage() {
         link: { href: "/exceptions", label: "All exceptions" },
       }}
       automations={{
-        link: { href: "/automation", label: "Shoprite automation" },
+        link: { href: "/automations/shoprite-submission", label: "Shoprite automation" },
         content: (
           <TileGrid min={220}>
             <Tile
               title="Shoprite submission"
               status={<StatusBadge status={view.automationEmergencyStop ? "Blocked" : view.automationMode} />}
               meta={`Policy v${view.automationPolicyVersion}`}
-              href="/automation"
+              href="/automations/shoprite-submission"
             />
             <Tile
               title="Invoice reading"

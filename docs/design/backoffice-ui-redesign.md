@@ -150,7 +150,11 @@ Health is derived, not stored: **Late** when the expected run time has passed
 by more than one interval without a run; **Failing** when the last run failed.
 
 Step C2 (Automations) starts with a frontend registry over the existing
-endpoints. The durable version needs a small backend registry
+endpoints: `frontend/workbench/src/automations.ts`. It holds each
+automation's schedule and fixed mode, and works out health from the runs
+(`GET /api/integration-runs`), the Shoprite policy and the banking status. The
+Investec feed records its runs only in the logs, so its health comes from the
+last imported day. The durable version needs a small backend registry
 (`GET /api/automations`) so schedules and modes live in one place; that is a
 backend task for the same step.
 
