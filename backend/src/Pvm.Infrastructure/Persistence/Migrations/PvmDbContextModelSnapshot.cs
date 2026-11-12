@@ -963,6 +963,227 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                     b.ToTable("payload_archives", (string)null);
                 });
 
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ReportingCustomerClassChannelEntity", b =>
+                {
+                    b.Property<string>("CustomerClassId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.HasKey("CustomerClassId");
+
+                    b.ToTable("customer_class_channels", "reporting");
+                });
+
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ReportingCustomerEntity", b =>
+                {
+                    b.Property<string>("CustomerId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("CustomerClassId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("CustomerClassName")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("Province")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("CustomerId");
+
+                    b.HasIndex("CustomerClassId");
+
+                    b.ToTable("customers", "reporting");
+                });
+
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ReportingProductEntity", b =>
+                {
+                    b.Property<string>("InventoryId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("ItemClassId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ItemClassName")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("InventoryId");
+
+                    b.ToTable("products", "reporting");
+                });
+
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ReportingSalesRepEntity", b =>
+                {
+                    b.Property<string>("SalesRepId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("SalesRepId");
+
+                    b.ToTable("sales_reps", "reporting");
+                });
+
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ReportingWarehouseLocationEntity", b =>
+                {
+                    b.Property<string>("WarehouseId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("LocationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("LocationName")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("WarehouseName")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("WarehouseId", "LocationId");
+
+                    b.ToTable("warehouse_locations", "reporting");
+                });
+
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.SellInLineEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("AcumaticaLastModifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<decimal>("BaseQuantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("CustomerId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateOnly>("DocumentDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<int>("FinancialMonth")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("FinancialYear")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("InventoryId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("LineNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("LoadedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LocationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("PostPeriod")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("ReferenceNumber")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("SalesRepId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Uom")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("WarehouseId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("InventoryId");
+
+                    b.HasIndex("SalesRepId");
+
+                    b.HasIndex("FinancialYear", "FinancialMonth");
+
+                    b.HasIndex("DocumentType", "ReferenceNumber", "LineNumber")
+                        .IsUnique();
+
+                    b.ToTable("sell_in_lines", "reporting");
+                });
+
             modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ShopriteDeliveryLocationEntity", b =>
                 {
                     b.Property<Guid>("Id")
