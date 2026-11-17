@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Pvm.Application.Acumatica;
+using Pvm.Application.Documents;
 using Pvm.Application.Submissions;
 using Pvm.Infrastructure.Operations;
 
@@ -47,6 +48,13 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient<IAcumaticaInvoiceClient, AcumaticaInvoiceClient>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(300);
+        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            UseCookies = false
+        });
+        services.AddHttpClient<IAcumaticaDocumentClient, AcumaticaDocumentClient>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(120);
         }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
         {
             UseCookies = false
