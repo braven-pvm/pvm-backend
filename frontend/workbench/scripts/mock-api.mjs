@@ -250,6 +250,123 @@ const statements = (prefix, start, lines, closing) => [
   { referenceNbr: `${prefix}1301`, startBalanceDate: daysAgo(3), endBalanceDate: daysAgo(2), beginningBalance: start, endingBalance: closing - 4100, lineCount: lines + 3 },
 ];
 
+// Captured documents (src/api/documents.ts). One of each case the pages show:
+// filed (attached and waiting), needs review with candidates, unreadable,
+// failed, stuck, and a rejected one that only the search finds.
+const invoicePool = [
+  { referenceNumber: "INV001234", date: daysAgo(16).slice(0, 10), customerId: "C0042", customerName: "Acme Stores (Pty) Ltd", parentCustomerName: null, shipToName: "Acme Middelburg", status: "Open" },
+  { referenceNumber: "INV001235", date: daysAgo(16).slice(0, 10), customerId: "C0042", customerName: "Acme Stores (Pty) Ltd", parentCustomerName: null, shipToName: "Acme Witbank", status: "Open" },
+  { referenceNumber: "INV001198", date: daysAgo(20).slice(0, 10), customerId: "C0107", customerName: "Saveway SuperSpar", parentCustomerName: "Spar Group", shipToName: null, status: "Closed" },
+  { referenceNumber: "INV001240", date: daysAgo(3).slice(0, 10), customerId: "C0230", customerName: "Midwater Spar", parentCustomerName: "Spar Group", shipToName: null, status: "Open" },
+  { referenceNumber: "INV001241", date: daysAgo(2).slice(0, 10), customerId: "C0311", customerName: "Shoprite Checkers DC Centurion", parentCustomerName: null, shipToName: null, status: "Open" },
+];
+const invoiceByNumber = (number) => invoicePool.find((invoice) => invoice.referenceNumber === number);
+
+const documents = [
+  documentRecord("d0c00000-0000-4000-8000-000000000001", "Filed", null, { uploaded: 2 * 24 * 60, matchedReference: "INV001234", matchedBy: "auto", attachedMinutesAgo: 2 * 24 * 60 - 3, extraction: { invoiceNumbers: ["INV001234"], salesOrderNumbers: ["SO004410"], customerOrderNumbers: ["PO77812"], clientName: "Acme Stores", deliveryDate: daysAgo(2).slice(0, 10), signaturePresent: true, note: null } }),
+  documentRecord("d0c00000-0000-4000-8000-000000000002", "Filed", null, { uploaded: 26 * 60, matchedReference: "INV001198", matchedBy: "user:izelle@example.test", resolvedBy: "izelle@example.test", resolvedMinutesAgo: 25 * 60, attachPending: true, extraction: { InvoiceNumbers: ["INV001198", "INV001199"], ClientName: "Saveway", DeliveryDate: daysAgo(1).slice(0, 10), SignaturePresent: true } }),
+  documentRecord("d0c00000-0000-4000-8000-000000000003", "NeedsReview", "MultipleCandidates", { uploaded: 6 * 60, extraction: { invoiceNumbers: ["INV00123"], salesOrderNumbers: [], customerOrderNumbers: [], clientName: "Acme", deliveryDate: daysAgo(0).slice(0, 10), signaturePresent: true, note: "Last digit of the invoice number is torn off" }, candidates: [invoiceByNumber("INV001234"), invoiceByNumber("INV001235")] }),
+  documentRecord("d0c00000-0000-4000-8000-000000000004", "NeedsReview", "NoSecondSignal", { uploaded: 4 * 60, extraction: { invoiceNumbers: ["INV001240"], salesOrderNumbers: [], customerOrderNumbers: [], clientName: null, deliveryDate: null, signaturePresent: false, note: null }, candidates: [invoiceByNumber("INV001240")] }),
+  documentRecord("d0c00000-0000-4000-8000-000000000005", "NeedsReview", "ReadFailure", { uploaded: 3 * 60, unreadableReason: "The page is too blurred to read any number." }),
+  documentRecord("d0c00000-0000-4000-8000-000000000006", "Failed", null, { uploaded: 2 * 60 }),
+  documentRecord("d0c00000-0000-4000-8000-000000000007", "Processing", null, { uploaded: 95, stuck: true }),
+  documentRecord("d0c00000-0000-4000-8000-000000000008", "NeedsReview", "NoCandidate", { uploaded: 3 * 24 * 60, rejectedBy: "izelle@example.test", rejectedMinutesAgo: 3 * 24 * 60 - 30, reviewNote: "Bad scan, the driver scanned it again.", extraction: { invoiceNumbers: [], clientName: "Unknown" } }),
+];
+
+function documentRecord(id, state, reviewReason, options) {
+  const resolvedAt = options.resolvedMinutesAgo !== undefined ? minutesAgo(options.resolvedMinutesAgo) : options.rejectedMinutesAgo !== undefined ? minutesAgo(options.rejectedMinutesAgo) : null;
+  return {
+    id,
+    clientDocumentId: id.replace("d0c0", "c11e"),
+    documentType: "POD",
+    state,
+    reviewReason,
+    stuck: options.stuck ?? false,
+    pageCount: 1,
+    sizeBytes: 182_311,
+    matchedReference: options.matchedReference ?? null,
+    matchedCustomerName: options.matchedReference ? invoiceByNumber(options.matchedReference)?.customerName ?? null : null,
+    matchedBy: options.matchedBy ?? null,
+    acumaticaAttachPending: options.attachPending ?? false,
+    acumaticaAttachedAt: options.attachedMinutesAgo !== undefined ? minutesAgo(options.attachedMinutesAgo) : null,
+    uploadedBy: "driver.thabo@pvm.co.za",
+    uploadedAt: minutesAgo(options.uploaded),
+    resolvedBy: options.resolvedBy ?? options.rejectedBy ?? null,
+    resolvedAt,
+    reviewNote: options.reviewNote ?? null,
+    rejectedBy: options.rejectedBy ?? null,
+    rejectedAt: options.rejectedMinutesAgo !== undefined ? minutesAgo(options.rejectedMinutesAgo) : null,
+    updatedAt: minutesAgo(Math.max(1, options.uploaded - 2)),
+    extraction: options.extraction ?? null,
+    unreadableReason: options.unreadableReason ?? null,
+    candidates: options.candidates ?? [],
+  };
+}
+
+const searchFields = ["id", "documentType", "state", "reviewReason", "matchedReference", "matchedCustomerName", "matchedBy", "acumaticaAttachPending", "acumaticaAttachedAt", "pageCount", "uploadedBy", "uploadedAt", "resolvedBy", "resolvedAt", "rejectedAt"];
+const searchItem = (item) => Object.fromEntries(searchFields.map((field) => [field, item[field]]));
+
+function searchDocuments(url) {
+  const invoice = url.searchParams.get("invoice")?.toUpperCase();
+  const client = url.searchParams.get("client")?.toLowerCase();
+  const state = url.searchParams.get("state")?.toLowerCase();
+  const type = url.searchParams.get("type")?.toUpperCase();
+  const from = url.searchParams.get("from");
+  const to = url.searchParams.get("to");
+  const items = (empty ? [] : documents)
+    .filter((item) => !invoice || item.matchedReference?.toUpperCase() === invoice)
+    .filter((item) => !client || item.matchedCustomerName?.toLowerCase().includes(client))
+    .filter((item) => !state || item.state.toLowerCase() === state)
+    .filter((item) => !type || item.documentType === type)
+    .filter((item) => !from || Date.parse(item.uploadedAt) >= Date.parse(from))
+    .filter((item) => !to || Date.parse(item.uploadedAt) < Date.parse(to))
+    .sort((a, b) => Date.parse(b.uploadedAt) - Date.parse(a.uploadedAt))
+    .map(searchItem);
+  return { items, page: 1, pageSize: 50, total: items.length };
+}
+
+function reviewList() {
+  const items = (empty ? [] : documents)
+    .filter((item) => item.stuck || ((item.state === "NeedsReview" || item.state === "Failed") && !item.rejectedAt))
+    .sort((a, b) => Date.parse(a.uploadedAt) - Date.parse(b.uploadedAt))
+    .map(({ id, documentType, state, reviewReason, stuck, pageCount, uploadedBy, uploadedAt, updatedAt }) => ({ id, documentType, state, reviewReason, stuck, pageCount, uploadedBy, uploadedAt, updatedAt }));
+  return { items, page: 1, pageSize: 50, total: items.length };
+}
+
+// A one-page PDF that names the document, so the viewer has something to show.
+function documentPdf(id) {
+  const document = documents.find((item) => item.id === id);
+  const lines = [
+    "PROOF OF DELIVERY",
+    `Invoice: ${document?.extraction?.invoiceNumbers?.join(", ") || document?.matchedReference || "unreadable"}`,
+    `Client: ${document?.extraction?.clientName ?? "-"}`,
+    "Received in good order. Signed: ________",
+    `Mock document ${id.slice(-4)}`,
+  ];
+  const text = lines.map((line, index) => `BT /F1 ${index === 0 ? 20 : 12} Tf 60 ${760 - index * 32} Td (${line.replace(/[()\\]/g, "")}) Tj ET`).join("\n");
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    `<< /Length ${text.length} >>\nstream\n${text}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = objects.map((object, index) => {
+    const offset = pdf.length;
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+    return offset;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("")}`;
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(pdf, "latin1");
+}
+
+// Problem responses, like the API's RFC 7807 answers.
+const problem = (status, detail) => ({ __status: status, __body: { status, detail } });
+const isOpen = (item) => !item.stuck && (item.state === "NeedsReview" || item.state === "Failed");
+
 const routes = {
   "GET /api/auth/me": () => ({ id: "u-1", email: "developer@pvm.co.za", displayName: "Marius Bloemhof", roles: ["Admin"] }),
   "GET /api/operations/summary": () => ({
@@ -367,6 +484,34 @@ const routes = {
     summary: { ambiguous: 1, rejected: 0, needsReview: 1, deadLetters: 1, stuck: 0, held: 0, overdue: 1, resolved: 12 },
   }),
   "POST /api/exceptions/*": () => ({}),
+  // Documents. The review routes come before "/:id" so they match first.
+  "GET /api/documents": (context) => searchDocuments(context.url),
+  "GET /api/documents/review": () => reviewList(),
+  "GET /api/documents/review/invoice-search": (context) => {
+    const q = context.url.searchParams.get("q")?.trim().toLowerCase();
+    if (!q) return problem(400, "The query 'q' is required.");
+    return invoicePool.filter((invoice) => invoice.referenceNumber.toLowerCase().startsWith(q) || invoice.customerName.toLowerCase().includes(q));
+  },
+  "GET /api/documents/:id": (id) => documents.find((item) => item.id === id) ?? problem(404, "Not found."),
+  "GET /api/documents/:id/file": (id) => (documents.some((item) => item.id === id) ? { __raw: documentPdf(id), contentType: "application/pdf", disposition: `inline; filename="POD-${id}.pdf"` } : problem(404, "Not found.")),
+  // The Failed document answers 409, to show what happens when someone else resolved it first.
+  "POST /api/documents/:id/file-to": (id, context) => {
+    const item = documents.find((document) => document.id === id);
+    if (!item) return problem(404, "Not found.");
+    if (!isOpen(item) || item.state === "Failed") return problem(409, "The document is not on the review list.");
+    const reference = String(context.json?.invoiceReference ?? "").trim();
+    const invoice = invoicePool.find((candidate) => candidate.referenceNumber.toLowerCase() === reference.toLowerCase());
+    if (!invoice) return problem(400, `Acumatica has no invoice with the reference '${reference}'.`);
+    return { documentId: id, state: "Filed", matchedReference: invoice.referenceNumber, matchedCustomerName: invoice.customerName };
+  },
+  "POST /api/documents/:id/reject": (id, context) => {
+    const item = documents.find((document) => document.id === id);
+    if (!item) return problem(404, "Not found.");
+    const note = String(context.json?.note ?? "").trim();
+    if (!note || note.length > 1000) return problem(400, "'note' is required, at most 1000 characters.");
+    if (!isOpen(item) || item.rejectedAt) return problem(409, "The document is not open on the review list.");
+    return { documentId: id, rejected: true };
+  },
   "GET /api/stock/sync/latest": () => ({
     id: "run-1",
     mode: "Shadow",
@@ -449,18 +594,34 @@ function match(method, pathname) {
 createServer((request, response) => {
   const url = new URL(request.url ?? "/", "http://localhost");
   const found = match(request.method ?? "GET", url.pathname);
-  // Drain any request body so the client does not wait.
-  request.resume();
-  if (!found) {
-    response.writeHead(404, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ message: `No mock for ${request.method} ${url.pathname}` }));
-    console.log(`404 ${request.method} ${url.pathname}`);
-    return;
-  }
-  const body = found.handler(...found.params);
-  response.writeHead(200, { "Content-Type": "application/json" });
-  response.end(JSON.stringify(body));
-  console.log(`200 ${request.method} ${url.pathname}`);
+  const chunks = [];
+  request.on("data", (chunk) => chunks.push(chunk));
+  request.on("end", () => {
+    if (!found) {
+      response.writeHead(404, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ message: `No mock for ${request.method} ${url.pathname}` }));
+      console.log(`404 ${request.method} ${url.pathname}`);
+      return;
+    }
+    let json;
+    try {
+      json = chunks.length > 0 ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : undefined;
+    } catch {
+      json = undefined;
+    }
+    // Handlers get the path parameters, then { url, json } for the ones that read the query or the body.
+    const body = found.handler(...found.params, { url, json });
+    if (body && body.__raw) {
+      response.writeHead(200, { "Content-Type": body.contentType, "Content-Disposition": body.disposition });
+      response.end(body.__raw);
+      console.log(`200 ${request.method} ${url.pathname}`);
+      return;
+    }
+    const status = body && body.__status ? body.__status : 200;
+    response.writeHead(status, { "Content-Type": status === 200 ? "application/json" : "application/problem+json" });
+    response.end(JSON.stringify(body && body.__status ? body.__body : body));
+    console.log(`${status} ${request.method} ${url.pathname}`);
+  });
 }).listen(port, "127.0.0.1", () => {
   console.log(`Mock backoffice API on http://127.0.0.1:${port}${empty ? " (empty lists)" : ""}`);
 });

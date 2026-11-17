@@ -38,7 +38,7 @@ Rules that apply to every screen:
 - Components:
   - Layout: [PageFrame](#pageframe), [Columns](#columns), [Stack](#stack), [Panel](#panel), [PageHeader](#pageheader), [TileGrid](#tilegrid), [AppShell](#appshell).
   - Actions: [Button](#button), [ButtonLink](#buttonlink), [SubmitButton](#submitbutton), [ConfirmDialog](#confirmdialog).
-  - Content: [CodeBlock](#codeblock).
+  - Content: [CodeBlock](#codeblock), [PdfFrame](#pdfframe).
   - Status: [StatusBadge](#statusbadge), [Notice](#notice), [Spinner](#spinner), [EmptyState](#emptystate).
   - Forms: [Fields](#fields), [FileDrop](#filedrop).
   - Lists: [DataTable](#datatable), [FilterChips](#filterchips), [FilterBar](#filterbar), [Pagination](#pagination).
@@ -333,6 +333,7 @@ error to the user. The server logs it.
 | Go back to the list | `BackLink` |
 | Show progress through a task | `Stepper` |
 | Show facts about one record | `KeyValueList` |
+| Show a scanned PDF next to its data | `PdfFrame` |
 | Show what happened to a record | `Timeline` |
 | List what needs a person | `AttentionList` |
 | Show a key number | `StatTile` in a `TileGrid` |
@@ -482,6 +483,20 @@ A read-only payload: generated XML, a raw JSON response. It scrolls inside
 itself, up to 480px high. `language="json"` formats JSON with indents. `empty`
 says why there is no payload. Payloads are for Admins: put them in a Raw tab.
 
+### PdfFrame
+
+A PDF in the page, shown by the browser's own viewer, with the link "Open the
+PDF in a new tab" under it for a phone or a browser that does not show PDFs
+inline. It is 720px high (at most 80 % of the screen), 480px on a phone.
+
+| Prop | Notes |
+| --- | --- |
+| `src` | A workbench URL that serves the PDF, such as `/documents/{id}/file`. Never a backend URL: the workbench route calls the API with the user's token on the server |
+| `title` | Names the document for screen readers: "Proof of delivery uploaded 17 Nov, 09:12" |
+
+Put it in a `Panel` in a `Columns`, next to the panel with the fields read from
+it, so the user can compare them.
+
 ---
 
 ## Status
@@ -493,11 +508,11 @@ example `DeadLettered` becomes "Dead lettered" in error colour.
 
 | Tone | Icon | Values |
 | --- | --- | --- |
-| success | circle with check | Succeeded, Ready, Healthy, Submitted, Accepted, Live, Processed, Resolved |
+| success | circle with check | Succeeded, Ready, Healthy, Submitted, Accepted, Live, Processed, Resolved, Filed |
 | error | circle with cross | Failed, Rejected, Blocked, Failing, Dead lettered |
-| warning | circle with mark | Needs review, Stale, Late, Open, Ambiguous |
-| info | circle with i | Shadow, Running, In progress |
-| neutral | dashed circle | Off, Disabled, Queued, and every value that is not known |
+| warning | circle with mark | Needs review, Stale, Late, Open, Ambiguous, Stuck |
+| info | circle with i | Shadow, Running, In progress, Processing |
+| neutral | dashed circle | Off, Disabled, Queued, Received, and every value that is not known |
 
 Pass `tone` or `label` only when the value itself is wrong for the reader. To
 add a status value, add it to `toneByStatus` in `src/ui/status-badge.tsx` and to

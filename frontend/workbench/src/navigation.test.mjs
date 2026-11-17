@@ -55,3 +55,22 @@ test("the Shoprite entry is current on every page of the module", () => {
   assert.equal(isCurrent(shoprite, "/shoprite/settings/inventory-mappings"), true);
   assert.equal(isCurrent(shoprite, "/banking"), false);
 });
+
+test("every signed-in user sees Documents with the review list under it", () => {
+  const documents = navigationFor(["Viewer"])
+    .flatMap((group) => group.items)
+    .find((item) => item.label === "Documents");
+  assert.ok(documents);
+  assert.equal(documents.href, "/documents");
+  assert.deepEqual(documents.children?.map((child) => child.href), ["/documents/review"]);
+});
+
+test("the review list, not the search, is current on the review page", () => {
+  const documents = navigationFor(["Viewer"])
+    .flatMap((group) => group.items)
+    .find((item) => item.label === "Documents");
+  assert.equal(isCurrent(documents, "/documents/review"), true);
+  assert.equal(isCurrent(documents.children[0], "/documents/review"), true);
+  assert.equal(isCurrent(documents.children[0], "/documents"), false);
+  assert.equal(isCurrent(documents, "/documents/6f1d0c2a-0001-4a7e-9a10-000000000001"), true);
+});

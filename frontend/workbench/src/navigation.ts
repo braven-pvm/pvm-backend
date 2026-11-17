@@ -10,6 +10,7 @@ export type NavIcon =
   | "shoprite"
   | "banking"
   | "stock"
+  | "documents"
   | "automations"
   | "runs"
   | "events"
@@ -51,6 +52,13 @@ export const navigation: NavGroup[] = [
       },
       { label: "Banking", href: "/banking", icon: "banking", roles: write },
       { label: "Stock", href: "/stock", icon: "stock" },
+      {
+        label: "Documents",
+        href: "/documents",
+        icon: "documents",
+        // The search is the Documents page itself; the review list is its one sub-link.
+        children: [{ label: "Review list", href: "/documents/review" }],
+      },
     ],
   },
   {

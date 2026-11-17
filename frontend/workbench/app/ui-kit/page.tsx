@@ -21,6 +21,7 @@ import {
   PageHeader,
   Pagination,
   Panel,
+  PdfFrame,
   RadioGroup,
   SelectField,
   Spinner,
@@ -374,6 +375,9 @@ export default function UiKitPage() {
               />
             </Panel>
           </div>
+          <Panel title="PdfFrame" description="With the mock API running, this shows the mock delivery note.">
+            <PdfFrame src="/documents/d0c00000-0000-4000-8000-000000000003/file" title="Example proof of delivery" />
+          </Panel>
         </Section>
 
         <Section id="dashboard" title="Dashboard parts">

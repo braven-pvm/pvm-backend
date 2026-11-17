@@ -34,6 +34,7 @@ export { PageHeader, type PageHeaderProps } from "./page-header";
 export { PageError, PageLoading } from "./page-state";
 export { Pagination } from "./pagination";
 export { Panel } from "./panel";
+export { PdfFrame } from "./pdf-frame";
 export { Spinner } from "./spinner";
 export { Stack, type Space } from "./stack";
 export { StatTile, TileGrid } from "./stat-tile";
