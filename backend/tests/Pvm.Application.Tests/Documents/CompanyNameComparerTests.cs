@@ -57,4 +57,22 @@ public class CompanyNameComparerTests
     {
         Assert.False(CompanyNameComparer.Agrees("  (Pty) Ltd ", Invoice("Shoprite Checkers Pty Ltd")));
     }
+
+    [Fact]
+    public void Parent_customer_name_is_not_a_direct_agreement()
+    {
+        var invoice = Invoice("Checkers Hyper Brackenfell", parentCustomerName: "SHOPRITE HOLDINGS LIMITED");
+
+        Assert.False(CompanyNameComparer.AgreesDirectly("Shoprite Holdings Ltd", invoice));
+        Assert.True(CompanyNameComparer.Agrees("Shoprite Holdings Ltd", invoice));
+    }
+
+    [Fact]
+    public void Customer_or_ship_to_name_is_a_direct_agreement()
+    {
+        var invoice = Invoice("Shoprite Checkers Pty Ltd", "Shoprite Holdings", "Checkers Hyper Brackenfell");
+
+        Assert.True(CompanyNameComparer.AgreesDirectly("SHOPRITE CHECKERS", invoice));
+        Assert.True(CompanyNameComparer.AgreesDirectly("Checkers Hyper Brackenfell", invoice));
+    }
 }

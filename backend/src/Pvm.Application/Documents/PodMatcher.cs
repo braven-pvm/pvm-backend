@@ -8,6 +8,9 @@ namespace Pvm.Application.Documents;
 /// </summary>
 public static class PodMatcher
 {
+    /// <summary>The oldest an invoice may be, in days before the delivery date, to be filed without review.</summary>
+    public const int MaxDaysFromInvoiceToDelivery = 60;
+
     private const string InvoiceKind = "invoice";
 
     public static MatchOutcome Decide(PodExtraction extraction, IReadOnlyList<CandidateHit> hits)
@@ -62,15 +65,28 @@ public static class PodMatcher
             invoice = onOrBefore[0];
         }
 
-        // Step 5: one invoice; it needs a second signal.
+        // Step 5: one invoice. When the delivery date was read, the invoice must be dated on or
+        // before it and not long before it; otherwise nothing ties the paper to this invoice.
+        if (extraction.DeliveryDate is { } deliveredOn
+            && (invoice.Date > deliveredOn || invoice.Date < deliveredOn.AddDays(-MaxDaysFromInvoiceToDelivery)))
+        {
+            return ReviewWith(ReviewReason.NoSecondSignal, invoice, invoices);
+        }
+
+        // Step 6: it needs a second signal. A name that agrees with the customer or ship-to name is
+        // one; a name that agrees only with the parent customer (a whole chain) is not, and falls
+        // through to the number kinds; a name that agrees with none of them is a conflict.
         if (!string.IsNullOrWhiteSpace(extraction.ClientName))
         {
-            if (CompanyNameComparer.Agrees(extraction.ClientName, invoice))
+            if (CompanyNameComparer.AgreesDirectly(extraction.ClientName, invoice))
             {
                 return new Matched(invoice);
             }
 
-            return ReviewWith(ReviewReason.ClientNameConflict, invoice, invoices);
+            if (!CompanyNameComparer.Agrees(extraction.ClientName, invoice))
+            {
+                return ReviewWith(ReviewReason.ClientNameConflict, invoice, invoices);
+            }
         }
 
         var kindsThatFoundIt = inScope

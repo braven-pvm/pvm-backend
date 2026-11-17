@@ -263,4 +263,98 @@ public class PodMatcherTests
         Assert.Equal(2, review.Candidates.Count);
         Assert.DoesNotContain(voided, review.Candidates);
     }
+
+    private static InvoiceCandidate ChainInvoice(string reference, string date = "2026-11-10")
+        => new(reference, DateOnly.Parse(date), "C000456", "Checkers Hyper Brackenfell", "Shoprite Holdings Ltd", null, "Open");
+
+    [Fact]
+    public void NameAgreesOnlyWithParent_IsNotASecondSignal()
+    {
+        var invoice = ChainInvoice("INV001");
+
+        var outcome = PodMatcher.Decide(
+            Paper(["INV001"], [], [], "Shoprite Holdings"),
+            [new CandidateHit(invoice, "invoice")]);
+
+        var review = Assert.IsType<Review>(outcome);
+        Assert.Equal(ReviewReason.NoSecondSignal, review.Reason);
+        Assert.Equal(invoice, Assert.Single(review.Candidates));
+    }
+
+    [Fact]
+    public void NameAgreesOnlyWithParent_FallsThroughToNumberKinds()
+    {
+        var invoice = ChainInvoice("INV001");
+
+        var outcome = PodMatcher.Decide(
+            Paper(["INV001"], [], ["P"], "Shoprite Holdings"),
+            [new CandidateHit(invoice, "invoice"), new CandidateHit(invoice, "customerOrder")]);
+
+        Assert.Equal(invoice, Assert.IsType<Matched>(outcome).Invoice);
+    }
+
+    [Fact]
+    public void NameDisagreesWithCustomerShipToAndParent_ReviewClientNameConflict()
+    {
+        var invoice = ChainInvoice("INV001");
+
+        var outcome = PodMatcher.Decide(
+            Paper(["INV001"], [], ["P"], "Pick n Pay"),
+            [new CandidateHit(invoice, "invoice"), new CandidateHit(invoice, "customerOrder")]);
+
+        Assert.Equal(ReviewReason.ClientNameConflict, Assert.IsType<Review>(outcome).Reason);
+    }
+
+    [Fact]
+    public void SingleCandidate_DatedAfterDelivery_ReviewNoSecondSignal()
+    {
+        var invoice = Invoice("INV001", "2026-11-14");
+
+        var outcome = PodMatcher.Decide(
+            Paper(["INV001"], [], ["P"], "Shoprite Checkers", "2026-11-12"),
+            [new CandidateHit(invoice, "invoice"), new CandidateHit(invoice, "customerOrder")]);
+
+        var review = Assert.IsType<Review>(outcome);
+        Assert.Equal(ReviewReason.NoSecondSignal, review.Reason);
+        Assert.Equal(invoice, Assert.Single(review.Candidates));
+    }
+
+    [Fact]
+    public void SingleCandidate_MoreThan60DaysBeforeDelivery_ReviewNoSecondSignal()
+    {
+        var invoice = Invoice("INV001", "2026-09-12");
+
+        var outcome = PodMatcher.Decide(
+            Paper(["INV001"], [], ["P"], "Shoprite Checkers", "2026-11-12"),
+            [new CandidateHit(invoice, "invoice"), new CandidateHit(invoice, "customerOrder")]);
+
+        var review = Assert.IsType<Review>(outcome);
+        Assert.Equal(ReviewReason.NoSecondSignal, review.Reason);
+        Assert.Equal(invoice, Assert.Single(review.Candidates));
+    }
+
+    [Fact]
+    public void SingleCandidate_Exactly60DaysBeforeDelivery_Matched()
+    {
+        Assert.Equal(60, PodMatcher.MaxDaysFromInvoiceToDelivery);
+        var invoice = Invoice("INV001", "2026-09-13");
+
+        var outcome = PodMatcher.Decide(
+            Paper(["INV001"], [], [], "Shoprite Checkers", "2026-11-12"),
+            [new CandidateHit(invoice, "invoice")]);
+
+        Assert.Equal(invoice, Assert.IsType<Matched>(outcome).Invoice);
+    }
+
+    [Fact]
+    public void SingleCandidate_NoDeliveryDate_NoDateCheck()
+    {
+        var invoice = Invoice("INV001", "2025-01-01");
+
+        var outcome = PodMatcher.Decide(
+            Paper(["INV001"], [], [], "Shoprite Checkers"),
+            [new CandidateHit(invoice, "invoice")]);
+
+        Assert.Equal(invoice, Assert.IsType<Matched>(outcome).Invoice);
+    }
 }

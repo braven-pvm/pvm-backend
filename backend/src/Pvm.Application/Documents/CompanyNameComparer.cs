@@ -12,7 +12,18 @@ public static class CompanyNameComparer
 {
     private static readonly HashSet<string> Suffixes = ["pty", "ltd", "limited", "cc", "inc"];
 
+    /// <summary>True when the name agrees with the customer, parent customer or ship-to name.</summary>
     public static bool Agrees(string extracted, InvoiceCandidate invoice)
+        => AgreesWithAny(extracted, invoice.CustomerName, invoice.ParentCustomerName, invoice.ShipToName);
+
+    /// <summary>
+    /// True when the name agrees with the customer or ship-to name. The parent customer is left
+    /// out: it names a whole chain, so it does not point to one invoice's customer.
+    /// </summary>
+    public static bool AgreesDirectly(string extracted, InvoiceCandidate invoice)
+        => AgreesWithAny(extracted, invoice.CustomerName, invoice.ShipToName);
+
+    private static bool AgreesWithAny(string extracted, params string?[] names)
     {
         var name = Words(extracted);
         if (name.Length == 0)
@@ -20,7 +31,7 @@ public static class CompanyNameComparer
             return false;
         }
 
-        return new[] { invoice.CustomerName, invoice.ParentCustomerName, invoice.ShipToName }
+        return names
             .Select(Words)
             .Where(other => other.Length > 0)
             .Any(other => ContainsRun(name, other) || ContainsRun(other, name));
