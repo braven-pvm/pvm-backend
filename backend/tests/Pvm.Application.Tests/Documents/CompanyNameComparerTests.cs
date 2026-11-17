@@ -46,6 +46,13 @@ public class CompanyNameComparerTests
     }
 
     [Fact]
+    public void A_name_inside_another_word_does_not_agree()
+    {
+        Assert.False(CompanyNameComparer.Agrees("OK Foods", Invoice("Bokomo Foods")));
+        Assert.False(CompanyNameComparer.Agrees("OK", Invoice("Bokomo Foods")));
+    }
+
+    [Fact]
     public void A_blank_name_never_agrees()
     {
         Assert.False(CompanyNameComparer.Agrees("  (Pty) Ltd ", Invoice("Shoprite Checkers Pty Ltd")));
