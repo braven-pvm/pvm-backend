@@ -1,17 +1,35 @@
 namespace Pvm.Application.Stock;
 
 /// <summary>
-/// Acumatica figures for one item at the warehouse location the web store sells from.
-/// Quantities are positive; <see cref="StockLevelCalculator"/> applies the signs.
+/// Acumatica figures for one item, as the "current stock" sheet of inventory lite.xlsm uses them
+/// for the warehouse and location the web store sells from. Quantities are as Acumatica holds
+/// them; <see cref="StockLevelCalculator"/> applies the signs.
 /// </summary>
+/// <param name="OnHand">On hand at the location.</param>
+/// <param name="HeldBackAdjustments">
+/// Net of the adjustments with the held-back reason code (BLADJHO) at the warehouse since the
+/// cut-off date, adjustments on hold included and stock-take adjustments left out. Stock that came
+/// in this way is not for sale.
+/// </param>
+/// <param name="AutoAdjustments">
+/// Net of the automatic adjustments (AUTOADJ) at the warehouse after the item's last stock count.
+/// </param>
+/// <param name="OpenOrderQuantity">Recent sales orders from the warehouse with no confirmed shipment.</param>
+/// <param name="PromoOrderQuantity">Orders of the promotion accounts with no confirmed shipment.</param>
+/// <param name="TransfersOut">Unreleased transfers out of the location.</param>
+/// <param name="WarehouseCommitted">
+/// For items outside the sheet's main query (PROT, SUPL, REPL): the larger of the warehouse booked
+/// and allocated quantities. Null for every other item.
+/// </param>
 public sealed record AcumaticaStockFigures(
     string InventoryCd,
     decimal OnHand,
-    decimal SalesOrderBooked,
-    decimal SalesOrderAllocated,
-    decimal OpenOrderQuantity,
-    decimal TransfersIn,
-    decimal TransfersOut);
+    decimal HeldBackAdjustments = 0,
+    decimal AutoAdjustments = 0,
+    decimal OpenOrderQuantity = 0,
+    decimal PromoOrderQuantity = 0,
+    decimal TransfersOut = 0,
+    decimal? WarehouseCommitted = null);
 
 /// <summary>An order line from Acumatica whose customer order number is a web-store order id.</summary>
 public sealed record LoadedWebOrderLine(string WebOrderId, string InventoryCd, decimal Quantity);
@@ -65,4 +83,5 @@ public sealed record StockSyncLine(
     int? NewQuantity,
     decimal? AcumaticaLevel,
     decimal WebPending,
-    string? Reason);
+    string? Reason,
+    AcumaticaStockFigures? Figures = null);

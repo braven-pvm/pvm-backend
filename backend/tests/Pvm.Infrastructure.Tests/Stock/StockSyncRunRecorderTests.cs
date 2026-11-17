@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Pvm.Application.Stock;
 using Pvm.Infrastructure.Persistence;
+using Pvm.Infrastructure.Persistence.Entities;
 using Pvm.Infrastructure.Stock;
 using Testcontainers.PostgreSql;
 
@@ -65,6 +66,50 @@ public sealed class StockSyncRunRecorderTests : IAsyncLifetime
         Assert.Equal(11, ener.VariationId);
         Assert.Equal("Skip", ener.Action);
         Assert.Null(ener.NewQuantity);
+    }
+
+    [Fact]
+    public async Task Figures_are_stored_with_each_line_and_read_back_by_name()
+    {
+        await using var db = await CreateDbContextAsync();
+        var figures = new AcumaticaStockFigures("CER07", 3307, 3000, 307, 10, 0, 5);
+        var result = new StockSyncResult(
+            StockSyncMode.Shadow,
+            [new StockSyncLine(new WebStockItem("CER07", 100, null, WebStockManagement.Own, 3297), StockSyncAction.Update, 0, -15m, 0m, null, figures)],
+            Written: 0,
+            Refusal: null);
+
+        await Recorder(db).RecordAsync(result, Now, CancellationToken.None);
+        var run = await Recorder(db).GetLatestAsync(CancellationToken.None);
+        var json = await db.StockSyncRuns.Select(entity => entity.LinesJson).SingleAsync();
+
+        var stored = Assert.Single(run!.Lines).Figures;
+        Assert.Equal(new StockFiguresView(3307, 3000, 307, 10, 0, 5, null), stored);
+        // The names the workbench client reads.
+        foreach (var name in new[] { "onHand", "heldBackAdjustments", "autoAdjustments", "openOrders", "promoOrders", "transfersOut", "warehouseCommitted" })
+        {
+            Assert.Contains($"\"{name}\"", json, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task A_run_recorded_before_figures_existed_reads_back_with_none()
+    {
+        await using var db = await CreateDbContextAsync();
+        db.StockSyncRuns.Add(new StockSyncRunEntity
+        {
+            Id = Guid.NewGuid(),
+            Mode = "Shadow",
+            Status = "Succeeded",
+            StartedAt = Now,
+            CompletedAt = Now,
+            LinesJson = """[{"sku":"KLER6","productId":1,"variationId":null,"action":"Update","currentQuantity":35,"newQuantity":9,"acumaticaLevel":9,"webPending":0,"reason":null}]""",
+        });
+        await db.SaveChangesAsync();
+
+        var run = await Recorder(db).GetLatestAsync(CancellationToken.None);
+
+        Assert.Null(Assert.Single(run!.Lines).Figures);
     }
 
     [Fact]

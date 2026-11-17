@@ -103,3 +103,40 @@ export function formatDate(iso) {
 
   return `${parts.day} ${SHORT_MONTHS[parts.month]} ${parts.year}`;
 }
+
+// How the stock sync got one product's level, in the parts of the inventory lite sheet:
+// "3307 on hand − 3000 held back − 307 auto-adjusted = 0 for sale − 10 orders − 5 transfers out".
+export function describeStockFigures(figures) {
+  if (!figures) {
+    return "";
+  }
+
+  const n = (value) => (Number.isInteger(value) ? String(value) : value.toFixed(1));
+  const heldBack = Math.max(0, figures.heldBackAdjustments);
+  const parts = [`${n(figures.onHand)} on hand`];
+  if (heldBack > 0) {
+    parts.push(`− ${n(heldBack)} held back`);
+  }
+  if (figures.autoAdjustments !== 0) {
+    parts.push(`${figures.autoAdjustments > 0 ? "−" : "+"} ${n(Math.abs(figures.autoAdjustments))} auto-adjusted`);
+  }
+  if (heldBack > 0 || figures.autoAdjustments !== 0) {
+    parts.push(`= ${n(Math.max(0, figures.onHand - heldBack - figures.autoAdjustments))} for sale`);
+  }
+
+  const orders =
+    figures.warehouseCommitted === null || figures.warehouseCommitted === undefined
+      ? figures.openOrders
+      : Math.max(figures.warehouseCommitted, figures.openOrders);
+  for (const [value, label] of [
+    [orders, "orders"],
+    [figures.promoOrders, "promo orders"],
+    [figures.transfersOut, "transfers out"],
+  ]) {
+    if (value !== 0) {
+      parts.push(`− ${n(value)} ${label}`);
+    }
+  }
+
+  return parts.join(" ");
+}

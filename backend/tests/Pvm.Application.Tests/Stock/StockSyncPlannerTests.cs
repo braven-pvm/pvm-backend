@@ -24,7 +24,7 @@ public class StockSyncPlannerTests
             []);
     }
 
-    private static AcumaticaStockFigures Figures(string sku, decimal onHand) => new(sku, onHand, 0, 0, 0, 0, 0);
+    private static AcumaticaStockFigures Figures(string sku, decimal onHand) => new(sku, onHand);
 
     private static readonly Dictionary<string, decimal> NoPending = new(StringComparer.OrdinalIgnoreCase);
 

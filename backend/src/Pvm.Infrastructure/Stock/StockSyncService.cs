@@ -91,12 +91,19 @@ public sealed class StockSyncService(
 
     private void Log(StockSyncLine line)
         => logger.LogInformation(
-            "stock.sync.item Sku={Sku} Action={Action} Current={Current} New={New} AcumaticaLevel={AcumaticaLevel} WebPending={WebPending} Reason={Reason}",
+            "stock.sync.item Sku={Sku} Action={Action} Current={Current} New={New} AcumaticaLevel={AcumaticaLevel} WebPending={WebPending} OnHand={OnHand} HeldBack={HeldBack} AutoAdjust={AutoAdjust} Orders={Orders} Promo={Promo} TransfersOut={TransfersOut} WarehouseCommitted={WarehouseCommitted} Reason={Reason}",
             line.Item.Sku,
             line.Action,
             line.Item.CurrentQuantity,
             line.NewQuantity,
             line.AcumaticaLevel,
             line.WebPending,
+            line.Figures?.OnHand,
+            line.Figures?.HeldBackAdjustments,
+            line.Figures?.AutoAdjustments,
+            line.Figures?.OpenOrderQuantity,
+            line.Figures?.PromoOrderQuantity,
+            line.Figures?.TransfersOut,
+            line.Figures?.WarehouseCommitted,
             line.Reason ?? string.Empty);
 }
