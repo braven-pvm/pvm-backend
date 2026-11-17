@@ -1073,6 +1073,18 @@ export type StockSyncLine = {
   acumaticaLevel: number | null;
   webPending: number;
   reason: string | null;
+  /** The Acumatica figures behind the level, in the parts of the inventory lite sheet. */
+  figures: StockFigures | null;
+};
+
+export type StockFigures = {
+  onHand: number;
+  heldBackAdjustments: number;
+  autoAdjustments: number;
+  openOrders: number;
+  promoOrders: number;
+  transfersOut: number;
+  warehouseCommitted: number | null;
 };
 
 export type StockSyncRun = {

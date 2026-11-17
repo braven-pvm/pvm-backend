@@ -130,7 +130,7 @@ public sealed class StockSyncServiceTests
                 new HashSet<string>(figures.Select(f => f.Sku), StringComparer.OrdinalIgnoreCase),
                 figures.ToDictionary(
                     f => f.Sku,
-                    f => new AcumaticaStockFigures(f.Sku, f.OnHand, 0, 0, 0, 0, 0),
+                    f => new AcumaticaStockFigures(f.Sku, f.OnHand),
                     StringComparer.OrdinalIgnoreCase),
                 new Dictionary<string, string>(),
                 []));

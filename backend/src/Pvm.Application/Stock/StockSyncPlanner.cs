@@ -60,7 +60,7 @@ public static class StockSyncPlanner
         var level = StockLevelCalculator.AcumaticaLevel(figures) - pending;
         var quantity = StockLevelCalculator.PublishedQuantity(level, minimumPublished);
         var action = quantity == item.CurrentQuantity ? StockSyncAction.Unchanged : StockSyncAction.Update;
-        return new StockSyncLine(item, action, quantity, level, pending, null);
+        return new StockSyncLine(item, action, quantity, level, pending, null, figures);
     }
 
     private static StockSyncLine Skip(WebStockItem item, decimal pending, string reason)

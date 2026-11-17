@@ -1,24 +1,30 @@
 namespace Pvm.Application.Stock;
 
 /// <summary>
-/// The stock arithmetic the web store has always used, moved off direct SQL. Verified against the
-/// legacy <c>stock.sql</c> and <c>stock_orders.sql</c> for every mapped product on 2026-11-11.
+/// The stock arithmetic of the "current stock" sheet in inventory lite.xlsm, the figure the
+/// business trusts. Verified against the sheet's own queries for every web product on 2026-11-17.
+/// The legacy update stock.py left out the held-back and automatic adjustments; this does not.
 /// </summary>
 public static class StockLevelCalculator
 {
     /// <summary>
-    /// Stock that can be promised. Orders take whichever is larger: what is booked and allocated
-    /// at the location, or every recent order that has not shipped yet. Unreleased transfers move
-    /// stock in or out before they are released, so they count now.
+    /// Stock that can be promised, as the sheet's Nett Stock:
+    /// on hand less the held-back adjustments (when their net is positive) and the automatic
+    /// adjustments since the last count, never below zero; then less the open orders, the promo
+    /// orders and the transfers out. For a warehouse-rule item the orders are the larger of the
+    /// warehouse commitment and the open orders.
     /// </summary>
     public static decimal AcumaticaLevel(AcumaticaStockFigures figures)
     {
         ArgumentNullException.ThrowIfNull(figures);
 
-        var committed = Math.Max(
-            figures.SalesOrderBooked + figures.SalesOrderAllocated,
-            figures.OpenOrderQuantity);
-        return figures.OnHand - committed + figures.TransfersIn - figures.TransfersOut;
+        var forSale = Math.Max(
+            0,
+            figures.OnHand - Math.Max(0, figures.HeldBackAdjustments) - figures.AutoAdjustments);
+        var orders = figures.WarehouseCommitted is { } committed
+            ? Math.Max(committed, figures.OpenOrderQuantity)
+            : figures.OpenOrderQuantity;
+        return forSale - orders - figures.PromoOrderQuantity - figures.TransfersOut;
     }
 
     /// <summary>

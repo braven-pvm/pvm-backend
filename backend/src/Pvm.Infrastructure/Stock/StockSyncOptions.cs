@@ -14,9 +14,8 @@ public enum StockSyncMode
 }
 
 /// <summary>
-/// Configuration for the Acumatica → WooCommerce stock sync. The defaults reproduce the legacy
-/// <c>update stock.py</c>: warehouse HO, location FG, sales orders of type SO and S1 placed in the
-/// last 45 days, a published minimum of 5.
+/// Configuration for the Acumatica → WooCommerce stock sync. The defaults reproduce the "current
+/// stock" sheet of inventory lite.xlsm for warehouse HO, location FG, with a published minimum of 5.
 /// </summary>
 public sealed record StockSyncOptions
 {
@@ -33,15 +32,37 @@ public sealed record StockSyncOptions
     /// <summary>Below this level the store shows no stock.</summary>
     public int MinimumPublishedQuantity { get; init; } = 5;
 
-    /// <summary>How far back an unshipped sales order still holds stock.</summary>
+    /// <summary>How far back a sales order with no confirmed shipment still holds stock.</summary>
     public int OpenOrderLookbackDays { get; init; } = 45;
 
     public string[] OpenOrderTypes { get; init; } = ["SO", "S1"];
 
-    /// <summary>
-    /// Customers whose orders do not hold stock. The legacy script kept this list inside its SQL.
-    /// </summary>
+    /// <summary>Customers whose orders do not hold stock: house and promotion accounts.</summary>
     public string[] ExcludedCustomers { get; init; } = [];
+
+    /// <summary>Promotion accounts. Their orders of any type except quotes hold stock for longer.</summary>
+    public string[] PromoCustomers { get; init; } = [];
+
+    /// <summary>How far back a promotion order with no confirmed shipment still holds stock.</summary>
+    public int PromoOrderLookbackDays { get; init; } = 150;
+
+    /// <summary>The order type that never holds stock for a promotion account.</summary>
+    public string PromoIgnoredOrderType { get; init; } = "QT";
+
+    /// <summary>Adjustments with this reason code bring in stock that is not for sale.</summary>
+    public string HeldBackReasonCode { get; init; } = "BLADJHO";
+
+    /// <summary>The first adjustment date the held-back total counts from.</summary>
+    public DateOnly HeldBackSince { get; init; } = new(2022, 5, 1);
+
+    /// <summary>Automatic adjustments after an item's last stock count are not for sale either.</summary>
+    public string AutoAdjustmentReasonCode { get; init; } = "AUTOADJ";
+
+    /// <summary>
+    /// Items outside the sheet's main query. Their orders are the larger of the warehouse booked
+    /// or allocated quantity and the open orders, and their transfers count at every location.
+    /// </summary>
+    public string[] WarehouseRulePrefixes { get; init; } = ["PROT", "SUPL", "REPL"];
 
     /// <summary>The UTC offset Acumatica stores order dates in. South Africa has no daylight saving.</summary>
     public string AcumaticaUtcOffset { get; init; } = "+02:00";

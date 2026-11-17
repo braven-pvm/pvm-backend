@@ -1,7 +1,7 @@
 import { getLatestStockSyncRun, type StockSyncLine, type StockSyncRun } from "../../src/api/client";
 import { startEarly } from "../../src/api/early";
 import { requireWorkbenchUser } from "../../src/auth/session";
-import { formatDateTime } from "../../src/formatters.mjs";
+import { describeStockFigures, formatDateTime } from "../../src/formatters.mjs";
 import {
   DashboardPage,
   DataTable,
@@ -52,7 +52,7 @@ function columns(mode: string): Column<StockSyncLine>[] {
     { key: "level", header: "Acumatica level", render: (line) => level(line.acumaticaLevel), align: "end" },
     { key: "pending", header: "Open web orders", render: (line) => level(line.webPending), align: "end" },
     { key: "new", header: "Publishes", render: (line) => quantity(line.newQuantity), align: "end" },
-    { key: "reason", header: "Why", render: (line) => line.reason ?? "", weak: true },
+    { key: "reason", header: "How", render: (line) => line.reason ?? describeStockFigures(line.figures), weak: true },
   ];
 }
 
@@ -142,7 +142,7 @@ export default async function StockPage() {
       header={{
         eyebrow: "Operations",
         title: "Stock",
-        description: "Stock levels from Acumatica to the web store, every 30 minutes. A level under 5 shows as out of stock.",
+        description: "Stock levels from Acumatica to the web store, every 30 minutes, worked out as on the inventory lite sheet. A level under 5 shows as out of stock.",
       }}
       notice={modeNotice(run)}
       attention={{

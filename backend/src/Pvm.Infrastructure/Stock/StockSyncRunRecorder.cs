@@ -16,7 +16,18 @@ public sealed record StockSyncLineView(
     int? NewQuantity,
     decimal? AcumaticaLevel,
     decimal WebPending,
-    string? Reason);
+    string? Reason,
+    StockFiguresView? Figures = null);
+
+/// <summary>The Acumatica figures behind one level, as the inventory lite sheet shows them.</summary>
+public sealed record StockFiguresView(
+    decimal OnHand,
+    decimal HeldBackAdjustments,
+    decimal AutoAdjustments,
+    decimal OpenOrders,
+    decimal PromoOrders,
+    decimal TransfersOut,
+    decimal? WarehouseCommitted);
 
 /// <summary>A recorded stock-sync run.</summary>
 public sealed record StockSyncRunView(
@@ -51,7 +62,17 @@ public sealed class StockSyncRunRecorder(PvmDbContext db, TimeProvider timeProvi
             line.NewQuantity,
             line.AcumaticaLevel,
             line.WebPending,
-            line.Reason)).ToList();
+            line.Reason,
+            line.Figures is { } figures
+                ? new StockFiguresView(
+                    figures.OnHand,
+                    figures.HeldBackAdjustments,
+                    figures.AutoAdjustments,
+                    figures.OpenOrderQuantity,
+                    figures.PromoOrderQuantity,
+                    figures.TransfersOut,
+                    figures.WarehouseCommitted)
+                : null)).ToList();
 
         await AddAsync(
             result.Mode.ToString(),

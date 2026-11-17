@@ -380,7 +380,7 @@ const routes = {
     writtenCount: 0,
     detail: null,
     lines: [
-      { sku: "KLER6", productId: 812, variationId: null, action: "Update", currentQuantity: 35, newQuantity: 9, acumaticaLevel: 9, webPending: 0, reason: null },
+      { sku: "CER07", productId: 812, variationId: null, action: "Update", currentQuantity: 3297, newQuantity: 0, acumaticaLevel: -15, webPending: 0, reason: null, figures: { onHand: 3307, heldBackAdjustments: 3000, autoAdjustments: 307, openOrders: 10, promoOrders: 0, transfersOut: 5, warehouseCommitted: null } },
       { sku: "DYNA39", productId: 901, variationId: null, action: "Update", currentQuantity: 0, newQuantity: 6, acumaticaLevel: 6, webPending: 0, reason: null },
       { sku: "DYNA22", productId: 640, variationId: null, action: "Unchanged", currentQuantity: 16, newQuantity: 16, acumaticaLevel: 16.5, webPending: 1, reason: null },
       { sku: "PROT20", productId: 512, variationId: null, action: "Unchanged", currentQuantity: 0, newQuantity: 0, acumaticaLevel: 3, webPending: 0, reason: null },
