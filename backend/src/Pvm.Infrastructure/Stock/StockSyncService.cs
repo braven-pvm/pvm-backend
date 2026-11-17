@@ -46,7 +46,7 @@ public sealed class StockSyncService(
             cancellationToken);
 
         var pending = StockLevelCalculator.WebPending(pendingLines, snapshot.LoadedWebOrderLines);
-        var lines = StockSyncPlanner.Plan(items, snapshot, pending, _options.MinimumPublishedQuantity);
+        var lines = StockSyncPlanner.Plan(items, snapshot, pending, _options.OutOfStockAtOrBelow);
         foreach (var line in lines)
         {
             Log(line);

@@ -101,9 +101,11 @@ public sealed class StockLevelCalculatorTests
 
     [Theory]
     [InlineData(4.9, 0)]
-    [InlineData(5, 5)]
+    [InlineData(5, 0)]
+    [InlineData(5.9, 0)]
+    [InlineData(6, 6)]
     [InlineData(121.7, 121)]
     [InlineData(-15, 0)]
-    public void Published_quantity_is_zero_below_the_minimum(double level, int expected)
+    public void Published_quantity_is_zero_at_or_below_the_out_of_stock_level(double level, int expected)
         => Assert.Equal(expected, StockLevelCalculator.PublishedQuantity((decimal)level, 5));
 }

@@ -99,9 +99,9 @@ public class StockSyncPlannerTests
     }
 
     [Fact]
-    public void A_level_below_the_minimum_publishes_zero()
+    public void A_level_at_the_out_of_stock_level_publishes_zero()
     {
-        var line = Assert.Single(StockSyncPlanner.Plan([Item("SION11", 6)], Snapshot([Figures("SION11", 4)]), NoPending, 5));
+        var line = Assert.Single(StockSyncPlanner.Plan([Item("SION11", 6)], Snapshot([Figures("SION11", 5)]), NoPending, 5));
 
         Assert.Equal(StockSyncAction.Update, line.Action);
         Assert.Equal(0, line.NewQuantity);

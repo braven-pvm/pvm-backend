@@ -15,7 +15,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddOptions<StockSyncOptions>()
             .Bind(configuration.GetSection(StockSyncOptions.SectionName))
-            .Validate(o => o.MinimumPublishedQuantity >= 0, "StockSync MinimumPublishedQuantity must not be negative.")
+            .Validate(o => o.OutOfStockAtOrBelow >= 0, "StockSync OutOfStockAtOrBelow must not be negative.")
             .Validate(o => o.OpenOrderLookbackDays is >= 1 and <= 365, "StockSync OpenOrderLookbackDays must be 1 to 365.")
             .Validate(o => o.MaximumItemsZeroedPerRun >= 0, "StockSync MaximumItemsZeroedPerRun must not be negative.");
         services.AddOptions<WooCommerceOptions>()
