@@ -380,6 +380,79 @@ public sealed class DocumentReviewEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task ReturnToReview_BlankNote_Returns400(string note)
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV1");
+
+        var response = await client.SendAsync(ReturnToReview(id, note));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ReturnToReview_NoteOver1000_Returns400()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV1");
+
+        var response = await client.SendAsync(ReturnToReview(id, new string('x', 1001)));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ReturnToReview_Viewer_Returns403()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV1");
+
+        var response = await client.SendAsync(ReturnToReview(id, "wrong invoice", AppRoles.Viewer));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ReturnToReview_UnknownDocument_Returns404()
+    {
+        var client = await StartAsync();
+
+        var response = await client.SendAsync(ReturnToReview(Guid.NewGuid(), "wrong invoice"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ReturnToReview_NotFiled_Returns409()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.NeedsReview);
+
+        var response = await client.SendAsync(ReturnToReview(id, "wrong invoice"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ReturnToReview_AlreadyAttached_Returns409_SaysRemoveInAcumatica()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV1", acumaticaAttachedAt: DateTimeOffset.UtcNow);
+
+        var response = await client.SendAsync(ReturnToReview(id, "wrong invoice"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var detail = problem.GetProperty("detail").GetString()!;
+        Assert.Contains("already attached", detail);
+        Assert.Contains("Acumatica", detail);
+        Assert.Contains("by hand", detail);
+        Assert.Equal(DocumentState.Filed, (await LoadAsync(id)).State);
+    }
+
     private static InvoiceCandidate Invoice(string reference)
         => new(reference, new DateOnly(2026, 11, 1), "C001", "Acme Stores (Pty) Ltd", null, null, "Open");
 
@@ -390,7 +463,8 @@ public sealed class DocumentReviewEndpointsTests : IAsyncLifetime
         string customerName = "Acme Stores (Pty) Ltd",
         ReviewReason? reviewReason = null,
         string? extractionJson = null,
-        DateTimeOffset? rejectedAt = null)
+        DateTimeOffset? rejectedAt = null,
+        DateTimeOffset? acumaticaAttachedAt = null)
     {
         var id = Guid.NewGuid();
         var at = uploadedAt ?? DateTimeOffset.UtcNow;
@@ -414,6 +488,7 @@ public sealed class DocumentReviewEndpointsTests : IAsyncLifetime
             MatchedReference = matchedReference,
             MatchedCustomerName = matchedReference is null ? null : customerName,
             MatchedBy = matchedReference is null ? null : "auto",
+            AcumaticaAttachedAt = acumaticaAttachedAt,
             UploadedBy = "driver@pvm.test",
             UploadedAt = at,
             UpdatedAt = at,
@@ -444,6 +519,13 @@ public sealed class DocumentReviewEndpointsTests : IAsyncLifetime
 
     private static HttpRequestMessage Reject(Guid id, string note, string role = AppRoles.Operator)
         => new(HttpMethod.Post, $"/api/documents/{id:D}/reject")
+        {
+            Content = JsonContent.Create(new { note }),
+            Headers = { { TestAuthHandler.RoleHeader, role } }
+        };
+
+    private static HttpRequestMessage ReturnToReview(Guid id, string note, string role = AppRoles.Operator)
+        => new(HttpMethod.Post, $"/api/documents/{id:D}/return-to-review")
         {
             Content = JsonContent.Create(new { note }),
             Headers = { { TestAuthHandler.RoleHeader, role } }

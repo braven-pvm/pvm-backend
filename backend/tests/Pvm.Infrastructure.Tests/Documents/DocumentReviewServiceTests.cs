@@ -237,6 +237,119 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
         Assert.Null(row.ReviewNote);
     }
 
+    [Fact]
+    public async Task ReturnToReview_FiledNotAttached_BackOnTheReviewList_MatchCleared()
+    {
+        var id = await SeedAsync(DocumentState.NeedsReview);
+        _acumatica.SearchResults = [Invoice("INV001234", "Acme Stores (Pty) Ltd")];
+        await FileToAsync(id, "INV001234", AcumaticaAttachMode.Shadow);
+
+        var outcome = await ReturnToReviewAsync(id, "wrong invoice; split shipment", "lead@pvm.co.za");
+
+        Assert.Equal(ReturnToReviewOutcome.Returned, outcome);
+        var row = await LoadAsync(id);
+        Assert.Equal(DocumentState.NeedsReview, row.State);
+        Assert.Null(row.ReviewReason);
+        Assert.Null(row.MatchedReference);
+        Assert.Null(row.MatchedCustomerName);
+        Assert.Null(row.MatchedBy);
+        Assert.False(row.AcumaticaAttachPending);
+        Assert.Null(row.AcumaticaAttachedAt);
+        Assert.Null(row.RejectedAt);
+        Assert.Equal("wrong invoice; split shipment", row.ReviewNote);
+        Assert.Equal("lead@pvm.co.za", row.ResolvedBy);
+        Assert.NotNull(row.ResolvedAt);
+    }
+
+    [Fact]
+    public async Task ReturnToReview_AlreadyAttached_NoWrite()
+    {
+        var id = await SeedAsync(DocumentState.NeedsReview);
+        _acumatica.SearchResults = [Invoice("INV001234", "Acme Stores (Pty) Ltd")];
+        await FileToAsync(id, "INV001234", AcumaticaAttachMode.Write);
+        Assert.NotNull((await LoadAsync(id)).AcumaticaAttachedAt);
+
+        var outcome = await ReturnToReviewAsync(id, "wrong invoice", User);
+
+        Assert.Equal(ReturnToReviewOutcome.AlreadyAttached, outcome);
+        var row = await LoadAsync(id);
+        Assert.Equal(DocumentState.Filed, row.State);
+        Assert.Equal("INV001234", row.MatchedReference);
+        Assert.Null(row.ReviewNote);
+    }
+
+    [Theory]
+    [InlineData(DocumentState.NeedsReview)]
+    [InlineData(DocumentState.Failed)]
+    [InlineData(DocumentState.Received)]
+    public async Task ReturnToReview_NotFiled_NoWrite(DocumentState state)
+    {
+        var id = await SeedAsync(state);
+
+        var outcome = await ReturnToReviewAsync(id, "wrong invoice", User);
+
+        Assert.Equal(ReturnToReviewOutcome.NotFiled, outcome);
+        var row = await LoadAsync(id);
+        Assert.Equal(state, row.State);
+        Assert.Null(row.ReviewNote);
+    }
+
+    [Fact]
+    public async Task ReturnToReview_UnknownDocument_NotFound()
+    {
+        var outcome = await ReturnToReviewAsync(Guid.NewGuid(), "wrong invoice", User);
+
+        Assert.Equal(ReturnToReviewOutcome.NotFound, outcome);
+    }
+
+    [Fact]
+    public async Task Backfill_NeverAttachesADocumentReturnedToReview()
+    {
+        var id = await SeedAsync(DocumentState.NeedsReview);
+        _acumatica.SearchResults = [Invoice("INV001234", "Acme Stores (Pty) Ltd")];
+        await FileToAsync(id, "INV001234", AcumaticaAttachMode.Shadow);
+        Assert.Equal(ReturnToReviewOutcome.Returned, await ReturnToReviewAsync(id, "wrong invoice", User));
+
+        int attached;
+        await using (var db = CreateDbContext())
+        {
+            attached = await CreateProcessor(db, AcumaticaAttachMode.Write).BackfillPendingAttachmentsAsync(default);
+        }
+
+        Assert.Equal(0, attached);
+        Assert.Empty(_acumatica.AttachAttempts);
+    }
+
+    [Theory]
+    [InlineData(DocumentState.NeedsReview)]
+    [InlineData(DocumentState.Failed)]
+    [InlineData(DocumentState.Received)]
+    [InlineData(DocumentState.Processing)]
+    public async Task Backfill_NeverAttachesARowThatIsNotFiled_EvenWithAStaleMatch(DocumentState state)
+    {
+        var id = await SeedAsync(state, matchedReference: "INV001234");
+        await using (var db = CreateDbContext())
+        {
+            await db.CapturedDocuments.Where(item => item.Id == id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.AcumaticaAttachPending, true));
+        }
+
+        int attached;
+        await using (var db = CreateDbContext())
+        {
+            attached = await CreateProcessor(db, AcumaticaAttachMode.Write).BackfillPendingAttachmentsAsync(default);
+        }
+
+        Assert.Equal(0, attached);
+        Assert.Empty(_acumatica.AttachAttempts);
+    }
+
+    private async Task<ReturnToReviewOutcome> ReturnToReviewAsync(Guid id, string note, string user)
+    {
+        await using var db = CreateDbContext();
+        return await CreateService(db, AcumaticaAttachMode.Shadow).ReturnToReviewAsync(id, note, user, default);
+    }
+
     private async Task<FileToResult> FileToAsync(Guid id, string reference, AcumaticaAttachMode mode)
     {
         await using var db = CreateDbContext();
@@ -244,18 +357,17 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
     }
 
     private DocumentReviewService CreateService(PvmDbContext db, AcumaticaAttachMode mode)
-    {
-        var options = Options.Create(new DocumentCaptureOptions { AcumaticaAttachMode = mode });
-        var processor = new DocumentProcessor(
+        => new(db, _acumatica, CreateProcessor(db, mode), NullLogger<DocumentReviewService>.Instance);
+
+    private DocumentProcessor CreateProcessor(PvmDbContext db, AcumaticaAttachMode mode)
+        => new(
             db,
             [new ProofOfDeliveryDocumentType()],
             new UnusedExtractor(),
             _acumatica,
             _store,
-            options,
+            Options.Create(new DocumentCaptureOptions { AcumaticaAttachMode = mode }),
             NullLogger<DocumentProcessor>.Instance);
-        return new DocumentReviewService(db, _acumatica, processor, NullLogger<DocumentReviewService>.Instance);
-    }
 
     private static InvoiceCandidate Invoice(string reference, string customerName)
         => new(reference, new DateOnly(2026, 11, 1), "C001", customerName, null, null, "Open");

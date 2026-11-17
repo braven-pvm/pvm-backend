@@ -28,6 +28,18 @@ public enum RejectOutcome
     NotOpen,
 }
 
+public enum ReturnToReviewOutcome
+{
+    Returned,
+    NotFound,
+
+    /// <summary>The document is not Filed.</summary>
+    NotFiled,
+
+    /// <summary>The PDF already reached Acumatica; it must be removed there by hand.</summary>
+    AlreadyAttached,
+}
+
 /// <summary>
 /// A person's resolution of a document on the review list (design 6.8): file it to an invoice
 /// that the Acumatica search confirms, or reject it with a note. Both writes are conditional on
@@ -176,5 +188,77 @@ public sealed class DocumentReviewService(
 
         logger.LogInformation("document.review.rejected DocumentId={DocumentId}", documentId);
         return RejectOutcome.Rejected;
+    }
+
+    /// <summary>
+    /// Takes a wrongly filed document back to the review list with a note. Allowed only while the
+    /// PDF has not reached Acumatica: the row is Filed and <c>AcumaticaAttachedAt</c> is null.
+    /// The match is cleared and the attachment no longer waits, so the backfill leaves it alone.
+    /// </summary>
+    public async Task<ReturnToReviewOutcome> ReturnToReviewAsync(
+        Guid documentId,
+        string note,
+        string user,
+        CancellationToken cancellationToken)
+    {
+        var current = await CurrentForReturnAsync(documentId, cancellationToken);
+        if (current is not ReturnToReviewOutcome.Returned)
+        {
+            return current;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var updated = await dbContext.CapturedDocuments
+            .Where(item => item.Id == documentId
+                && item.State == DocumentState.Filed
+                && item.AcumaticaAttachedAt == null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(item => item.State, DocumentState.NeedsReview)
+                    .SetProperty(item => item.ReviewReason, (ReviewReason?)null)
+                    .SetProperty(item => item.MatchedReference, (string?)null)
+                    .SetProperty(item => item.MatchedCustomerName, (string?)null)
+                    .SetProperty(item => item.MatchedBy, (string?)null)
+                    .SetProperty(item => item.AcumaticaAttachPending, false)
+                    .SetProperty(item => item.ReviewNote, note)
+                    .SetProperty(item => item.RejectedAt, (DateTimeOffset?)null)
+                    .SetProperty(item => item.RejectedBy, (string?)null)
+                    .SetProperty(item => item.ResolvedBy, user)
+                    .SetProperty(item => item.ResolvedAt, now)
+                    .SetProperty(item => item.UpdatedAt, now),
+                cancellationToken);
+        if (updated == 0)
+        {
+            // The attach (or another person) won the race: say why from the row as it is now.
+            var outcome = await CurrentForReturnAsync(documentId, cancellationToken);
+            logger.LogWarning(
+                "document.review.return.superseded DocumentId={DocumentId} Outcome={Outcome}",
+                documentId,
+                outcome);
+            return outcome is ReturnToReviewOutcome.Returned ? ReturnToReviewOutcome.NotFiled : outcome;
+        }
+
+        logger.LogInformation(
+            "document.review.returned DocumentId={DocumentId} ResolvedBy={ResolvedBy}",
+            documentId,
+            user);
+        return ReturnToReviewOutcome.Returned;
+    }
+
+    /// <summary>What a return to review would answer for the row as it is now; Returned means it is allowed.</summary>
+    private async Task<ReturnToReviewOutcome> CurrentForReturnAsync(Guid documentId, CancellationToken cancellationToken)
+    {
+        var current = await dbContext.CapturedDocuments
+            .AsNoTracking()
+            .Where(item => item.Id == documentId)
+            .Select(item => new { item.State, item.AcumaticaAttachedAt })
+            .SingleOrDefaultAsync(cancellationToken);
+        return current switch
+        {
+            null => ReturnToReviewOutcome.NotFound,
+            { State: not DocumentState.Filed } => ReturnToReviewOutcome.NotFiled,
+            { AcumaticaAttachedAt: not null } => ReturnToReviewOutcome.AlreadyAttached,
+            _ => ReturnToReviewOutcome.Returned,
+        };
     }
 }

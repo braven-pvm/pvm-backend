@@ -18,6 +18,8 @@ namespace Pvm.Api.Features.Documents;
 ///   <item><c>GET /api/documents/{id}</c> and <c>/{id}/file</c> — one document and its PDF.</item>
 ///   <item><c>GET /api/documents/review/invoice-search</c>, <c>POST /{id}/file-to</c> and
 ///   <c>POST /{id}/reject</c> — the review actions.</item>
+///   <item><c>POST /{id}/return-to-review</c> — takes a wrongly filed document, not yet attached in
+///   Acumatica, back to the review list.</item>
 /// </list>
 /// </summary>
 public static class DocumentReviewEndpoints
@@ -37,6 +39,7 @@ public static class DocumentReviewEndpoints
         group.MapGet("/{id:guid}/file", FileAsync).RequireAuthorization("Invoices.Read");
         group.MapPost("/{id:guid}/file-to", FileToAsync).RequireAuthorization("Invoices.Write");
         group.MapPost("/{id:guid}/reject", RejectAsync).RequireAuthorization("Invoices.Write");
+        group.MapPost("/{id:guid}/return-to-review", ReturnToReviewAsync).RequireAuthorization("Invoices.Write");
 
         return app;
     }
@@ -306,6 +309,37 @@ public static class DocumentReviewEndpoints
             RejectOutcome.NotFound => NotFound(),
             RejectOutcome.NotOpen => Conflict("The document is not open on the review list; only an unrejected document in NeedsReview or Failed can be rejected."),
             _ => throw new InvalidOperationException("Unknown reject outcome.")
+        };
+    }
+
+    private static async Task<IResult> ReturnToReviewAsync(
+        Guid id,
+        RejectRequest? request,
+        CurrentAppUserAccessor currentUser,
+        DocumentReviewService reviewService,
+        CancellationToken cancellationToken)
+    {
+        var note = request?.Note?.Trim();
+        if (string.IsNullOrEmpty(note) || note.Length > DocumentReviewService.MaxNoteLength)
+        {
+            return BadRequest($"'note' is required, at most {DocumentReviewService.MaxNoteLength} characters.");
+        }
+
+        var user = CurrentEmail(currentUser);
+        if (user is null)
+        {
+            return UserNotResolved();
+        }
+
+        return await reviewService.ReturnToReviewAsync(id, note, user, cancellationToken) switch
+        {
+            ReturnToReviewOutcome.Returned => Results.Ok(new { documentId = id, state = DocumentState.NeedsReview.ToString() }),
+            ReturnToReviewOutcome.NotFound => NotFound(),
+            ReturnToReviewOutcome.NotFiled => Conflict("The document is not filed; only a filed document can be sent back to review."),
+            ReturnToReviewOutcome.AlreadyAttached => Conflict(
+                "The PDF is already attached to the invoice in Acumatica. Remove the attachment in Acumatica by hand; "
+                + "the document cannot be sent back to review from here."),
+            _ => throw new InvalidOperationException("Unknown return-to-review outcome.")
         };
     }
 
