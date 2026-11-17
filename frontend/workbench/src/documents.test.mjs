@@ -5,12 +5,17 @@ import {
   buildDocumentSearchQuery,
   isDocumentId,
   canActOnDocument,
+  canProcessAgain,
+  canReturnToReview,
   documentTypeLabel,
+  fileToAttachText,
   fileToErrorMessage,
   formatDocumentState,
   formatReviewReason,
   readExtraction,
+  processAgainErrorMessage,
   rejectErrorMessage,
+  returnToReviewErrorMessage,
   unconfirmedMessage,
 } from "./documents.ts";
 
@@ -170,5 +175,40 @@ test("an unconfirmed write tells the user to reload", () => {
   assert.equal(
     unconfirmedMessage("rejected"),
     "We could not confirm whether the document was rejected. Reload the page to see its state.",
+  );
+});
+
+test("only a filed document that is not attached yet can be sent back to review", () => {
+  assert.equal(canReturnToReview({ state: "Filed", acumaticaAttachedAt: null }), true);
+  assert.equal(canReturnToReview({ state: "Filed", acumaticaAttachedAt: "2026-11-17T10:00:00Z" }), false);
+  assert.equal(canReturnToReview({ state: "NeedsReview", acumaticaAttachedAt: null }), false);
+  assert.equal(canReturnToReview({ state: "Failed", acumaticaAttachedAt: null }), false);
+});
+
+test("a failed or stuck document can be processed again", () => {
+  assert.equal(canProcessAgain({ state: "Failed", stuck: false }), true);
+  assert.equal(canProcessAgain({ state: "Processing", stuck: true }), true);
+  assert.equal(canProcessAgain({ state: "Received", stuck: true }), true);
+  assert.equal(canProcessAgain({ state: "Processing", stuck: false }), false);
+  assert.equal(canProcessAgain({ state: "NeedsReview", stuck: false }), false);
+  assert.equal(canProcessAgain({ state: "Filed", stuck: false }), false);
+});
+
+test("the file-to dialog says what happens in Acumatica for the attach mode", () => {
+  assert.equal(fileToAttachText("Write"), "The PDF will be attached to this invoice in Acumatica.");
+  assert.equal(fileToAttachText("Shadow"), "The PDF will be attached in Acumatica when attachments are switched on.");
+  // An unknown or missing mode never promises an attachment.
+  assert.equal(fileToAttachText(undefined), "The PDF will be attached in Acumatica when attachments are switched on.");
+});
+
+test("send-back and process-again errors tell the user what happened", () => {
+  assert.match(returnToReviewErrorMessage(409), /attached in Acumatica|no longer filed/i);
+  assert.match(returnToReviewErrorMessage(400), /note/i);
+  assert.match(returnToReviewErrorMessage(403), /permission/i);
+  assert.match(processAgainErrorMessage(409), /failed or stuck/i);
+  assert.match(processAgainErrorMessage(500), /nothing changed/i);
+  assert.equal(
+    unconfirmedMessage("sent back to review"),
+    "We could not confirm whether the document was sent back to review. Reload the page to see its state.",
   );
 });

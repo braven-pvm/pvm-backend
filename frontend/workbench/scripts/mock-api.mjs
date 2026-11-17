@@ -252,7 +252,7 @@ const statements = (prefix, start, lines, closing) => [
 
 // Captured documents (src/api/documents.ts). One of each case the pages show:
 // filed (attached and waiting), needs review with candidates, unreadable,
-// failed, stuck, and a rejected one that only the search finds.
+// failed, stuck, sent back to review, and a rejected one that only the search finds.
 const invoicePool = [
   { referenceNumber: "INV001234", date: daysAgo(16).slice(0, 10), customerId: "C0042", customerName: "Acme Stores (Pty) Ltd", parentCustomerName: null, shipToName: "Acme Middelburg", status: "Open" },
   { referenceNumber: "INV001235", date: daysAgo(16).slice(0, 10), customerId: "C0042", customerName: "Acme Stores (Pty) Ltd", parentCustomerName: null, shipToName: "Acme Witbank", status: "Open" },
@@ -270,6 +270,7 @@ const documents = [
   documentRecord("d0c00000-0000-4000-8000-000000000005", "NeedsReview", "ReadFailure", { uploaded: 3 * 60, unreadableReason: "The page is too blurred to read any number." }),
   documentRecord("d0c00000-0000-4000-8000-000000000006", "Failed", null, { uploaded: 2 * 60 }),
   documentRecord("d0c00000-0000-4000-8000-000000000007", "Processing", null, { uploaded: 95, stuck: true }),
+  documentRecord("d0c00000-0000-4000-8000-000000000009", "NeedsReview", null, { uploaded: 5 * 60, resolvedBy: "izelle@example.test", resolvedMinutesAgo: 30, reviewNote: "Filed to the wrong invoice of a split delivery.", extraction: { invoiceNumbers: ["INV001235"], salesOrderNumbers: ["SO004410"], customerOrderNumbers: ["PO77812"], clientName: "Acme Stores", deliveryDate: daysAgo(0).slice(0, 10), signaturePresent: true, note: null }, candidates: [invoiceByNumber("INV001235"), invoiceByNumber("INV001234")] }),
   documentRecord("d0c00000-0000-4000-8000-000000000008", "NeedsReview", "NoCandidate", { uploaded: 3 * 24 * 60, rejectedBy: "izelle@example.test", rejectedMinutesAgo: 3 * 24 * 60 - 30, reviewNote: "Bad scan, the driver scanned it again.", extraction: { invoiceNumbers: [], clientName: "Unknown" } }),
 ];
 
@@ -300,6 +301,7 @@ function documentRecord(id, state, reviewReason, options) {
     extraction: options.extraction ?? null,
     unreadableReason: options.unreadableReason ?? null,
     candidates: options.candidates ?? [],
+    acumaticaAttachMode: "Shadow",
   };
 }
 
@@ -504,6 +506,23 @@ const routes = {
     const invoice = invoicePool.find((candidate) => candidate.referenceNumber.toLowerCase() === reference.toLowerCase());
     if (!invoice) return problem(400, `Acumatica has no invoice with the reference '${reference}'.`);
     return { documentId: id, state: "Filed", matchedReference: invoice.referenceNumber, matchedCustomerName: invoice.customerName };
+  },
+  // Filed and not attached (the second filed document) can go back; the attached one answers 409.
+  "POST /api/documents/:id/return-to-review": (id, context) => {
+    const item = documents.find((document) => document.id === id);
+    if (!item) return problem(404, "Not found.");
+    const note = String(context.json?.note ?? "").trim();
+    if (!note || note.length > 1000) return problem(400, "'note' is required, at most 1000 characters.");
+    if (item.state !== "Filed") return problem(409, "The document is not filed; only a filed document can be sent back to review.");
+    if (item.acumaticaAttachedAt) return problem(409, "The PDF is already attached to the invoice in Acumatica. Remove the attachment in Acumatica by hand; the document cannot be sent back to review from here.");
+    return { documentId: id, state: "NeedsReview" };
+  },
+  // Failed and stuck documents can be processed again.
+  "POST /api/documents/:id/process-again": (id) => {
+    const item = documents.find((document) => document.id === id);
+    if (!item) return problem(404, "Not found.");
+    if (item.state !== "Failed" && !item.stuck) return problem(409, "Only a Failed document, or one stuck in Received or Processing for more than 30 minutes, can be processed again.");
+    return { documentId: id, state: "Received" };
   },
   "POST /api/documents/:id/reject": (id, context) => {
     const item = documents.find((document) => document.id === id);

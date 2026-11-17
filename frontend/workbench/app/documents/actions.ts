@@ -2,8 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { fileDocumentTo, rejectDocument } from "../../src/api/documents";
-import { fileToErrorMessage, isDocumentId, rejectErrorMessage, unconfirmedMessage } from "../../src/documents";
+import { fileDocumentTo, processDocumentAgain, rejectDocument, returnDocumentToReview } from "../../src/api/documents";
+import {
+  fileToErrorMessage,
+  isDocumentId,
+  processAgainErrorMessage,
+  rejectErrorMessage,
+  returnToReviewErrorMessage,
+  unconfirmedMessage,
+} from "../../src/documents";
 
 function documentId(formData: FormData): string {
   const id = formData.get("documentId");
@@ -66,4 +73,38 @@ export async function rejectDocumentAction(formData: FormData) {
     finish(id, { error: rejectErrorMessage(result.status) });
   }
   finish(id, { status: "Document rejected. It is off the review list." });
+}
+
+export async function returnToReviewAction(formData: FormData) {
+  const id = documentId(formData);
+  const note = text(formData, "note");
+  if (!note || note.length > 1000) {
+    finish(id, { error: returnToReviewErrorMessage(400) });
+  }
+
+  let result: Awaited<ReturnType<typeof returnDocumentToReview>>;
+  try {
+    result = await returnDocumentToReview(id, note);
+  } catch {
+    finish(id, { error: unconfirmedMessage("sent back to review") });
+  }
+  if (!result.ok) {
+    finish(id, { error: returnToReviewErrorMessage(result.status) });
+  }
+  finish(id, { status: "Document sent back to review. It is on the review list." });
+}
+
+export async function processAgainAction(formData: FormData) {
+  const id = documentId(formData);
+
+  let result: Awaited<ReturnType<typeof processDocumentAgain>>;
+  try {
+    result = await processDocumentAgain(id);
+  } catch {
+    finish(id, { error: unconfirmedMessage("queued for processing") });
+  }
+  if (!result.ok) {
+    finish(id, { error: processAgainErrorMessage(result.status) });
+  }
+  finish(id, { status: "Document queued. It will be read and matched again in a minute or two." });
 }

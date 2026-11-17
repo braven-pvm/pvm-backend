@@ -135,6 +135,29 @@ export function canActOnDocument(document: { state: string; stuck: boolean }): b
 }
 
 /**
+ * Send back to review: only a filed document whose PDF has not reached
+ * Acumatica. Once attached, the file must be removed in Acumatica by hand.
+ */
+export function canReturnToReview(document: { state: string; acumaticaAttachedAt: string | null }): boolean {
+  return document.state === "Filed" && !document.acumaticaAttachedAt;
+}
+
+/** Process again: a Failed document, or one stuck in Received or Processing. */
+export function canProcessAgain(document: { state: string; stuck: boolean }): boolean {
+  return document.state === "Failed" || document.stuck;
+}
+
+/**
+ * What the file-to dialog promises about Acumatica. Only Write mode attaches
+ * the PDF now; any other or missing mode never promises an attachment.
+ */
+export function fileToAttachText(mode: string | null | undefined): string {
+  return mode === "Write"
+    ? "The PDF will be attached to this invoice in Acumatica."
+    : "The PDF will be attached in Acumatica when attachments are switched on.";
+}
+
+/**
  * One field of the extracted data. The extractor's keys are not guaranteed
  * to be camel case, so the key is matched without regard to case.
  */
@@ -179,6 +202,34 @@ export function rejectErrorMessage(status: number): string {
   }
 }
 
+export function returnToReviewErrorMessage(status: number): string {
+  switch (status) {
+    case 409:
+      return "The document is no longer filed, or its PDF is already attached in Acumatica. An attached PDF must be removed in Acumatica by hand. The page now shows the current state.";
+    case 400:
+      return "Write a note of at most 1000 characters that says why the document goes back to review.";
+    case 404:
+      return "This document no longer exists.";
+    case 403:
+      return "You do not have permission to send documents back to review. Ask an Admin or Operator.";
+    default:
+      return `The document could not be sent back to review (error ${status}). Nothing changed. Try again in a minute.`;
+  }
+}
+
+export function processAgainErrorMessage(status: number): string {
+  switch (status) {
+    case 409:
+      return "Only a failed or stuck document can be processed again. The page now shows its current state.";
+    case 404:
+      return "This document no longer exists.";
+    case 403:
+      return "You do not have permission to process documents again. Ask an Admin or Operator.";
+    default:
+      return `The document could not be queued (error ${status}). Nothing changed. Try again in a minute.`;
+  }
+}
+
 /** A document id is a GUID. Checked before an id goes into an API path. */
 export const documentIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -210,6 +261,6 @@ export function acumaticaInvoiceUrl(baseUrl: string | null | undefined, referenc
 }
 
 /** When the API call itself failed (timeout, network), the write may or may not have happened. */
-export function unconfirmedMessage(outcome: "filed" | "rejected"): string {
+export function unconfirmedMessage(outcome: "filed" | "rejected" | "sent back to review" | "queued for processing"): string {
   return `We could not confirm whether the document was ${outcome}. Reload the page to see its state.`;
 }

@@ -81,6 +81,8 @@ export type DocumentDetail = {
   extraction: Record<string, unknown> | null;
   unreadableReason: string | null;
   candidates: InvoiceCandidate[];
+  /** The backend's Acumatica attach mode: "Shadow" or "Write". Read-only. */
+  acumaticaAttachMode?: string;
 };
 
 export type DocumentType = { code: string; displayName: string };
@@ -175,6 +177,14 @@ export function fileDocumentTo(id: string, invoiceReference: string): Promise<Ap
 
 export function rejectDocument(id: string, note: string): Promise<ApiResult<unknown>> {
   return postJson(`/api/documents/${encodeURIComponent(id)}/reject`, { note });
+}
+
+export function returnDocumentToReview(id: string, note: string): Promise<ApiResult<unknown>> {
+  return postJson(`/api/documents/${encodeURIComponent(id)}/return-to-review`, { note });
+}
+
+export function processDocumentAgain(id: string): Promise<ApiResult<unknown>> {
+  return postJson(`/api/documents/${encodeURIComponent(id)}/process-again`, {});
 }
 
 /** The PDF, as the backend streams it. For the workbench's own file route only. */

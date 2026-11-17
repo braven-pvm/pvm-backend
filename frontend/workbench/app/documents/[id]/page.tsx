@@ -4,7 +4,10 @@ import { acumaticaBaseUrl, getDocument, searchReviewInvoices, type DocumentDetai
 import { hasAnyRole, requireWorkbenchUser } from "../../../src/auth/session";
 import {
   canActOnDocument,
+  canProcessAgain,
+  canReturnToReview,
   documentTypeLabel,
+  fileToAttachText,
   formatDocumentState,
   formatReviewReason,
   isDocumentId,
@@ -29,7 +32,7 @@ import {
   type Column,
   type TimelineEntry,
 } from "../../../src/ui";
-import { fileDocumentToAction, rejectDocumentAction } from "../actions";
+import { fileDocumentToAction, processAgainAction, rejectDocumentAction, returnToReviewAction } from "../actions";
 import { AcumaticaInvoice, DocumentStateBadge, acumaticaLabel, customerOf, invoiceColumns } from "../document-parts";
 
 export const dynamic = "force-dynamic";
@@ -78,8 +81,8 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
           ) : null}
           {query.documentStatus ? <Notice tone="success" title={query.documentStatus} live /> : null}
           <StateNotice document={document} reason={reason} />
-          {open && !canWrite ? (
-            <Notice tone="info" title="Only an Admin or Operator can file or reject documents">
+          {(open || document.stuck) && !canWrite ? (
+            <Notice tone="info" title="Only an Admin or Operator can file, reject or process documents">
               You can see the document and what was read.
             </Notice>
           ) : null}
@@ -143,6 +146,7 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
                 </form>
               </Panel>
               {search ? <SearchResults document={document} q={q} search={search} /> : null}
+              {canProcessAgain(document) ? <ProcessAgain document={document} /> : null}
               {document.rejectedAt ? null : (
               <Panel title="Reject the document" description="For a bad scan or a document that is not a delivery note. It leaves the review list.">
                 <ConfirmDialog
@@ -168,6 +172,36 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
               )}
             </>
           ) : null}
+          {canWrite && document.stuck ? <ProcessAgain document={document} /> : null}
+          {canWrite && canReturnToReview(document) ? (
+            <Panel
+              title="Send back to review"
+              description="For a document filed to the wrong invoice. Its PDF is not in Acumatica yet."
+            >
+              <ConfirmDialog
+                triggerLabel="Send back to review"
+                triggerVariant="tertiary"
+                title="Send this document back to review?"
+                confirmLabel="Send back to review"
+                pendingLabel="Sending back…"
+                action={returnToReviewAction}
+                fields={{ documentId: document.id }}
+              >
+                <p>
+                  The document is no longer filed to {document.matchedReference ?? "the invoice"} and its PDF will not be
+                  attached. It goes back on the review list, where it can be filed to the right invoice.
+                </p>
+                <TextareaField
+                  name="note"
+                  label="Note"
+                  hint="Why it goes back, such as “Filed to the wrong invoice of a split delivery”. At most 1000 characters."
+                  width="full"
+                  maxLength={1000}
+                  required
+                />
+              </ConfirmDialog>
+            </Panel>
+          ) : null}
         </Stack>
       </Columns>
     </RecordPage>
@@ -186,8 +220,8 @@ function StateNotice({ document, reason }: { document: DocumentDetail; reason: s
   if (document.stuck) {
     return (
       <Notice tone="warning" title="Stuck — processing did not finish">
-        The document was uploaded {formatDateTime(document.uploadedAt)} and has not been read yet. There is nothing to file
-        or reject. Tell the backoffice developer if it stays stuck.
+        The document was uploaded {formatDateTime(document.uploadedAt)} and has not been read yet. An Admin or Operator can
+        process it again. Tell the backoffice developer if it stays stuck.
       </Notice>
     );
   }
@@ -201,9 +235,24 @@ function StateNotice({ document, reason }: { document: DocumentDetail; reason: s
       </Notice>
     );
   }
-  if (document.state === "NeedsReview" || document.state === "Failed") {
+  if (document.state === "NeedsReview" && !document.reviewReason && document.reviewNote) {
     return (
-      <Notice tone={document.state === "Failed" ? "error" : "warning"} title={reason ?? "Processing failed after every retry"}>
+      <Notice tone="warning" title={`Sent back to review by ${document.resolvedBy ?? "someone"}`}>
+        {document.reviewNote} Check the PDF, then file it to the right invoice, or reject it with a note.
+      </Notice>
+    );
+  }
+  if (document.state === "Failed") {
+    return (
+      <Notice tone="error" title={reason ?? "Processing failed after every retry"}>
+        {document.unreadableReason ? `${document.unreadableReason} ` : null}
+        Process it again once the cause is fixed, file it to the right invoice, or reject it with a note.
+      </Notice>
+    );
+  }
+  if (document.state === "NeedsReview") {
+    return (
+      <Notice tone="warning" title={reason ?? "Needs review"}>
         {document.unreadableReason ? `${document.unreadableReason} ` : null}
         Check the PDF, then file it to the right invoice, or reject it with a note.
       </Notice>
@@ -243,8 +292,29 @@ function FileToInvoice({ document, invoice }: { document: DocumentDetail; invoic
           { label: "Invoice date", value: invoice.date ? formatDate(invoice.date) : null },
         ]}
       />
-      <p>The PDF is attached to this invoice in Acumatica. The document leaves the review list.</p>
+      <p>{fileToAttachText(document.acumaticaAttachMode)} The document leaves the review list.</p>
     </ConfirmDialog>
+  );
+}
+
+function ProcessAgain({ document }: { document: DocumentDetail }) {
+  return (
+    <Panel
+      title="Process again"
+      description={document.stuck ? "Processing did not finish. Send the document through it again." : "Processing failed. Send the document through it again."}
+    >
+      <ConfirmDialog
+        triggerLabel="Process again"
+        triggerVariant="secondary"
+        title="Process this document again?"
+        confirmLabel="Process again"
+        pendingLabel="Queuing…"
+        action={processAgainAction}
+        fields={{ documentId: document.id }}
+      >
+        <p>The PDF is read and matched again. It is filed if the match is safe; otherwise it comes back to the review list.</p>
+      </ConfirmDialog>
+    </Panel>
   );
 }
 
