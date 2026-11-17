@@ -3,7 +3,9 @@ using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Options;
 using Pvm.Application.Messaging;
 using Pvm.Application.Submissions;
+using Pvm.Domain.Reporting;
 using Pvm.Infrastructure.Acumatica;
+using Pvm.Infrastructure.Reporting;
 using Pvm.Infrastructure.Messaging;
 using Pvm.Infrastructure.Operations;
 using Pvm.Infrastructure.PayloadArchive;
@@ -30,6 +32,61 @@ var refreshInvestecFeed = args.Contains(
 var syncWooCommerceStock = args.Contains(
     "--sync-woocommerce-stock",
     StringComparer.OrdinalIgnoreCase);
+var syncSellIn = args.Contains(
+    "--sync-sell-in",
+    StringComparer.OrdinalIgnoreCase);
+
+if (syncSellIn)
+{
+    // The sell-in load runs inline, like the Investec feed: one pass, no queue or consumer.
+    // With --from and --to (posting periods such as 012024), it loads those periods once, for history.
+    builder.Services.AddAcumaticaInvoiceSource(builder.Configuration);
+    builder.Services.AddPayloadArchive(builder.Configuration);
+    builder.Services.AddSellInSync(builder.Configuration);
+
+    using var sellInHost = builder.Build();
+    await using var sellInScope = sellInHost.Services.CreateAsyncScope();
+    var sellInLogger = sellInScope.ServiceProvider
+        .GetRequiredService<ILoggerFactory>()
+        .CreateLogger("SellInSync");
+    var sellInOptions = sellInScope.ServiceProvider.GetRequiredService<IOptions<SellInSyncOptions>>().Value;
+    var sellIn = sellInScope.ServiceProvider.GetRequiredService<SellInSyncService>();
+
+    var fromArgument = ArgumentValue(args, "--from");
+    var toArgument = ArgumentValue(args, "--to");
+    var (fromPeriod, toPeriod) = fromArgument is null && toArgument is null
+        ? SellInSyncService.ResolveWindow(DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(2)).DateTime), sellInOptions)
+        : (PostingPeriod.Parse(fromArgument ?? toArgument!), PostingPeriod.Parse(toArgument ?? fromArgument!));
+    var trigger = fromArgument is null && toArgument is null ? IntegrationRunTriggers.Scheduled : IntegrationRunTriggers.Manual;
+
+    try
+    {
+        var result = await sellIn.RunAsync(fromPeriod, toPeriod, trigger, "system:scheduler", CancellationToken.None);
+        sellInLogger.LogInformation(
+            "integration.run.completed RunType={RunType} RunId={RunId} From={From} To={To} Periods={Periods} Rows={Rows} Written={Written} Skipped={Skipped}",
+            SellInSyncService.RunType,
+            result.RunId,
+            result.FromPeriod.DisplayId,
+            result.ToPeriod.DisplayId,
+            result.PeriodsRead,
+            result.RowsRead,
+            result.LinesWritten,
+            result.RowsSkipped);
+    }
+    catch (Exception exception)
+    {
+        // Rethrow so that the Container Apps job reports a failed replica. The run log has the detail.
+        sellInLogger.LogError(
+            exception,
+            "integration.run.failed RunType={RunType} From={From} To={To}",
+            SellInSyncService.RunType,
+            fromPeriod.DisplayId,
+            toPeriod.DisplayId);
+        throw;
+    }
+
+    return;
+}
 
 if (enqueueShopriteRefresh || enqueueAcumaticaReconciliation || enqueueAcumaticaLookback)
 {
@@ -229,6 +286,12 @@ builder.Services.AddHostedService<OutboxDispatcherService>();
 builder.Services.AddHostedService<ServiceBusConsumerService>();
 
 await builder.Build().RunAsync();
+
+static string? ArgumentValue(string[] arguments, string name)
+{
+    var index = Array.FindIndex(arguments, argument => string.Equals(argument, name, StringComparison.OrdinalIgnoreCase));
+    return index >= 0 && index + 1 < arguments.Length ? arguments[index + 1] : null;
+}
 
 static DateTimeOffset ScheduleWindow(DateTimeOffset now, int intervalMinutes)
 {

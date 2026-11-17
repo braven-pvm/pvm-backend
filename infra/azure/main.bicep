@@ -171,6 +171,9 @@ param woocommerceConsumerSecret string = ''
 ])
 param stockSyncMode string = 'Shadow'
 
+@description('Loads Acumatica sell-in into the reports schema each night. Off by default. It only reads Acumatica.')
+param sellInEnabled bool = false
+
 @description('Acumatica contract REST endpoint name.')
 param acumaticaEndpointName string = 'Default'
 
@@ -293,6 +296,7 @@ module platform 'modules/platform.bicep' = {
     woocommerceConsumerKey: woocommerceConsumerKey
     woocommerceConsumerSecret: woocommerceConsumerSecret
     stockSyncMode: stockSyncMode
+    sellInEnabled: sellInEnabled
     acumaticaEndpointName: acumaticaEndpointName
     acumaticaEndpointVersion: acumaticaEndpointVersion
     acumaticaCustomerAccounts: acumaticaCustomerAccounts
