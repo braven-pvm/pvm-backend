@@ -2,6 +2,7 @@ using Azure.Identity;
 using Azure.Storage.Blobs;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Pvm.Application.Documents;
 
 namespace Pvm.Infrastructure.Documents;
@@ -10,7 +11,8 @@ public static class ServiceCollectionExtensions
 {
     /// <summary>
     /// Registers <see cref="DocumentCaptureOptions"/>, the known document types (as
-    /// <c>IEnumerable&lt;IDocumentType&gt;</c>), and the document store that
+    /// <c>IEnumerable&lt;IDocumentType&gt;</c>), the Claude extractor (options from section
+    /// <c>Anthropic</c>; the API key is checked on first use), and the document store that
     /// <c>DocumentCapture:Provider</c> selects.
     /// </summary>
     public static IServiceCollection AddDocumentCapture(
@@ -21,6 +23,9 @@ public static class ServiceCollectionExtensions
         var options = section.Get<DocumentCaptureOptions>() ?? new DocumentCaptureOptions();
         services.Configure<DocumentCaptureOptions>(section);
         services.AddSingleton<IDocumentType, ProofOfDeliveryDocumentType>();
+        services.Configure<AnthropicOptions>(configuration.GetSection(AnthropicOptions.SectionName));
+        services.AddSingleton<IDocumentExtractor>(sp =>
+            new ClaudeDocumentExtractor(sp.GetRequiredService<IOptions<AnthropicOptions>>()));
 
         if (string.Equals(options.Provider, "AzureBlob", StringComparison.OrdinalIgnoreCase))
         {
