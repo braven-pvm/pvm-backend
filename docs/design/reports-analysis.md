@@ -583,6 +583,52 @@ Production use starts after R2, in parallel with the workbook for one month.
 
 ---
 
+## 7a. Rules of the old SQL views, found from the data
+
+No definition of `FinYearSales_adr` or `LastYearSales_adr` exists (decision 1).
+Slice R1 found their rules by comparison. It compared the Acumatica lines from the
+GI `PVM-Sales-Lines` in QA with the workbook's `SalesData` sheet, for financial
+years 2024 and 2025 (March 2023 to February 2025, 24 months). The QA instance is
+a copy of production from June 2025. The workbook was refreshed from production
+in November 2026.
+
+### Method
+
+1. Load QA periods `012024` to `042026` with the sell-in job: 306 011 lines.
+2. Sum the workbook's 741 459 rows by month, customer, document type, item group
+   and type of good.
+3. Compare the two at the same grain. Investigate each group that differs.
+
+### Rules found
+
+| # | Rule of the old views | Evidence |
+| --- | --- | --- |
+| 1 | The month of a sale is its **posting period**, not the calendar month of the document date. `SalesMonth` 3 is posting period 1 | By document date, months differ by up to 42 %, in pairs that cancel. By posting period, 17 of 24 months match to the cent, and the other 7 differ by less than 0.4 % |
+| 2 | Only invoices (`INV`) and credit memos (`CRM`). Debit memos (`DRM`) are left out | 2 groups of debit memos are in Acumatica only |
+| 3 | Lines with an item that has no item class are left out | 4 groups with no item class are in Acumatica only, among them 2 invoice lines of one high round amount each |
+| 4 | Rep and customer group are the customer's **current** rep and class at refresh time, not the rep on the line | Each of the 2 827 workbook customers has exactly 1 rep and 1 group over all 8 years. In Acumatica, 233 customers have lines with more than one rep |
+| 5 | Lines with no rep are kept | The 464 lines with no rep match the workbook |
+
+After rules 1 to 3, all of the 35 724 groups at the grain month, customer,
+document type and item group match to the cent, with one exception. One customer
+(18 lines) is in Acumatica but not in the workbook. Its fields are complete. It
+was possibly merged or deleted in production after the QA copy.
+
+Item group, type of good and document type match per month after rules 1 to 3.
+Rep and customer group match for 86 % of the amount and for 1 878 of 2 002
+customers. The QA copy is 17 months older than the workbook, so changes of rep
+and class in that time can explain the rest. Only a read of the current customer
+master in production can confirm this.
+
+### Effect on the build
+
+- The reports group sales by posting period. `FinancialMonth` must come from the
+  posting period, not from the document date.
+- The GI must also give the customer's current salesperson, so that a report can
+  show the rep in the same way as the workbook.
+- The load must leave out debit memos and items without an item class, or
+  report them apart, as the owner decides.
+
 ## 8. Open questions for the owner
 
 ### Data source
