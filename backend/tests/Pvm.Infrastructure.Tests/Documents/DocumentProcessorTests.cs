@@ -688,6 +688,9 @@ public sealed class DocumentProcessorTests : IAsyncLifetime
 
     private sealed class FakeAcumatica : IAcumaticaDocumentClient
     {
+        public Task<InvoiceCandidate?> GetInvoiceAsync(string referenceNumber, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+
         public IReadOnlyList<CandidateHit> Hits { get; set; } = [];
 
         public Exception? FindException { get; set; }

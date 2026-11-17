@@ -300,6 +300,79 @@ public sealed class AcumaticaDocumentClientTests
     }
 
     [Fact]
+    public async Task GetInvoice_ExactReference_FiltersTypeAndReferenceEq()
+    {
+        var handler = new RoutingHandler(request => Route(request, salesInvoices: Invoice("INV001", "C100", "Open")));
+        var client = CreateClient(handler);
+
+        var invoice = await client.GetInvoiceAsync(" inv001 ", CancellationToken.None);
+
+        Assert.Equal(
+            new InvoiceCandidate("INV001", new DateOnly(2026, 11, 10), "C100", "Shoprite Mthatha", "Shoprite Checkers (Pty) Ltd", null, "Open"),
+            invoice);
+        var invoiceRequest = Assert.Single(handler.Requests, request => request.Path.EndsWith("/SalesInvoice", StringComparison.Ordinal));
+        Assert.Contains("$filter=Type eq 'Invoice' and ReferenceNbr eq 'inv001'", invoiceRequest.Query);
+        Assert.DoesNotContain("startswith", invoiceRequest.Query);
+        Assert.DoesNotContain("substringof", invoiceRequest.Query);
+        Assert.DoesNotContain(handler.Requests, request =>
+            request.Path.EndsWith("/Customer", StringComparison.Ordinal) && request.Filter.Contains("substringof", StringComparison.Ordinal));
+        Assert.EndsWith("/entity/auth/logout", handler.Requests[^1].Path);
+    }
+
+    [Fact]
+    public async Task GetInvoice_NoSuchInvoice_ReturnsNull()
+    {
+        var handler = new RoutingHandler(request => Route(request, salesInvoices: "[]"));
+        var client = CreateClient(handler);
+
+        Assert.Null(await client.GetInvoiceAsync("INV404", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetInvoice_AnotherReferenceInTheReply_ReturnsNull()
+    {
+        // Only the exact reference counts, even if Acumatica answers with something else.
+        var handler = new RoutingHandler(request => Route(request, salesInvoices: Invoice("INV0012345", "C100", "Open")));
+        var client = CreateClient(handler);
+
+        Assert.Null(await client.GetInvoiceAsync("INV001234", CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("Voided")]
+    [InlineData("Canceled")]
+    [InlineData(" Cancelled ")]
+    public async Task GetInvoice_VoidedOrCancelled_ReturnsNull(string status)
+    {
+        var handler = new RoutingHandler(request => Route(request, salesInvoices: Invoice("INV001", "C100", status)));
+        var client = CreateClient(handler);
+
+        Assert.Null(await client.GetInvoiceAsync("INV001", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetInvoice_BlankReference_ReturnsNull_WithoutSigningIn()
+    {
+        var handler = new RoutingHandler(request => Route(request));
+        var client = CreateClient(handler);
+
+        Assert.Null(await client.GetInvoiceAsync("  ", CancellationToken.None));
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public async Task GetInvoice_EscapesQuotes()
+    {
+        var handler = new RoutingHandler(request => Route(request));
+        var client = CreateClient(handler);
+
+        await client.GetInvoiceAsync("INV'1", CancellationToken.None);
+
+        var invoiceRequest = Assert.Single(handler.Requests, request => request.Path.EndsWith("/SalesInvoice", StringComparison.Ordinal));
+        Assert.Contains("ReferenceNbr eq 'INV''1'", invoiceRequest.Query);
+    }
+
+    [Fact]
     public async Task AttachFile_PutsToSalesInvoiceFilesEndpoint()
     {
         var handler = new RoutingHandler(request => Route(request));

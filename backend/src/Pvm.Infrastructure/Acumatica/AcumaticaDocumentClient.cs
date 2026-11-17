@@ -21,6 +21,7 @@ namespace Pvm.Infrastructure.Acumatica;
 /// <item>Invoices: <c>GET SalesInvoice?$select=Type,ReferenceNbr,Date,CustomerID,Status&amp;$filter=Type eq 'Invoice' and (ReferenceNbr eq 'x' or ...)</c>.</item>
 /// <item>Customer names: <c>GET Customer?$select=CustomerID,CustomerName,ParentRecord&amp;$filter=(CustomerID eq 'x' or ...)</c>,
 /// then the same for the parent customers.</item>
+/// <item>One invoice by its exact reference: <c>GET SalesInvoice?$select=...&amp;$filter=Type eq 'Invoice' and ReferenceNbr eq 'x'</c>.</item>
 /// <item>Attachment: <c>PUT SalesInvoice/Invoice/{ref}/files/{fileName}</c>.</item>
 /// </list>
 /// </remarks>
@@ -146,6 +147,35 @@ public sealed class AcumaticaDocumentClient(
                 namedCustomers,
                 sessionCookie,
                 cancellationToken);
+        }, cancellationToken);
+    }
+
+    public async Task<InvoiceCandidate?> GetInvoiceAsync(
+        string referenceNumber,
+        CancellationToken cancellationToken)
+    {
+        var reference = referenceNumber?.Trim();
+        if (string.IsNullOrEmpty(reference))
+        {
+            return null;
+        }
+
+        AcumaticaRestSession.ValidateConnection(_options);
+        return await _session.RunAsync<InvoiceCandidate?>(async sessionCookie =>
+        {
+            var filter = $"Type eq '{InvoiceDocumentType}' and ReferenceNbr eq '{AcumaticaRestSession.EscapeFilterValue(reference)}'";
+            var uri = _session.BuildUri(
+                _session.BuildEntityEndpoint(SalesInvoiceEntity)
+                + $"?$select={Uri.EscapeDataString(InvoiceFields)}&$filter={Uri.EscapeDataString(filter)}&$top=2");
+            var rows = (await GetArrayAsync(uri, "invoice lookup", sessionCookie, cancellationToken))
+                .Select(MapInvoiceRow)
+                .OfType<InvoiceRow>()
+                .Where(row => string.Equals(row.ReferenceNumber, reference, StringComparison.OrdinalIgnoreCase)
+                    && !InvoiceStatuses.IsOutOfScope(row.Status))
+                .Take(1)
+                .ToArray();
+            var candidates = await ToCandidatesAsync(rows, knownCustomers: new Dictionary<string, CustomerRow>(), sessionCookie, cancellationToken);
+            return candidates.Count == 0 ? null : candidates[0];
         }, cancellationToken);
     }
 

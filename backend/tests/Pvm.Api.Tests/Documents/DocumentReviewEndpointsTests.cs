@@ -298,7 +298,8 @@ public sealed class DocumentReviewEndpointsTests : IAsyncLifetime
         var response = await client.SendAsync(FileTo(id, "INV001234"));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(["INV001234"], _acumatica.Queries);
+        Assert.Equal(["INV001234"], _acumatica.Lookups);
+        Assert.Empty(_acumatica.Queries);
         var row = await LoadAsync(id);
         Assert.Equal(DocumentState.NeedsReview, row.State);
         Assert.Null(row.MatchedReference);
@@ -313,7 +314,7 @@ public sealed class DocumentReviewEndpointsTests : IAsyncLifetime
         var response = await client.SendAsync(FileTo(id, "INV001234", AppRoles.Viewer));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Empty(_acumatica.Queries);
+        Assert.Empty(_acumatica.Lookups);
     }
 
     [Fact]
@@ -649,6 +650,15 @@ public sealed class DocumentReviewEndpointsTests : IAsyncLifetime
         public IReadOnlyList<InvoiceCandidate> SearchResults { get; set; } = [];
 
         public List<string> Queries { get; } = [];
+
+        public List<string> Lookups { get; } = [];
+
+        public Task<InvoiceCandidate?> GetInvoiceAsync(string referenceNumber, CancellationToken cancellationToken)
+        {
+            Lookups.Add(referenceNumber);
+            return Task.FromResult(SearchResults.FirstOrDefault(invoice =>
+                string.Equals(invoice.ReferenceNumber, referenceNumber, StringComparison.OrdinalIgnoreCase)));
+        }
 
         public Task<IReadOnlyList<CandidateHit>> FindInvoicesAsync(PodExtraction extraction, CancellationToken cancellationToken)
             => throw new NotSupportedException();

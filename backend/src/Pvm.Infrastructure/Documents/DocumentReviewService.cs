@@ -14,7 +14,7 @@ public enum FileToOutcome
     /// <summary>The document is not in NeedsReview or Failed (any more).</summary>
     NotOpen,
 
-    /// <summary>The Acumatica search has no invoice with exactly that reference number.</summary>
+    /// <summary>Acumatica has no invoice with exactly that reference number that is not voided or cancelled.</summary>
     InvoiceNotFound,
 }
 
@@ -52,7 +52,7 @@ public enum ProcessAgainOutcome
 
 /// <summary>
 /// A person's resolution of a document on the review list (design 6.8): file it to an invoice
-/// that the Acumatica search confirms, or reject it with a note. Both writes are conditional on
+/// that an exact Acumatica lookup confirms, or reject it with a note. Both writes are conditional on
 /// the row still being open, so they never race the processor or another reviewer.
 /// </summary>
 public sealed class DocumentReviewService(
@@ -89,11 +89,9 @@ public sealed class DocumentReviewService(
             return new FileToResult(FileToOutcome.NotOpen);
         }
 
-        // Only an exact reference counts: the search also returns prefix and customer-name hits,
-        // and a document filed to the wrong invoice is the outcome this feature must not produce.
-        var results = await acumatica.SearchInvoicesAsync(invoiceReference, cancellationToken);
-        var invoice = results.FirstOrDefault(result =>
-            string.Equals(result.ReferenceNumber, invoiceReference, StringComparison.OrdinalIgnoreCase));
+        // Only an exact reference counts (an exact lookup, not the prefix search): a document filed
+        // to the wrong invoice is the outcome this feature must not produce.
+        var invoice = await acumatica.GetInvoiceAsync(invoiceReference, cancellationToken);
         if (invoice is null)
         {
             return new FileToResult(FileToOutcome.InvoiceNotFound);

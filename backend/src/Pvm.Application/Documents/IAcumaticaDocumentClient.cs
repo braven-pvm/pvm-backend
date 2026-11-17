@@ -25,6 +25,14 @@ public interface IAcumaticaDocumentClient
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// The invoice (type "Invoice") with exactly this reference number, or null when there is none
+    /// or it is voided or cancelled. Used where only an exact reference may count, such as file-to.
+    /// </summary>
+    Task<InvoiceCandidate?> GetInvoiceAsync(
+        string referenceNumber,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Attaches a file to an Acumatica record through its REST files endpoint. Supported entity:
     /// <c>SalesInvoice</c> (an invoice of the type "Invoice").
     /// </summary>

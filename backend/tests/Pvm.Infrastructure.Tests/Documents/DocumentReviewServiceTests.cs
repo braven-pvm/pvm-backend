@@ -54,7 +54,8 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
         Assert.Null(row.AcumaticaAttachLastAttemptAt);
         Assert.Null(row.AcumaticaAttachedAt);
         Assert.Null(row.ReviewNote);
-        Assert.Equal(["inv001234"], _acumatica.Queries);
+        Assert.Equal(["inv001234"], _acumatica.Lookups);
+        Assert.Empty(_acumatica.Queries);
         Assert.Empty(_acumatica.AttachAttempts);
     }
 
@@ -108,7 +109,7 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
         var result = await FileToAsync(id, "INV001234", AcumaticaAttachMode.Write);
 
         Assert.Equal(FileToOutcome.NotOpen, result.Outcome);
-        Assert.Empty(_acumatica.Queries);
+        Assert.Empty(_acumatica.Lookups);
         var row = await LoadAsync(id);
         Assert.Equal(state, row.State);
         Assert.Null(row.ResolvedBy);
@@ -531,6 +532,9 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
 
         public List<string> Queries { get; } = [];
 
+        /// <summary>The exact-reference lookups; they answer from <see cref="SearchResults"/>.</summary>
+        public List<string> Lookups { get; } = [];
+
         public List<string> AttachAttempts { get; } = [];
 
         public List<(string Entity, string ReferenceNumber, string FileName, byte[] Bytes)> Attached { get; } = [];
@@ -538,15 +542,22 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
         public Task<IReadOnlyList<CandidateHit>> FindInvoicesAsync(PodExtraction extraction, CancellationToken cancellationToken)
             => throw new NotSupportedException();
 
-        public async Task<IReadOnlyList<InvoiceCandidate>> SearchInvoicesAsync(string query, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<InvoiceCandidate>> SearchInvoicesAsync(string query, CancellationToken cancellationToken)
         {
             Queries.Add(query);
+            return Task.FromResult(SearchResults);
+        }
+
+        public async Task<InvoiceCandidate?> GetInvoiceAsync(string referenceNumber, CancellationToken cancellationToken)
+        {
+            Lookups.Add(referenceNumber);
             if (OnSearch is not null)
             {
                 await OnSearch();
             }
 
-            return SearchResults;
+            return SearchResults.FirstOrDefault(invoice =>
+                string.Equals(invoice.ReferenceNumber, referenceNumber, StringComparison.OrdinalIgnoreCase));
         }
 
         public async Task AttachFileAsync(string entity, string referenceNumber, string fileName, Stream pdf, CancellationToken cancellationToken)
