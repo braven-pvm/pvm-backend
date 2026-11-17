@@ -10,7 +10,7 @@ public static class StockSyncPlanner
         IReadOnlyList<WebStockItem> webItems,
         AcumaticaStockSnapshot snapshot,
         IReadOnlyDictionary<string, decimal> webPending,
-        int minimumPublished)
+        int outOfStockAtOrBelow)
     {
         ArgumentNullException.ThrowIfNull(webItems);
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -20,7 +20,7 @@ public static class StockSyncPlanner
         foreach (var item in webItems)
         {
             var pending = webPending.GetValueOrDefault(item.Sku);
-            lines.Add(PlanOne(item, snapshot, pending, minimumPublished));
+            lines.Add(PlanOne(item, snapshot, pending, outOfStockAtOrBelow));
         }
 
         return lines;
@@ -30,7 +30,7 @@ public static class StockSyncPlanner
         WebStockItem item,
         AcumaticaStockSnapshot snapshot,
         decimal pending,
-        int minimumPublished)
+        int outOfStockAtOrBelow)
     {
         if (item.Management == WebStockManagement.None)
         {
@@ -58,7 +58,7 @@ public static class StockSyncPlanner
         }
 
         var level = StockLevelCalculator.AcumaticaLevel(figures) - pending;
-        var quantity = StockLevelCalculator.PublishedQuantity(level, minimumPublished);
+        var quantity = StockLevelCalculator.PublishedQuantity(level, outOfStockAtOrBelow);
         var action = quantity == item.CurrentQuantity ? StockSyncAction.Unchanged : StockSyncAction.Update;
         return new StockSyncLine(item, action, quantity, level, pending, null, figures);
     }

@@ -59,16 +59,12 @@ public static class StockLevelCalculator
     }
 
     /// <summary>
-    /// The quantity shown to customers. Below the minimum, the store shows none, so that a
-    /// handful of units does not take orders the warehouse cannot fill.
+    /// The quantity shown to customers. At or below the out-of-stock level the store shows none,
+    /// so that a handful of units does not take orders the warehouse cannot fill.
     /// </summary>
-    public static int PublishedQuantity(decimal level, int minimumPublished)
+    public static int PublishedQuantity(decimal level, int outOfStockAtOrBelow)
     {
-        if (level < minimumPublished || level <= 0)
-        {
-            return 0;
-        }
-
-        return (int)Math.Floor(level);
+        var whole = (int)Math.Floor(Math.Max(0, level));
+        return whole <= outOfStockAtOrBelow ? 0 : whole;
     }
 }
