@@ -40,6 +40,9 @@ public sealed class CapturedDocumentEntity
 
     public DateTimeOffset? AcumaticaAttachedAt { get; set; }
 
+    /// <summary>When the worker last tried the Acumatica attachment; the backfill waits an hour before it tries again.</summary>
+    public DateTimeOffset? AcumaticaAttachLastAttemptAt { get; set; }
+
     public required string UploadedBy { get; set; }
 
     public DateTimeOffset UploadedAt { get; set; }

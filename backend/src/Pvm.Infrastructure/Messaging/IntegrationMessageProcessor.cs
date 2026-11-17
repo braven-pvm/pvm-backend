@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Pvm.Application.Messaging;
 using Pvm.Application.Submissions;
 using Pvm.Infrastructure.Acumatica;
@@ -25,8 +27,11 @@ public sealed class IntegrationMessageProcessor(
     AcumaticaInvoiceReconciliationMessageHandler acumaticaReconciliationHandler,
     AcumaticaInvoiceCandidateRefreshService acumaticaRefreshService,
     SubmitShopriteInvoiceHandler submitHandler,
-    DocumentProcessor documentProcessor)
+    DocumentProcessor documentProcessor,
+    ILogger<IntegrationMessageProcessor>? logger = null)
 {
+    private readonly ILogger _logger = logger ?? NullLogger<IntegrationMessageProcessor>.Instance;
+
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     public async Task<MessageProcessingResult> ProcessAsync(
@@ -198,7 +203,19 @@ public sealed class IntegrationMessageProcessor(
                     throw new JsonException("Captured document ID is required.");
                 }
 
-                await documentProcessor.ProcessAsync(document.DocumentId, cancellationToken);
+                try
+                {
+                    await documentProcessor.ProcessAsync(document.DocumentId, cancellationToken);
+                }
+                catch (JsonException exception)
+                {
+                    // Only the payload above is message data. A JsonException from the processing
+                    // itself (for example a non-JSON reply from Acumatica) is transient: retry it.
+                    throw new InvalidOperationException(
+                        $"Document processing failed: {exception.Message}",
+                        exception);
+                }
+
                 return null;
 
             default:
@@ -208,8 +225,9 @@ public sealed class IntegrationMessageProcessor(
 
     /// <summary>
     /// Runs before a handler failure dead-letters the message, so the work item the message
-    /// carried does not stay in progress forever. A failure here propagates: the message is then
-    /// not settled, comes back, and this runs again.
+    /// carried does not stay in progress forever. A failure here is logged and swallowed: the
+    /// message is still dead-lettered, and the row keeps its last state (Received or Processing)
+    /// for a person to find.
     /// </summary>
     private async Task OnFinalFailureAsync(IntegrationMessageEnvelope envelope, CancellationToken cancellationToken)
     {
@@ -229,9 +247,21 @@ public sealed class IntegrationMessageProcessor(
             return;
         }
 
-        if (documentId != Guid.Empty)
+        if (documentId == Guid.Empty)
+        {
+            return;
+        }
+
+        try
         {
             await documentProcessor.MarkFailedAsync(documentId, cancellationToken);
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogError(
+                exception,
+                "document.process.mark-failed.failed DocumentId={DocumentId}; the message is dead-lettered anyway.",
+                documentId);
         }
     }
 

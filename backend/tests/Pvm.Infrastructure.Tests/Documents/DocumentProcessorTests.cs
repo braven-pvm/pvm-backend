@@ -343,6 +343,113 @@ public sealed class DocumentProcessorTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ProcessMessage_JsonExceptionFromProcessing_IsTransient_Abandoned_RowProcessing()
+    {
+        var id = await SeedAsync();
+        _extractor.Result = Fields(MatchingFields);
+        _acumatica.FindException = new JsonException("Acumatica returned HTML.");
+
+        MessageProcessingResult result;
+        await using (var db = CreateDbContext())
+        {
+            result = await ProcessMessageAsync(db, id, deliveryCount: 1);
+        }
+
+        Assert.Equal(MessageSettlement.Abandon, result.Settlement);
+        Assert.Equal(DocumentState.Processing, (await LoadAsync(id)).State);
+    }
+
+    [Fact]
+    public async Task ProcessMessage_EmptyDocumentId_IsInvalidMessageData_DeadLettered()
+    {
+        MessageProcessingResult result;
+        await using (var db = CreateDbContext())
+        {
+            result = await ProcessMessageAsync(db, Guid.Empty, deliveryCount: 1);
+        }
+
+        Assert.Equal(MessageSettlement.DeadLetter, result.Settlement);
+        Assert.Equal("invalid-message-data", result.DeadLetterReason);
+    }
+
+    [Fact]
+    public async Task ProcessMessage_LastDelivery_MarkFailedThrows_StillDeadLettered()
+    {
+        var id = await SeedAsync();
+        var brokenDb = CreateDbContext();
+        await brokenDb.DisposeAsync();
+
+        MessageProcessingResult result;
+        await using (var db = CreateDbContext())
+        {
+            // The processor's own DbContext is gone: ProcessAsync and MarkFailedAsync both throw.
+            result = await ProcessMessageAsync(db, id, deliveryCount: 5, documentDb: brokenDb);
+        }
+
+        Assert.Equal(MessageSettlement.DeadLetter, result.Settlement);
+        Assert.Equal("max-delivery-count", result.DeadLetterReason);
+        Assert.Equal(DocumentState.Received, (await LoadAsync(id)).State);
+    }
+
+    [Fact]
+    public async Task Process_RowResolvedByPersonDuringRun_IsNotOverwritten()
+    {
+        var id = await SeedAsync();
+        _extractor.Result = Fields(MatchingFields);
+        _acumatica.Hits = [new CandidateHit(Invoice, "invoice")];
+        _extractor.OnExtract = async () =>
+        {
+            await using var other = CreateDbContext();
+            await other.CapturedDocuments
+                .Where(document => document.Id == id)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(document => document.State, DocumentState.Filed)
+                    .SetProperty(document => document.MatchedReference, "INV009999")
+                    .SetProperty(document => document.MatchedBy, "clerk@pvm.co.za"));
+        };
+
+        await using (var db = CreateDbContext())
+        {
+            await CreateProcessor(db, AcumaticaAttachMode.Write).ProcessAsync(id, default);
+        }
+
+        var row = await LoadAsync(id);
+        Assert.Equal(DocumentState.Filed, row.State);
+        Assert.Equal("INV009999", row.MatchedReference);
+        Assert.Equal("clerk@pvm.co.za", row.MatchedBy);
+        Assert.Null(row.ExtractionJson);
+        Assert.Equal(0, _acumatica.FindCalls);
+        Assert.Empty(_acumatica.AttachAttempts);
+    }
+
+    [Fact]
+    public async Task Process_RowResolvedByPersonDuringLookup_ReviewNotWritten()
+    {
+        var id = await SeedAsync();
+        _extractor.Result = Fields(NoClientNameFields);
+        _acumatica.Hits = [new CandidateHit(Invoice, "invoice")];
+        _acumatica.OnFind = async () =>
+        {
+            await using var other = CreateDbContext();
+            await other.CapturedDocuments
+                .Where(document => document.Id == id)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(document => document.State, DocumentState.Filed)
+                    .SetProperty(document => document.MatchedReference, "INV009999"));
+        };
+
+        await using (var db = CreateDbContext())
+        {
+            await CreateProcessor(db, AcumaticaAttachMode.Write).ProcessAsync(id, default);
+        }
+
+        var row = await LoadAsync(id);
+        Assert.Equal(DocumentState.Filed, row.State);
+        Assert.Null(row.ReviewReason);
+        Assert.Equal("INV009999", row.MatchedReference);
+    }
+
+    [Fact]
     public async Task ProcessMessage_SafeMatch_Completed()
     {
         var id = await SeedAsync();
@@ -385,8 +492,50 @@ public sealed class DocumentProcessorTests : IAsyncLifetime
             Assert.NotNull(row.AcumaticaAttachedAt);
         }
 
-        Assert.True((await LoadAsync(failing)).AcumaticaAttachPending);
+        var failed = await LoadAsync(failing);
+        Assert.True(failed.AcumaticaAttachPending);
+        Assert.NotNull(failed.AcumaticaAttachLastAttemptAt);
         Assert.True((await LoadAsync(review)).AcumaticaAttachPending);
+    }
+
+    [Fact]
+    public async Task Backfill_WriteMode_FailingDocumentsDoNotBlockOthers()
+    {
+        for (var i = 0; i < 20; i++)
+        {
+            var reference = $"BAD{i:D6}";
+            _acumatica.FailFor.Add(reference);
+            await SeedAsync(state: DocumentState.Filed, matchedReference: reference, attachPending: true, uploadedAt: DateTimeOffset.UtcNow.AddDays(-1));
+        }
+
+        var good = await SeedAsync(state: DocumentState.Filed, matchedReference: "INV000001", attachPending: true);
+
+        var total = 0;
+        for (var run = 0; run < 2; run++)
+        {
+            await using var db = CreateDbContext();
+            total += await CreateProcessor(db, AcumaticaAttachMode.Write).BackfillPendingAttachmentsAsync(default);
+        }
+
+        Assert.Equal(1, total);
+        Assert.False((await LoadAsync(good)).AcumaticaAttachPending);
+        Assert.Equal(21, _acumatica.AttachAttempts.Count);
+    }
+
+    [Fact]
+    public async Task Backfill_WriteMode_UnknownType_RecordsAttempt()
+    {
+        var id = await SeedAsync(state: DocumentState.Filed, documentType: "GRN", matchedReference: "INV000001", attachPending: true);
+
+        await using (var db = CreateDbContext())
+        {
+            Assert.Equal(0, await CreateProcessor(db, AcumaticaAttachMode.Write).BackfillPendingAttachmentsAsync(default));
+        }
+
+        var row = await LoadAsync(id);
+        Assert.True(row.AcumaticaAttachPending);
+        Assert.NotNull(row.AcumaticaAttachLastAttemptAt);
+        Assert.Empty(_acumatica.AttachAttempts);
     }
 
     [Fact]
@@ -420,7 +569,11 @@ public sealed class DocumentProcessorTests : IAsyncLifetime
         Assert.True((await LoadAsync(id)).AcumaticaAttachPending);
     }
 
-    private Task<MessageProcessingResult> ProcessMessageAsync(PvmDbContext db, Guid documentId, int deliveryCount)
+    private Task<MessageProcessingResult> ProcessMessageAsync(
+        PvmDbContext db,
+        Guid documentId,
+        int deliveryCount,
+        PvmDbContext? documentDb = null)
     {
         var messageId = Guid.NewGuid();
         var envelope = new IntegrationMessageEnvelope(
@@ -439,7 +592,7 @@ public sealed class DocumentProcessorTests : IAsyncLifetime
             null!,
             null!,
             null!,
-            CreateProcessor(db, AcumaticaAttachMode.Shadow));
+            CreateProcessor(documentDb ?? db, AcumaticaAttachMode.Shadow));
         return processor.ProcessAsync(
             IntegrationQueues.DocumentProcessing,
             messageId.ToString("D"),
@@ -516,9 +669,16 @@ public sealed class DocumentProcessorTests : IAsyncLifetime
 
         public int Calls { get; private set; }
 
+        public Func<Task>? OnExtract { get; set; }
+
         public async Task<ExtractionResult> ExtractAsync(IDocumentType type, Stream pdf, CancellationToken cancellationToken)
         {
             Calls++;
+            if (OnExtract is not null)
+            {
+                await OnExtract();
+            }
+
             using var buffer = new MemoryStream();
             await pdf.CopyToAsync(buffer, cancellationToken);
             Assert.Equal(PdfBytes, buffer.ToArray());
@@ -538,22 +698,29 @@ public sealed class DocumentProcessorTests : IAsyncLifetime
 
         public int FindCalls { get; private set; }
 
+        public Func<Task>? OnFind { get; set; }
+
         public List<PodExtraction> Extractions { get; } = [];
 
         public List<string> AttachAttempts { get; } = [];
 
         public List<(string Entity, string ReferenceNumber, string FileName, byte[] Bytes)> Attached { get; } = [];
 
-        public Task<IReadOnlyList<CandidateHit>> FindInvoicesAsync(PodExtraction extraction, CancellationToken cancellationToken)
+        public async Task<IReadOnlyList<CandidateHit>> FindInvoicesAsync(PodExtraction extraction, CancellationToken cancellationToken)
         {
             FindCalls++;
             Extractions.Add(extraction);
+            if (OnFind is not null)
+            {
+                await OnFind();
+            }
+
             if (FindException is not null)
             {
                 throw FindException;
             }
 
-            return Task.FromResult(Hits);
+            return Hits;
         }
 
         public Task<IReadOnlyList<InvoiceCandidate>> SearchInvoicesAsync(string query, CancellationToken cancellationToken)

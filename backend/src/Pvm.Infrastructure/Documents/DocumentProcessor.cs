@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Pvm.Application.Documents;
@@ -15,6 +16,10 @@ namespace Pvm.Infrastructure.Documents;
 /// a safe match goes to the review list. Transport failures of the extractor and of the Acumatica
 /// lookup propagate, so Service Bus retries the message; the last delivery marks the row Failed.
 /// </summary>
+/// <remarks>
+/// Every write is a conditional update. A run only writes a row that is still Processing, so a
+/// stale run never overwrites a person's resolution; it logs the lost race and stops.
+/// </remarks>
 public sealed class DocumentProcessor(
     PvmDbContext dbContext,
     IEnumerable<IDocumentType> documentTypes,
@@ -29,6 +34,9 @@ public sealed class DocumentProcessor(
 
     public const int BackfillBatchSize = 20;
 
+    /// <summary>The backfill leaves a document alone for this long after an attach attempt.</summary>
+    public static readonly TimeSpan BackfillRetryDelay = TimeSpan.FromMinutes(60);
+
     private const string ProofOfDeliveryCode = "POD";
 
     private static readonly JsonSerializerOptions FieldOptions = new()
@@ -42,33 +50,33 @@ public sealed class DocumentProcessor(
 
     public async Task ProcessAsync(Guid documentId, CancellationToken cancellationToken)
     {
-        var document = await dbContext.CapturedDocuments
-            .SingleOrDefaultAsync(item => item.Id == documentId, cancellationToken);
-        if (document is null)
-        {
-            logger.LogWarning("document.process.skipped DocumentId={DocumentId} Reason=not-found", documentId);
-            return;
-        }
-
-        if (document.State is DocumentState.Filed or DocumentState.NeedsReview or DocumentState.Failed)
+        // Received, or Processing after a crash mid-run: claim it. Filed, NeedsReview, Failed or
+        // a missing row: nothing to do (a second delivery of the same message).
+        var claimed = await dbContext.CapturedDocuments
+            .Where(item => item.Id == documentId
+                && (item.State == DocumentState.Received || item.State == DocumentState.Processing))
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(item => item.State, DocumentState.Processing)
+                    .SetProperty(item => item.UpdatedAt, DateTimeOffset.UtcNow),
+                cancellationToken);
+        if (claimed == 0)
         {
             logger.LogInformation(
-                "document.process.skipped DocumentId={DocumentId} Reason=already-{State}",
-                documentId,
-                document.State);
+                "document.process.skipped DocumentId={DocumentId} Reason=not-received-or-processing",
+                documentId);
             return;
         }
 
-        // Received, or Processing after a crash mid-run: process (again).
-        document.State = DocumentState.Processing;
-        await SaveAsync(document, cancellationToken);
+        var document = await dbContext.CapturedDocuments
+            .AsNoTracking()
+            .SingleAsync(item => item.Id == documentId, cancellationToken);
 
         var type = ResolveType(document.DocumentType);
         if (type is null || !string.Equals(type.Code, ProofOfDeliveryCode, StringComparison.OrdinalIgnoreCase))
         {
             // Only POD has a match strategy. Another type can never be filed automatically.
-            document.ExtractionJson = UnreadableJson("unknown-document-type");
-            await ReviewAsync(document, ReviewReason.ReadFailure, cancellationToken);
+            await ReviewAsync(documentId, ReviewReason.ReadFailure, UnreadableJson("unknown-document-type"), cancellationToken);
             return;
         }
 
@@ -81,18 +89,23 @@ public sealed class DocumentProcessor(
         if (result is not Extracted extracted)
         {
             var reason = result is Unreadable unreadable ? unreadable.Reason : "unknown-result";
-            document.ExtractionJson = UnreadableJson(reason);
-            await ReviewAsync(document, ReviewReason.ReadFailure, cancellationToken);
+            await ReviewAsync(documentId, ReviewReason.ReadFailure, UnreadableJson(reason), cancellationToken);
             return;
         }
 
-        document.ExtractionJson = extracted.Fields.GetRawText();
-        await SaveAsync(document, cancellationToken);
+        var fieldsJson = extracted.Fields.GetRawText();
+        if (!await WhileProcessingAsync(
+                documentId,
+                setters => setters.SetProperty(item => item.ExtractionJson, fieldsJson),
+                cancellationToken))
+        {
+            return;
+        }
 
         var extraction = TryReadPodExtraction(extracted.Fields);
         if (extraction is null)
         {
-            await ReviewAsync(document, ReviewReason.ReadFailure, cancellationToken);
+            await ReviewAsync(documentId, ReviewReason.ReadFailure, fieldsJson, cancellationToken);
             return;
         }
 
@@ -104,8 +117,11 @@ public sealed class DocumentProcessor(
                 break;
 
             case Review review:
-                document.ExtractionJson = WithCandidates(extracted.Fields, review.Candidates);
-                await ReviewAsync(document, review.Reason, cancellationToken);
+                await ReviewAsync(
+                    documentId,
+                    review.Reason,
+                    WithCandidates(extracted.Fields, review.Candidates),
+                    cancellationToken);
                 break;
 
             default:
@@ -119,21 +135,13 @@ public sealed class DocumentProcessor(
     /// </summary>
     public async Task MarkFailedAsync(Guid documentId, CancellationToken cancellationToken)
     {
-        // A tracked copy from the failed run must not overwrite Failed on a later SaveChanges.
-        var tracked = dbContext.CapturedDocuments.Local.FirstOrDefault(item => item.Id == documentId);
-        if (tracked is not null)
-        {
-            dbContext.Entry(tracked).State = EntityState.Detached;
-        }
-
-        var now = DateTimeOffset.UtcNow;
         var updated = await dbContext.CapturedDocuments
             .Where(item => item.Id == documentId
                 && (item.State == DocumentState.Received || item.State == DocumentState.Processing))
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(item => item.State, DocumentState.Failed)
-                    .SetProperty(item => item.UpdatedAt, now),
+                    .SetProperty(item => item.UpdatedAt, DateTimeOffset.UtcNow),
                 cancellationToken);
         logger.LogWarning(
             "document.process.failed DocumentId={DocumentId} RowsUpdated={RowsUpdated}",
@@ -143,8 +151,10 @@ public sealed class DocumentProcessor(
 
     /// <summary>
     /// In Write mode, attaches up to <see cref="BackfillBatchSize"/> filed documents whose
-    /// attachment waits, oldest first. A failure is logged and the next document is tried.
-    /// Shadow mode does nothing. Returns the number attached.
+    /// attachment waits: never-tried ones first, then the longest-waiting, oldest upload first.
+    /// A document tried in the last <see cref="BackfillRetryDelay"/> is left for a later run, so
+    /// documents that keep failing cannot block the rest. A failure is logged and the next
+    /// document is tried. Shadow mode does nothing. Returns the number attached.
     /// </summary>
     public async Task<int> BackfillPendingAttachmentsAsync(CancellationToken cancellationToken)
     {
@@ -153,11 +163,16 @@ public sealed class DocumentProcessor(
             return 0;
         }
 
+        var retryBefore = DateTimeOffset.UtcNow - BackfillRetryDelay;
         var pending = await dbContext.CapturedDocuments
+            .AsNoTracking()
             .Where(item => item.State == DocumentState.Filed
                 && item.AcumaticaAttachPending
-                && item.MatchedReference != null)
-            .OrderBy(item => item.UploadedAt)
+                && item.MatchedReference != null
+                && (item.AcumaticaAttachLastAttemptAt == null || item.AcumaticaAttachLastAttemptAt < retryBefore))
+            .OrderBy(item => item.AcumaticaAttachLastAttemptAt != null)
+            .ThenBy(item => item.AcumaticaAttachLastAttemptAt)
+            .ThenBy(item => item.UploadedAt)
             .ThenBy(item => item.Id)
             .Take(BackfillBatchSize)
             .ToListAsync(cancellationToken);
@@ -168,6 +183,7 @@ public sealed class DocumentProcessor(
             var type = ResolveType(document.DocumentType);
             if (type is null)
             {
+                await RecordAttachAttemptAsync(document.Id, cancellationToken);
                 logger.LogWarning(
                     "document.attach.skipped DocumentId={DocumentId} Reason=unknown-document-type DocumentType={DocumentType}",
                     document.Id,
@@ -175,7 +191,7 @@ public sealed class DocumentProcessor(
                 continue;
             }
 
-            if (await TryAttachAsync(document, type, cancellationToken))
+            if (await TryAttachAsync(document, document.MatchedReference!, type, cancellationToken))
             {
                 attached++;
             }
@@ -189,8 +205,8 @@ public sealed class DocumentProcessor(
     }
 
     /// <summary>The Acumatica file name: <c>{documentType}-{invoiceNumber}-{documentId}.pdf</c>.</summary>
-    public static string AttachmentFileName(CapturedDocumentEntity document)
-        => $"{document.DocumentType}-{document.MatchedReference}-{document.Id:D}.pdf";
+    public static string AttachmentFileName(string documentType, string invoiceNumber, Guid documentId)
+        => $"{documentType}-{invoiceNumber}-{documentId:D}.pdf";
 
     private async Task FileAsync(
         CapturedDocumentEntity document,
@@ -199,18 +215,25 @@ public sealed class DocumentProcessor(
         CancellationToken cancellationToken)
     {
         // Filed first, with the attachment pending: the recall works even if the attach fails.
-        document.State = DocumentState.Filed;
-        document.ReviewReason = null;
-        document.MatchedReference = invoice.ReferenceNumber;
-        document.MatchedCustomerName = invoice.CustomerName;
-        document.MatchedBy = MatchedByWorker;
-        document.AcumaticaAttachPending = true;
-        document.AcumaticaAttachedAt = null;
-        await SaveAsync(document, cancellationToken);
+        var filed = await WhileProcessingAsync(
+            document.Id,
+            setters => setters
+                .SetProperty(item => item.State, DocumentState.Filed)
+                .SetProperty(item => item.ReviewReason, (ReviewReason?)null)
+                .SetProperty(item => item.MatchedReference, invoice.ReferenceNumber)
+                .SetProperty(item => item.MatchedCustomerName, invoice.CustomerName)
+                .SetProperty(item => item.MatchedBy, MatchedByWorker)
+                .SetProperty(item => item.AcumaticaAttachPending, true)
+                .SetProperty(item => item.AcumaticaAttachedAt, (DateTimeOffset?)null),
+            cancellationToken);
+        if (!filed)
+        {
+            return;
+        }
 
         if (_attachMode == AcumaticaAttachMode.Write)
         {
-            await TryAttachAsync(document, type, cancellationToken);
+            await TryAttachAsync(document, invoice.ReferenceNumber, type, cancellationToken);
         }
         else
         {
@@ -218,28 +241,23 @@ public sealed class DocumentProcessor(
                 "document.attach.shadow DocumentId={DocumentId} Entity={Entity} Reference={Reference} FileName={FileName}",
                 document.Id,
                 type.AcumaticaEntity,
-                document.MatchedReference,
-                AttachmentFileName(document));
+                invoice.ReferenceNumber,
+                AttachmentFileName(document.DocumentType, invoice.ReferenceNumber, document.Id));
         }
     }
 
     private async Task<bool> TryAttachAsync(
         CapturedDocumentEntity document,
+        string reference,
         IDocumentType type,
         CancellationToken cancellationToken)
     {
-        var fileName = AttachmentFileName(document);
+        var fileName = AttachmentFileName(document.DocumentType, reference, document.Id);
+        await RecordAttachAttemptAsync(document.Id, cancellationToken);
         try
         {
-            await using (var pdf = await store.OpenReadAsync(document.BlobPath, cancellationToken))
-            {
-                await acumatica.AttachFileAsync(
-                    type.AcumaticaEntity,
-                    document.MatchedReference!,
-                    fileName,
-                    pdf,
-                    cancellationToken);
-            }
+            await using var pdf = await store.OpenReadAsync(document.BlobPath, cancellationToken);
+            await acumatica.AttachFileAsync(type.AcumaticaEntity, reference, fileName, pdf, cancellationToken);
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
@@ -248,40 +266,84 @@ public sealed class DocumentProcessor(
                 exception,
                 "document.attach.failed DocumentId={DocumentId} Reference={Reference} FileName={FileName}",
                 document.Id,
-                document.MatchedReference,
+                reference,
                 fileName);
             return false;
         }
 
-        document.AcumaticaAttachPending = false;
-        document.AcumaticaAttachedAt = DateTimeOffset.UtcNow;
-        await SaveAsync(document, cancellationToken);
+        // Only clear the flag while the row is still filed to the invoice that got the file.
+        var now = DateTimeOffset.UtcNow;
+        var updated = await dbContext.CapturedDocuments
+            .Where(item => item.Id == document.Id
+                && item.State == DocumentState.Filed
+                && item.MatchedReference == reference
+                && item.AcumaticaAttachPending)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(item => item.AcumaticaAttachPending, false)
+                    .SetProperty(item => item.AcumaticaAttachedAt, now)
+                    .SetProperty(item => item.UpdatedAt, now),
+                cancellationToken);
         logger.LogInformation(
-            "document.attach.completed DocumentId={DocumentId} Reference={Reference} FileName={FileName}",
+            "document.attach.completed DocumentId={DocumentId} Reference={Reference} FileName={FileName} RowsUpdated={RowsUpdated}",
             document.Id,
-            document.MatchedReference,
-            fileName);
+            reference,
+            fileName,
+            updated);
         return true;
     }
 
+    private Task<int> RecordAttachAttemptAsync(Guid documentId, CancellationToken cancellationToken)
+        => dbContext.CapturedDocuments
+            .Where(item => item.Id == documentId)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(item => item.AcumaticaAttachLastAttemptAt, DateTimeOffset.UtcNow),
+                cancellationToken);
+
     private async Task ReviewAsync(
-        CapturedDocumentEntity document,
+        Guid documentId,
         ReviewReason reason,
+        string extractionJson,
         CancellationToken cancellationToken)
     {
-        document.State = DocumentState.NeedsReview;
-        document.ReviewReason = reason;
-        await SaveAsync(document, cancellationToken);
-        logger.LogInformation(
-            "document.process.review DocumentId={DocumentId} Reason={Reason}",
-            document.Id,
-            reason);
+        if (await WhileProcessingAsync(
+                documentId,
+                setters => setters
+                    .SetProperty(item => item.State, DocumentState.NeedsReview)
+                    .SetProperty(item => item.ReviewReason, reason)
+                    .SetProperty(item => item.ExtractionJson, extractionJson),
+                cancellationToken))
+        {
+            logger.LogInformation(
+                "document.process.review DocumentId={DocumentId} Reason={Reason}",
+                documentId,
+                reason);
+        }
     }
 
-    private Task SaveAsync(CapturedDocumentEntity document, CancellationToken cancellationToken)
+    /// <summary>Updates the row only while it is still Processing; false (and a log) when another party moved it.</summary>
+    private async Task<bool> WhileProcessingAsync(
+        Guid documentId,
+        Action<UpdateSettersBuilder<CapturedDocumentEntity>> set,
+        CancellationToken cancellationToken)
     {
-        document.UpdatedAt = DateTimeOffset.UtcNow;
-        return dbContext.SaveChangesAsync(cancellationToken);
+        var updated = await dbContext.CapturedDocuments
+            .Where(item => item.Id == documentId && item.State == DocumentState.Processing)
+            .ExecuteUpdateAsync(
+                setters =>
+                {
+                    set(setters);
+                    setters.SetProperty(item => item.UpdatedAt, DateTimeOffset.UtcNow);
+                },
+                cancellationToken);
+        if (updated == 0)
+        {
+            logger.LogWarning(
+                "document.process.superseded DocumentId={DocumentId} Reason=no-longer-processing",
+                documentId);
+        }
+
+        return updated > 0;
     }
 
     private IDocumentType? ResolveType(string code)

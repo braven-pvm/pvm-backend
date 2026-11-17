@@ -302,6 +302,9 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("AcumaticaAttachLastAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<bool>("AcumaticaAttachPending")
                         .HasColumnType("boolean");
 
