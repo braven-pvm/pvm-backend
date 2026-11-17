@@ -16,7 +16,7 @@ namespace Pvm.Infrastructure.Acumatica;
 /// <remarks>
 /// Request shapes (all under <c>entity/{endpoint}/{version}/</c>, inside one signed-in session):
 /// <list type="bullet">
-/// <item>Sales-order and customer-order numbers: <c>GET SalesOrder?$select=OrderType,OrderNbr,CustomerOrder,Shipments/InvoiceType,Shipments/InvoiceNbr&amp;$expand=Shipments&amp;$filter=(OrderNbr eq 'x' or ...)</c>
+/// <item>Sales-order and customer-order numbers (a shipment line counts only when its InvoiceType is "Invoice"): <c>GET SalesOrder?$select=OrderType,OrderNbr,CustomerOrder,Shipments/InvoiceType,Shipments/InvoiceNbr&amp;$expand=Shipments&amp;$filter=(OrderNbr eq 'x' or ...)</c>
 /// (or <c>CustomerOrder eq 'x'</c>); the invoice numbers come from the order's shipment lines.</item>
 /// <item>Invoices: <c>GET SalesInvoice?$select=Type,ReferenceNbr,Date,CustomerID,Status&amp;$filter=Type eq 'Invoice' and (ReferenceNbr eq 'x' or ...)</c>.</item>
 /// <item>Customer names: <c>GET Customer?$select=CustomerID,CustomerName,ParentRecord&amp;$filter=(CustomerID eq 'x' or ...)</c>,
@@ -139,7 +139,10 @@ public sealed class AcumaticaDocumentClient(
                 + $"?$select={Uri.EscapeDataString(InvoiceFields)}&$filter={Uri.EscapeDataString(filter)}&$orderby={orderBy}&$top={SearchLimit}");
             var rows = await GetArrayAsync(uri, "invoice search", sessionCookie, cancellationToken);
             return await ToCandidatesAsync(
-                rows.Select(MapInvoiceRow).OfType<InvoiceRow>().ToArray(),
+                rows.Select(MapInvoiceRow)
+                    .OfType<InvoiceRow>()
+                    .Where(row => !InvoiceStatuses.IsOutOfScope(row.Status))
+                    .ToArray(),
                 namedCustomers,
                 sessionCookie,
                 cancellationToken);
@@ -257,8 +260,9 @@ public sealed class AcumaticaDocumentClient(
             {
                 var invoiceNumber = Text(shipment, "InvoiceNbr")?.Trim();
                 var invoiceType = Text(shipment, "InvoiceType");
+                // Fail closed: a shipment line counts only when it says it was invoiced as an Invoice.
                 if (string.IsNullOrEmpty(invoiceNumber) ||
-                    (invoiceType is not null && !string.Equals(invoiceType.Trim(), InvoiceDocumentType, StringComparison.OrdinalIgnoreCase)))
+                    !string.Equals(invoiceType?.Trim(), InvoiceDocumentType, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }

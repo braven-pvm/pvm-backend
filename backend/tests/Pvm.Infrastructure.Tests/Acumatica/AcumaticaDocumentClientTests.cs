@@ -236,6 +236,60 @@ public sealed class AcumaticaDocumentClientTests
     }
 
     [Fact]
+    public async Task FindInvoices_ShipmentWithoutInvoiceType_IsSkipped()
+    {
+        const string salesOrders = """
+            [{
+              "OrderType": { "value": "SO" },
+              "OrderNbr": { "value": "SO100" },
+              "Shipments": [
+                { "InvoiceNbr": { "value": "INV600" } },
+                { "InvoiceType": null, "InvoiceNbr": { "value": "INV601" } },
+                { "InvoiceType": { "value": "Debit Memo" }, "InvoiceNbr": { "value": "INV602" } },
+                { "InvoiceType": { "value": " invoice " }, "InvoiceNbr": { "value": "INV603" } }
+              ]
+            }]
+            """;
+        var handler = new RoutingHandler(request => Route(
+            request,
+            salesOrders: salesOrders,
+            salesInvoices: Invoice("INV603", "C200", "Open")));
+        var client = CreateClient(handler);
+
+        var hits = await client.FindInvoicesAsync(Extraction(salesOrders: ["SO100"]), CancellationToken.None);
+
+        Assert.Equal("INV603", Assert.Single(hits).Invoice.ReferenceNumber);
+        var invoiceRequest = Assert.Single(handler.Requests, request => request.Path.EndsWith("/SalesInvoice", StringComparison.Ordinal));
+        Assert.Contains("(ReferenceNbr eq 'INV603')", invoiceRequest.Filter);
+        Assert.DoesNotContain("INV600", invoiceRequest.Filter);
+        Assert.DoesNotContain("INV601", invoiceRequest.Filter);
+        Assert.DoesNotContain("INV602", invoiceRequest.Filter);
+    }
+
+    [Fact]
+    public async Task SearchInvoices_ExcludesVoidedAndCanceled()
+    {
+        const string invoices = """
+            [
+              { "Type": { "value": "Invoice" }, "ReferenceNbr": { "value": "INV1" }, "Date": { "value": "2026-11-12T00:00:00+02:00" },
+                "CustomerID": { "value": "C200" }, "Status": { "value": "Voided" } },
+              { "Type": { "value": "Invoice" }, "ReferenceNbr": { "value": "INV2" }, "Date": { "value": "2026-11-11T00:00:00+02:00" },
+                "CustomerID": { "value": "C200" }, "Status": { "value": "canceled" } },
+              { "Type": { "value": "Invoice" }, "ReferenceNbr": { "value": "INV3" }, "Date": { "value": "2026-11-10T00:00:00+02:00" },
+                "CustomerID": { "value": "C200" }, "Status": { "value": " Cancelled " } },
+              { "Type": { "value": "Invoice" }, "ReferenceNbr": { "value": "INV4" }, "Date": { "value": "2026-11-09T00:00:00+02:00" },
+                "CustomerID": { "value": "C200" }, "Status": { "value": "Open" } }
+            ]
+            """;
+        var handler = new RoutingHandler(request => Route(request, salesInvoices: invoices));
+        var client = CreateClient(handler);
+
+        var results = await client.SearchInvoicesAsync("INV", CancellationToken.None);
+
+        Assert.Equal("INV4", Assert.Single(results).ReferenceNumber);
+    }
+
+    [Fact]
     public async Task SearchInvoices_BlankQuery_ReturnsNothing()
     {
         var handler = new RoutingHandler(request => Route(request));
@@ -259,6 +313,23 @@ public sealed class AcumaticaDocumentClientTests
         Assert.Equal("%PDF-1.7 test", put.Body);
         Assert.Equal("ASP.NET_SessionId=abc", put.Cookie);
         Assert.EndsWith("/entity/auth/logout", handler.Requests[^1].Path);
+    }
+
+    [Fact]
+    public async Task AttachFile_EscapesReferenceAndFileNameSegments()
+    {
+        var handler = new RoutingHandler(request => Route(request));
+        var client = CreateClient(handler);
+        using var pdf = new MemoryStream([1]);
+
+        await client.AttachFileAsync("SalesInvoice", "INV 1&2", "POD-INV 1&2-0f8e.pdf", pdf, CancellationToken.None);
+
+        var put = Assert.Single(handler.Requests, request => request.Method == HttpMethod.Put);
+        Assert.Equal(
+            "/PVMGroup25R1/entity/Default/24.200.001/SalesInvoice/Invoice/INV%201%262/files/POD-INV%201%262-0f8e.pdf",
+            put.Uri.AbsolutePath);
+        Assert.Equal(string.Empty, put.Uri.Query);
+        Assert.Equal(10, put.Uri.Segments.Length);
     }
 
     [Fact]

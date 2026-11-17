@@ -7,14 +7,11 @@ namespace Pvm.Application.Documents;
 /// </summary>
 public static class PodMatcher
 {
-    private static readonly HashSet<string> OutOfScopeStatuses =
-        new(["Voided", "Canceled", "Cancelled"], StringComparer.OrdinalIgnoreCase);
-
     public static MatchOutcome Decide(PodExtraction extraction, IReadOnlyList<CandidateHit> hits)
     {
         // Step 3: the distinct invoices, voided and cancelled ones left out.
         var inScope = hits
-            .Where(hit => !OutOfScopeStatuses.Contains(hit.Invoice.Status.Trim()))
+            .Where(hit => !InvoiceStatuses.IsOutOfScope(hit.Invoice.Status))
             .ToList();
         var invoices = inScope
             .Select(hit => hit.Invoice)
