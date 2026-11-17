@@ -17,7 +17,9 @@ using Microsoft.Extensions.Options;
 using Pvm.Api.Auth;
 using Pvm.Api.Features.Documents;
 using Pvm.Application.Documents;
+using Pvm.Application.Messaging;
 using Pvm.Infrastructure.Documents;
+using Pvm.Infrastructure.Messaging;
 using Pvm.Infrastructure.Persistence;
 using Pvm.Infrastructure.Persistence.Entities;
 
@@ -453,6 +455,49 @@ public sealed class DocumentReviewEndpointsTests : IAsyncLifetime
         Assert.Equal(DocumentState.Filed, (await LoadAsync(id)).State);
     }
 
+    [Fact]
+    public async Task ProcessAgain_Viewer_Returns403()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.Failed);
+
+        var response = await client.SendAsync(ProcessAgain(id, AppRoles.Viewer));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ProcessAgain_UnknownDocument_Returns404()
+    {
+        var client = await StartAsync();
+
+        var response = await client.SendAsync(ProcessAgain(Guid.NewGuid()));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ProcessAgain_FiledDocument_Returns409()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV1");
+
+        var response = await client.SendAsync(ProcessAgain(id));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ProcessAgain_FreshProcessingDocument_Returns409()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.Processing, uploadedAt: DateTimeOffset.UtcNow.AddMinutes(-5));
+
+        var response = await client.SendAsync(ProcessAgain(id));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
     private static InvoiceCandidate Invoice(string reference)
         => new(reference, new DateOnly(2026, 11, 1), "C001", "Acme Stores (Pty) Ltd", null, null, "Open");
 
@@ -531,6 +576,12 @@ public sealed class DocumentReviewEndpointsTests : IAsyncLifetime
             Headers = { { TestAuthHandler.RoleHeader, role } }
         };
 
+    private static HttpRequestMessage ProcessAgain(Guid id, string role = AppRoles.Operator)
+        => new(HttpMethod.Post, $"/api/documents/{id:D}/process-again")
+        {
+            Headers = { { TestAuthHandler.RoleHeader, role } }
+        };
+
     private async Task<HttpClient> StartAsync(bool resolveUser = true)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Testing" });
@@ -547,6 +598,7 @@ public sealed class DocumentReviewEndpointsTests : IAsyncLifetime
         builder.Services.AddDocumentCapture(builder.Configuration);
         builder.Services.AddSingleton<IAcumaticaDocumentClient>(_acumatica);
         builder.Services.AddScoped<DocumentProcessor>();
+        builder.Services.AddScoped<IIntegrationCommandQueue, IntegrationCommandQueue>();
         builder.Services.AddScoped<DocumentReviewService>();
         builder.Services
             .AddAuthentication(TestAuthHandler.SchemeName)

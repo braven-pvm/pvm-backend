@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Anthropic.Exceptions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Pvm.Application.Documents;
 using Pvm.Infrastructure.Documents;
@@ -215,6 +216,25 @@ public sealed class ClaudeDocumentExtractorTests
         Assert.Empty(handler.Requests);
     }
 
+    [Fact]
+    public async Task Extract_MissingApiKey_LogsAnError()
+    {
+        var handler = new FakeHandler(MessageResponse("end_turn", ValidFields));
+        var logger = new ListLogger();
+        var extractor = new ClaudeDocumentExtractor(
+            Options.Create(new AnthropicOptions { ApiKey = "" }),
+            logger,
+            new HttpClient(handler),
+            maxRetries: 0);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            extractor.ExtractAsync(new ProofOfDeliveryDocumentType(), new MemoryStream(PdfBytes), CancellationToken.None));
+
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Error, entry.Level);
+        Assert.Contains("Anthropic:ApiKey", entry.Message);
+    }
+
     private static Task<ExtractionResult> Extract(
         FakeHandler handler,
         IDocumentType? type = null,
@@ -296,5 +316,24 @@ public sealed class ClaudeDocumentExtractorTests
                 JsonNode.Parse(body)!));
             return respond();
         }
+    }
+
+    private sealed class ListLogger : ILogger<ClaudeDocumentExtractor>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+            => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+            => Entries.Add((logLevel, formatter(state, exception)));
     }
 }

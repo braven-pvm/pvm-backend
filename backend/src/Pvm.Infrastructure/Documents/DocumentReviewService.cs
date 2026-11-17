@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Pvm.Application.Documents;
+using Pvm.Application.Messaging;
 using Pvm.Infrastructure.Persistence;
 
 namespace Pvm.Infrastructure.Documents;
@@ -40,6 +41,15 @@ public enum ReturnToReviewOutcome
     AlreadyAttached,
 }
 
+public enum ProcessAgainOutcome
+{
+    Queued,
+    NotFound,
+
+    /// <summary>The document is not Failed, nor Received or Processing for longer than <see cref="DocumentReviewService.StuckAfter"/>.</summary>
+    NotRetryable,
+}
+
 /// <summary>
 /// A person's resolution of a document on the review list (design 6.8): file it to an invoice
 /// that the Acumatica search confirms, or reject it with a note. Both writes are conditional on
@@ -49,6 +59,7 @@ public sealed class DocumentReviewService(
     PvmDbContext dbContext,
     IAcumaticaDocumentClient acumatica,
     DocumentProcessor processor,
+    IIntegrationCommandQueue commandQueue,
     ILogger<DocumentReviewService> logger)
 {
     /// <summary>A document still Received or Processing this long after the upload shows on the review list as stuck.</summary>
@@ -261,4 +272,71 @@ public sealed class DocumentReviewService(
             _ => ReturnToReviewOutcome.Returned,
         };
     }
+
+    /// <summary>
+    /// Sends a Failed or stuck document through processing again: the row goes back to Received
+    /// (the stored extraction stays) and a new <c>document.received.v1</c> message is written to
+    /// the outbox in the same transaction.
+    /// </summary>
+    public async Task<ProcessAgainOutcome> ProcessAgainAsync(Guid documentId, string user, CancellationToken cancellationToken)
+    {
+        var stuckBefore = DateTimeOffset.UtcNow - StuckAfter;
+        var current = await dbContext.CapturedDocuments
+            .AsNoTracking()
+            .Where(item => item.Id == documentId)
+            .Select(item => new { item.State, item.UploadedAt })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (current is null)
+        {
+            return ProcessAgainOutcome.NotFound;
+        }
+
+        if (!IsRetryable(current.State, current.UploadedAt, stuckBefore))
+        {
+            return ProcessAgainOutcome.NotRetryable;
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var updated = await dbContext.CapturedDocuments
+            .Where(item => item.Id == documentId
+                && (item.State == DocumentState.Failed
+                    || ((item.State == DocumentState.Received || item.State == DocumentState.Processing)
+                        && item.UploadedAt < stuckBefore)))
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(item => item.State, DocumentState.Received)
+                    .SetProperty(item => item.ReviewReason, (ReviewReason?)null)
+                    .SetProperty(item => item.RejectedAt, (DateTimeOffset?)null)
+                    .SetProperty(item => item.RejectedBy, (string?)null)
+                    .SetProperty(item => item.UpdatedAt, now),
+                cancellationToken);
+        if (updated == 0)
+        {
+            logger.LogWarning(
+                "document.review.process-again.superseded DocumentId={DocumentId} Reason=no-longer-failed-or-stuck",
+                documentId);
+            return ProcessAgainOutcome.NotRetryable;
+        }
+
+        var messageId = await commandQueue.EnqueueAsync(
+            IntegrationQueues.DocumentProcessing,
+            IntegrationMessageTypes.DocumentReceivedV1,
+            new ProcessCapturedDocumentMessage(documentId),
+            documentId.ToString("D"),
+            cancellationToken: cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        logger.LogInformation(
+            "document.review.process-again DocumentId={DocumentId} PreviousState={PreviousState} MessageId={MessageId} RequestedBy={RequestedBy}",
+            documentId,
+            current.State,
+            messageId,
+            user);
+        return ProcessAgainOutcome.Queued;
+    }
+
+    private static bool IsRetryable(DocumentState state, DateTimeOffset uploadedAt, DateTimeOffset stuckBefore)
+        => state == DocumentState.Failed
+            || (state is DocumentState.Received or DocumentState.Processing && uploadedAt < stuckBefore);
 }

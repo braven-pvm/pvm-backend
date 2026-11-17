@@ -59,7 +59,21 @@ public sealed class ClaudeDocumentExtractor : IDocumentExtractor
     {
         ArgumentNullException.ThrowIfNull(type);
         ArgumentNullException.ThrowIfNull(pdf);
-        var client = _client.Value;
+        IAnthropicClient client;
+        try
+        {
+            client = _client.Value;
+        }
+        catch (InvalidOperationException exception)
+        {
+            // A configuration fault, not a passing failure: every retry fails the same way.
+            _logger.LogError(
+                exception,
+                "document.extract.misconfigured {Message} The {DocumentType} document cannot be read; set the key, then use Process again on documents that failed.",
+                exception.Message,
+                type.Code);
+            throw;
+        }
 
         using var buffer = new MemoryStream();
         await pdf.CopyToAsync(buffer, cancellationToken);

@@ -20,6 +20,7 @@ namespace Pvm.Api.Features.Documents;
 ///   <c>POST /{id}/reject</c> — the review actions.</item>
 ///   <item><c>POST /{id}/return-to-review</c> — takes a wrongly filed document, not yet attached in
 ///   Acumatica, back to the review list.</item>
+///   <item><c>POST /{id}/process-again</c> — sends a Failed or stuck document through processing again.</item>
 /// </list>
 /// </summary>
 public static class DocumentReviewEndpoints
@@ -40,6 +41,7 @@ public static class DocumentReviewEndpoints
         group.MapPost("/{id:guid}/file-to", FileToAsync).RequireAuthorization("Invoices.Write");
         group.MapPost("/{id:guid}/reject", RejectAsync).RequireAuthorization("Invoices.Write");
         group.MapPost("/{id:guid}/return-to-review", ReturnToReviewAsync).RequireAuthorization("Invoices.Write");
+        group.MapPost("/{id:guid}/process-again", ProcessAgainAsync).RequireAuthorization("Invoices.Write");
 
         return app;
     }
@@ -340,6 +342,28 @@ public static class DocumentReviewEndpoints
                 "The PDF is already attached to the invoice in Acumatica. Remove the attachment in Acumatica by hand; "
                 + "the document cannot be sent back to review from here."),
             _ => throw new InvalidOperationException("Unknown return-to-review outcome.")
+        };
+    }
+
+    private static async Task<IResult> ProcessAgainAsync(
+        Guid id,
+        CurrentAppUserAccessor currentUser,
+        DocumentReviewService reviewService,
+        CancellationToken cancellationToken)
+    {
+        var user = CurrentEmail(currentUser);
+        if (user is null)
+        {
+            return UserNotResolved();
+        }
+
+        return await reviewService.ProcessAgainAsync(id, user, cancellationToken) switch
+        {
+            ProcessAgainOutcome.Queued => Results.Accepted($"/api/documents/{id:D}", new { documentId = id, state = DocumentState.Received.ToString() }),
+            ProcessAgainOutcome.NotFound => NotFound(),
+            ProcessAgainOutcome.NotRetryable => Conflict(
+                "Only a Failed document, or one stuck in Received or Processing for more than 30 minutes, can be processed again."),
+            _ => throw new InvalidOperationException("Unknown process-again outcome.")
         };
     }
 

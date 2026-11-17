@@ -3,7 +3,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Pvm.Application.Documents;
+using Pvm.Application.Messaging;
 using Pvm.Infrastructure.Documents;
+using Pvm.Infrastructure.Messaging;
 using Pvm.Infrastructure.Persistence;
 using Pvm.Infrastructure.Persistence.Entities;
 using Testcontainers.PostgreSql;
@@ -344,6 +346,99 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
         Assert.Empty(_acumatica.AttachAttempts);
     }
 
+    [Theory]
+    [InlineData(DocumentState.Failed, 0)]
+    [InlineData(DocumentState.Received, 31)]
+    [InlineData(DocumentState.Processing, 31)]
+    public async Task ProcessAgain_FailedOrStuck_BackToReceived_NewMessageInTheOutbox(DocumentState state, int minutesOld)
+    {
+        var id = await SeedAsync(state, uploadedAt: DateTimeOffset.UtcNow.AddMinutes(-minutesOld), extractionJson: """{"invoiceNumbers":["INV1"]}""");
+        await using (var db = CreateDbContext())
+        {
+            await db.CapturedDocuments.Where(item => item.Id == id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.ReviewReason, ReviewReason.ReadFailure));
+        }
+
+        var outcome = await ProcessAgainAsync(id);
+
+        Assert.Equal(ProcessAgainOutcome.Queued, outcome);
+        var row = await LoadAsync(id);
+        Assert.Equal(DocumentState.Received, row.State);
+        Assert.Null(row.ReviewReason);
+        Assert.Contains("INV1", row.ExtractionJson);
+        await using var check = CreateDbContext();
+        var message = Assert.Single(await check.IntegrationOutboxMessages.AsNoTracking().ToListAsync());
+        Assert.Equal(IntegrationQueues.DocumentProcessing, message.QueueName);
+        Assert.Equal(IntegrationMessageTypes.DocumentReceivedV1, message.MessageType);
+        Assert.Equal(id.ToString("D"), message.CorrelationId);
+        Assert.NotEqual(id, message.Id);
+        Assert.Contains(id.ToString("D"), message.PayloadJson);
+    }
+
+    [Fact]
+    public async Task ProcessAgain_Twice_TwoMessagesWithDifferentIds()
+    {
+        var id = await SeedAsync(DocumentState.Failed);
+        Assert.Equal(ProcessAgainOutcome.Queued, await ProcessAgainAsync(id));
+        await using (var db = CreateDbContext())
+        {
+            await db.CapturedDocuments.Where(item => item.Id == id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.State, DocumentState.Failed));
+        }
+
+        Assert.Equal(ProcessAgainOutcome.Queued, await ProcessAgainAsync(id));
+
+        await using var check = CreateDbContext();
+        var ids = await check.IntegrationOutboxMessages.AsNoTracking().Select(message => message.Id).ToListAsync();
+        Assert.Equal(2, ids.Distinct().Count());
+    }
+
+    [Theory]
+    [InlineData(DocumentState.Filed, 120)]
+    [InlineData(DocumentState.NeedsReview, 120)]
+    [InlineData(DocumentState.Received, 5)]
+    [InlineData(DocumentState.Processing, 29)]
+    public async Task ProcessAgain_NotFailedOrStuck_NoWrite_NoMessage(DocumentState state, int minutesOld)
+    {
+        var id = await SeedAsync(state, uploadedAt: DateTimeOffset.UtcNow.AddMinutes(-minutesOld), matchedReference: state == DocumentState.Filed ? "INV1" : null);
+
+        var outcome = await ProcessAgainAsync(id);
+
+        Assert.Equal(ProcessAgainOutcome.NotRetryable, outcome);
+        Assert.Equal(state, (await LoadAsync(id)).State);
+        await using var check = CreateDbContext();
+        Assert.Empty(await check.IntegrationOutboxMessages.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task ProcessAgain_UnknownDocument_NotFound()
+    {
+        Assert.Equal(ProcessAgainOutcome.NotFound, await ProcessAgainAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task ProcessAgain_RejectedFailedDocument_ClearsTheRejectionSoItShowsAgain()
+    {
+        var id = await SeedAsync(DocumentState.Failed);
+        await using (var db = CreateDbContext())
+        {
+            await CreateService(db, AcumaticaAttachMode.Shadow).RejectAsync(id, "gave up", User, default);
+        }
+
+        Assert.Equal(ProcessAgainOutcome.Queued, await ProcessAgainAsync(id));
+
+        var row = await LoadAsync(id);
+        Assert.Equal(DocumentState.Received, row.State);
+        Assert.Null(row.RejectedAt);
+        Assert.Null(row.RejectedBy);
+    }
+
+    private async Task<ProcessAgainOutcome> ProcessAgainAsync(Guid id)
+    {
+        await using var db = CreateDbContext();
+        return await CreateService(db, AcumaticaAttachMode.Shadow).ProcessAgainAsync(id, User, default);
+    }
+
     private async Task<ReturnToReviewOutcome> ReturnToReviewAsync(Guid id, string note, string user)
     {
         await using var db = CreateDbContext();
@@ -357,7 +452,7 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
     }
 
     private DocumentReviewService CreateService(PvmDbContext db, AcumaticaAttachMode mode)
-        => new(db, _acumatica, CreateProcessor(db, mode), NullLogger<DocumentReviewService>.Instance);
+        => new(db, _acumatica, CreateProcessor(db, mode), new IntegrationCommandQueue(db), NullLogger<DocumentReviewService>.Instance);
 
     private DocumentProcessor CreateProcessor(PvmDbContext db, AcumaticaAttachMode mode)
         => new(
@@ -375,10 +470,12 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
     private async Task<Guid> SeedAsync(
         DocumentState state,
         string? matchedReference = null,
-        string? reviewNote = null)
+        string? reviewNote = null,
+        DateTimeOffset? uploadedAt = null,
+        string? extractionJson = null)
     {
         var id = Guid.NewGuid();
-        var at = DateTimeOffset.UtcNow;
+        var at = uploadedAt ?? DateTimeOffset.UtcNow;
         var blobPath = $"documents/POD/{at:yyyy}/{at:MM}/{id:D}.pdf";
         _store.Blobs[blobPath] = PdfBytes;
         await using var db = CreateDbContext();
@@ -395,6 +492,7 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
             Sha256 = new string('a', 64),
             MatchedReference = matchedReference,
             ReviewNote = reviewNote,
+            ExtractionJson = extractionJson,
             UploadedBy = "driver@pvm.co.za",
             UploadedAt = at,
             UpdatedAt = at,
