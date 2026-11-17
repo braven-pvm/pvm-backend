@@ -144,11 +144,11 @@ public sealed class DocumentIntakeEndpointsTests : IAsyncLifetime
     }
 
     [Fact]
-    public void MaxUploadBytes_DefaultsTo25Megabytes_AndAttachModeToShadow()
+    public void MaxUploadBytes_DefaultsTo15Megabytes_AndAttachModeToShadow()
     {
         var options = new DocumentCaptureOptions();
 
-        Assert.Equal(25L * 1024 * 1024, options.MaxUploadBytes);
+        Assert.Equal(15L * 1024 * 1024, options.MaxUploadBytes);
         Assert.Equal(AcumaticaAttachMode.Shadow, options.AcumaticaAttachMode);
     }
 

@@ -207,6 +207,15 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Apply database migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          connection_string="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name connectionstrings--pvm --query value -o tsv)"
+          echo "::add-mask::$connection_string"
+          export ConnectionStrings__Pvm="$connection_string"
+          dotnet run --project backend/src/Pvm.DatabaseMigrator/Pvm.DatabaseMigrator.csproj --configuration Release
+
       - name: Ensure the container registry exists
         run: |
           set -euo pipefail
@@ -284,15 +293,6 @@ jobs:
             --parameters woocommerceConsumerSecret='${{ steps.values.outputs.woocommerce_consumer_secret }}' \
             --parameters containerAppMinReplicas=1 \
             --only-show-errors
-
-      - name: Apply database migrations
-        shell: bash
-        run: |
-          set -euo pipefail
-          connection_string="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name connectionstrings--pvm --query value -o tsv)"
-          echo "::add-mask::$connection_string"
-          export ConnectionStrings__Pvm="$connection_string"
-          dotnet run --project backend/src/Pvm.DatabaseMigrator/Pvm.DatabaseMigrator.csproj --configuration Release
 
       - name: Smoke test
         shell: bash

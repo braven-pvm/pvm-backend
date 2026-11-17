@@ -42,7 +42,9 @@ default and remembered. A chooser appears only when the backend returns more tha
   item goes behind the other waiting items, so one bad item does not block the rest. The queue
   also retries when the app comes back to the foreground.
 - 400 or 413: the item is Failed with a plain-language reason and keeps its PDF. The user can
-  remove a failed item, after a confirmation.
+  remove a failed item, after a confirmation. The backend accepts PDFs up to 15 MB
+  (`DocumentCapture:MaxUploadBytes`, 15728640 bytes); a larger scan answers 413, so scan a long
+  delivery note as more than one document.
 - 401: the app gets a token silently once more and repeats the upload. A second 401 (or no
   token) holds the queue and shows "Sign in again"; nothing is lost.
 - 403: the queue holds and tells the user to ask for the Operator role.

@@ -43,7 +43,7 @@ public sealed class AcumaticaDocumentClient(
     private const string OrderFields = "OrderType,OrderNbr,CustomerOrder,Shipments/InvoiceType,Shipments/InvoiceNbr";
 
     private readonly AcumaticaOptions _options = options.Value;
-    private readonly AcumaticaRestSession _session = new(httpClient, options.Value);
+    private readonly AcumaticaRestSession _session = new(httpClient, options.Value, logger);
 
     public async Task<IReadOnlyList<CandidateHit>> FindInvoicesAsync(
         PodExtraction extraction,

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Pvm.Application.Acumatica;
 
@@ -8,12 +9,13 @@ namespace Pvm.Infrastructure.Acumatica;
 
 public sealed class AcumaticaInvoiceClient(
     HttpClient httpClient,
-    IOptions<AcumaticaOptions> options) : IAcumaticaInvoiceClient
+    IOptions<AcumaticaOptions> options,
+    ILogger<AcumaticaInvoiceClient>? logger = null) : IAcumaticaInvoiceClient
 {
     private const int CustomerAccountChunkSize = 20;
     private const int InventoryItemChunkSize = 20;
     private readonly AcumaticaOptions _options = options.Value;
-    private readonly AcumaticaRestSession _session = new(httpClient, options.Value);
+    private readonly AcumaticaRestSession _session = new(httpClient, options.Value, logger);
 
     public Task<IReadOnlyList<AcumaticaInvoiceDto>> FetchFinalizedInvoicesAsync(
         CancellationToken cancellationToken)

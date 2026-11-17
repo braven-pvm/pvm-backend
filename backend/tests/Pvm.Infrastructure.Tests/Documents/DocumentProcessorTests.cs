@@ -499,6 +499,33 @@ public sealed class DocumentProcessorTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Backfill_WriteMode_RowLeavesFiledDuringTheAttach_NotCountedAsAttached()
+    {
+        var id = await SeedAsync(state: DocumentState.Filed, matchedReference: "INV000001", attachPending: true);
+        _acumatica.OnAttach = async () =>
+        {
+            // A person sends the document back to review while the PDF is on its way.
+            await using var other = CreateDbContext();
+            await other.CapturedDocuments.Where(item => item.Id == id).ExecuteUpdateAsync(setters => setters
+                .SetProperty(item => item.State, DocumentState.NeedsReview)
+                .SetProperty(item => item.MatchedReference, (string?)null)
+                .SetProperty(item => item.AcumaticaAttachPending, false));
+        };
+
+        int attached;
+        await using (var db = CreateDbContext())
+        {
+            attached = await CreateProcessor(db, AcumaticaAttachMode.Write).BackfillPendingAttachmentsAsync(default);
+        }
+
+        Assert.Equal(0, attached);
+        Assert.Equal(["INV000001"], _acumatica.AttachAttempts);
+        var row = await LoadAsync(id);
+        Assert.Equal(DocumentState.NeedsReview, row.State);
+        Assert.Null(row.AcumaticaAttachedAt);
+    }
+
+    [Fact]
     public async Task Backfill_WriteMode_FailingDocumentsDoNotBlockOthers()
     {
         for (var i = 0; i < 20; i++)
@@ -703,6 +730,8 @@ public sealed class DocumentProcessorTests : IAsyncLifetime
 
         public Func<Task>? OnFind { get; set; }
 
+        public Func<Task>? OnAttach { get; set; }
+
         public List<PodExtraction> Extractions { get; } = [];
 
         public List<string> AttachAttempts { get; } = [];
@@ -746,6 +775,10 @@ public sealed class DocumentProcessorTests : IAsyncLifetime
             using var buffer = new MemoryStream();
             await pdf.CopyToAsync(buffer, cancellationToken);
             Attached.Add((entity, referenceNumber, fileName, buffer.ToArray()));
+            if (OnAttach is not null)
+            {
+                await OnAttach();
+            }
         }
     }
 

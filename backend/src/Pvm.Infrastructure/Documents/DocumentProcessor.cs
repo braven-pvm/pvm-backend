@@ -314,12 +314,25 @@ public sealed class DocumentProcessor(
                     .SetProperty(item => item.AcumaticaAttachedAt, now)
                     .SetProperty(item => item.UpdatedAt, now),
                 cancellationToken);
+        if (updated == 0)
+        {
+            // The file reached Acumatica, but the row is no longer filed to this invoice (for
+            // example a person sent it back to review meanwhile). Not counted as attached.
+            logger.LogWarning(
+                "document.attach.orphaned DocumentId={DocumentId} Reference={Reference} FileName={FileName}: "
+                + "the PDF was attached in Acumatica but the document is no longer filed to this invoice with the "
+                + "attachment pending. Check the invoice in Acumatica and remove the file by hand if it is wrong.",
+                document.Id,
+                reference,
+                fileName);
+            return false;
+        }
+
         logger.LogInformation(
-            "document.attach.completed DocumentId={DocumentId} Reference={Reference} FileName={FileName} RowsUpdated={RowsUpdated}",
+            "document.attach.completed DocumentId={DocumentId} Reference={Reference} FileName={FileName}",
             document.Id,
             reference,
-            fileName,
-            updated);
+            fileName);
         return true;
     }
 

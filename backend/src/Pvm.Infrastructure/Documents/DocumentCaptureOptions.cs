@@ -13,7 +13,11 @@ public sealed class DocumentCaptureOptions
 
     public string FileSystemRoot { get; set; } = ".pvm/documents";
 
-    public long MaxUploadBytes { get; set; } = 25L * 1024 * 1024;
+    /// <summary>
+    /// The largest PDF the intake accepts: 15 MB, which keeps the base64 request to Claude well
+    /// under its 32 MB limit. The extractor's own pre-call size guard stays as a second check.
+    /// </summary>
+    public long MaxUploadBytes { get; set; } = 15L * 1024 * 1024;
 
     /// <summary>Shadow records the Acumatica attachment it would make; Write makes it (design 6.6).</summary>
     public AcumaticaAttachMode AcumaticaAttachMode { get; set; } = AcumaticaAttachMode.Shadow;

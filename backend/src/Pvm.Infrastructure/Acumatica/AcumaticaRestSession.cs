@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Pvm.Infrastructure.Operations;
 
 namespace Pvm.Infrastructure.Acumatica;
@@ -10,11 +12,17 @@ namespace Pvm.Infrastructure.Acumatica;
 /// and sign-out around one operation, the session cookie (kept only for the configured server),
 /// the URIs, and the error rule. It holds no state between operations.
 /// </summary>
-internal sealed class AcumaticaRestSession(HttpClient httpClient, AcumaticaOptions options)
+internal sealed class AcumaticaRestSession(HttpClient httpClient, AcumaticaOptions options, ILogger? logger = null)
 {
+    private readonly ILogger _logger = logger ?? NullLogger.Instance;
+
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
-    /// <summary>Signs in, runs the operation with the session cookie, and always signs out.</summary>
+    /// <summary>
+    /// Signs in, runs the operation with the session cookie, and always signs out. A failed
+    /// sign-out is logged, never thrown: it must not hide the result of an operation that
+    /// succeeded (an attachment that reached Acumatica), nor replace the operation's own error.
+    /// </summary>
     public async Task<T> RunAsync<T>(
         Func<string?, Task<T>> operation,
         CancellationToken cancellationToken)
@@ -48,12 +56,25 @@ internal sealed class AcumaticaRestSession(HttpClient httpClient, AcumaticaOptio
         }
         finally
         {
+            await SignOutAsync(sessionCookie);
+        }
+    }
+
+    private async Task SignOutAsync(string? sessionCookie)
+    {
+        try
+        {
             using var logoutRequest = CreateRequest(
                 HttpMethod.Post,
                 BuildUri("entity/auth/logout"),
                 sessionCookie);
             using var logoutResponse = await httpClient.SendAsync(logoutRequest, CancellationToken.None);
             EnsureSuccess(logoutResponse, "sign-out");
+        }
+        catch (Exception exception)
+        {
+            // The session expires on the Acumatica side by itself.
+            _logger.LogWarning(exception, "acumatica.sign-out.failed The Acumatica sign-out failed; the operation's result stands.");
         }
     }
 

@@ -111,6 +111,9 @@ param acumaticaInvoiceSourceMode string = 'Fixture'
 @description('Acumatica QA instance base URL.')
 param acumaticaBaseUrl string = ''
 
+@description('The Acumatica site the workbench links invoice numbers to, for example https://pvm.example.com/Instance. Optional: empty leaves ACUMATICA_BASE_URL unset and invoice numbers stay plain text.')
+param workbenchAcumaticaBaseUrl string = ''
+
 @description('Acumatica company or tenant used for API sign-in.')
 param acumaticaCompany string = ''
 
@@ -284,6 +287,7 @@ module platform 'modules/platform.bicep' = {
     shopriteInvoiceSubmissionMode: shopriteInvoiceSubmissionMode
     acumaticaInvoiceSourceMode: acumaticaInvoiceSourceMode
     acumaticaBaseUrl: acumaticaBaseUrl
+    workbenchAcumaticaBaseUrl: workbenchAcumaticaBaseUrl
     acumaticaCompany: acumaticaCompany
     acumaticaBranch: acumaticaBranch
     acumaticaUsername: acumaticaUsername

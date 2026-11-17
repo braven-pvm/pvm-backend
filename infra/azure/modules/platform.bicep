@@ -53,6 +53,9 @@ param shopritePoRefreshEnabled bool = false
 param shopriteUseLayer7Headers bool = false
 param acumaticaInvoiceSourceMode string = 'Fixture'
 param acumaticaBaseUrl string = ''
+
+@description('ACUMATICA_BASE_URL for the workbench: the Acumatica site its invoice links open. Empty: not set.')
+param workbenchAcumaticaBaseUrl string = ''
 param acumaticaCompany string = ''
 param acumaticaBranch string = ''
 
@@ -956,7 +959,7 @@ resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: workbenchContainerAppName
           image: '${acr.properties.loginServer}/pvm-workbench:${workbenchImageTag}'
-          env: [
+          env: concat([
             {
               name: 'NODE_ENV'
               value: 'production'
@@ -1001,7 +1004,12 @@ resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
               name: 'NEXT_PUBLIC_PVM_ENVIRONMENT_NAME'
               value: toUpper(environmentName)
             }
-          ]
+          ], empty(workbenchAcumaticaBaseUrl) ? [] : [
+            {
+              name: 'ACUMATICA_BASE_URL'
+              value: workbenchAcumaticaBaseUrl
+            }
+          ])
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'

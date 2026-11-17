@@ -422,6 +422,53 @@ public sealed class AcumaticaDocumentClientTests
     }
 
     [Fact]
+    public async Task AttachFile_SignOutFails_TheAttachStillSucceeds_AndTheFailureIsLogged()
+    {
+        var handler = new RoutingHandler(request => request.Path.EndsWith("/entity/auth/logout", StringComparison.Ordinal)
+            ? new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            : Route(request));
+        var logger = new ListLogger();
+        var client = CreateClient(handler, logger);
+        using var pdf = new MemoryStream([1, 2, 3]);
+
+        await client.AttachFileAsync("SalesInvoice", "INV001", "POD-INV001-0f8e.pdf", pdf, CancellationToken.None);
+
+        Assert.Single(handler.Requests, request => request.Method == HttpMethod.Put);
+        Assert.Contains(logger.Entries, entry => entry.Level == LogLevel.Warning && entry.Message.Contains("sign-out", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task GetInvoice_SignOutThrows_TheResultIsStillReturned()
+    {
+        var handler = new RoutingHandler(request => request.Path.EndsWith("/entity/auth/logout", StringComparison.Ordinal)
+            ? throw new HttpRequestException("connection reset")
+            : Route(request, salesInvoices: Invoice("INV001", "C100", "Open")));
+        var logger = new ListLogger();
+        var client = CreateClient(handler, logger);
+
+        var invoice = await client.GetInvoiceAsync("INV001", CancellationToken.None);
+
+        Assert.Equal("INV001", invoice?.ReferenceNumber);
+        Assert.Contains(logger.Entries, entry => entry.Level == LogLevel.Warning && entry.Message.Contains("sign-out", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task AttachFile_OperationAndSignOutFail_TheOperationErrorSurfaces()
+    {
+        var handler = new RoutingHandler(request =>
+            request.Method == HttpMethod.Put || request.Path.EndsWith("/entity/auth/logout", StringComparison.Ordinal)
+                ? new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                : Route(request));
+        var client = CreateClient(handler);
+        using var pdf = new MemoryStream([1]);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            client.AttachFileAsync("SalesInvoice", "INV001", "POD-INV001-0f8e.pdf", pdf, CancellationToken.None));
+
+        Assert.Contains("file attachment", error.Message);
+    }
+
+    [Fact]
     public async Task AttachFile_OtherEntity_IsRefused()
     {
         var handler = new RoutingHandler(request => Route(request));

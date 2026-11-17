@@ -114,7 +114,7 @@ void main() {
   });
 
   test('upload_413_is_rejected_as_too_large', () async {
-    final client = MockClient((_) async => problem(413, 'The file is larger than the limit of 26214400 bytes.'));
+    final client = MockClient((_) async => problem(413, 'The file is larger than the limit of 15728640 bytes.'));
 
     final outcome = await upload(api(client, FakeTokens(['t'])));
 
