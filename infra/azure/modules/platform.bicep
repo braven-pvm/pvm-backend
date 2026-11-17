@@ -161,6 +161,8 @@ var serviceBusNamespaceName = 'sb-pvm-integrations-${suffix}'
 var shopritePurchaseOrderRefreshQueueName = 'shoprite-po-refresh'
 var acumaticaInvoiceDiscoveryQueueName = 'acumatica-invoice-discovery'
 var shopriteInvoiceSubmitQueueName = 'shoprite-invoice-submit'
+// No worker scale rule yet: the worker consumes this queue once document processing lands.
+var documentProcessingQueueName = 'document-processing'
 var postgresServerName = 'psql-pvm-integrations-${suffix}'
 var postgresAdminUser = 'pvmadmin'
 var databaseName = 'pvm'
@@ -353,6 +355,22 @@ var apiEnvironment = concat([
   {
     name: 'PayloadArchive__ServiceUri'
     value: 'https://${storageAccountName}.blob.${environment().suffixes.storage}'
+  }
+  {
+    name: 'DocumentCapture__Provider'
+    value: 'AzureBlob'
+  }
+  {
+    name: 'DocumentCapture__ContainerName'
+    value: documentsContainer.name
+  }
+  {
+    name: 'DocumentCapture__ServiceUri'
+    value: 'https://${storageAccountName}.blob.${environment().suffixes.storage}'
+  }
+  {
+    name: 'DocumentCapture__AcumaticaAttachMode'
+    value: 'Shadow'
   }
   {
     name: 'AZURE_CLIENT_ID'
@@ -610,6 +628,15 @@ resource payloadsContainer 'Microsoft.Storage/storageAccounts/blobServices/conta
   }
 }
 
+// The original PDF of each captured document (document capture design 6.6).
+resource documentsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobService
+  name: 'documents'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 resource serviceBus 'Microsoft.ServiceBus/namespaces@2024-01-01' = {
   name: serviceBusNamespaceName
   location: location
@@ -629,6 +656,7 @@ resource serviceBusQueues 'Microsoft.ServiceBus/namespaces/queues@2024-01-01' = 
   shopritePurchaseOrderRefreshQueueName
   acumaticaInvoiceDiscoveryQueueName
   shopriteInvoiceSubmitQueueName
+  documentProcessingQueueName
 ]: {
   parent: serviceBus
   name: queueName

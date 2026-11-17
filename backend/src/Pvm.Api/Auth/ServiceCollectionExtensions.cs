@@ -7,6 +7,9 @@ namespace Pvm.Api.Auth;
 
 public static class ServiceCollectionExtensions
 {
+    /// <summary>Upload of captured documents from the phone app (design 6.9).</summary>
+    public const string DocumentsCapturePolicy = "Documents.Capture";
+
     public static IServiceCollection AddPvmAuth(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -98,19 +101,24 @@ public static class ServiceCollectionExtensions
             });
         }
 
-        services.AddAuthorization(options =>
-        {
-            options.AddPolicy("Invoices.Read", policy => policy
-                .RequireAuthenticatedUser()
-                .RequireRole(AppRoles.Read));
-            options.AddPolicy("Invoices.Write", policy => policy
-                .RequireAuthenticatedUser()
-                .RequireRole(AppRoles.Write));
-            options.AddPolicy("Admin", policy => policy
-                .RequireAuthenticatedUser()
-                .RequireRole(AppRoles.Admin));
-        });
+        services.AddAuthorization(AddPvmPolicies);
 
         return services;
+    }
+
+    public static void AddPvmPolicies(AuthorizationOptions options)
+    {
+        options.AddPolicy("Invoices.Read", policy => policy
+            .RequireAuthenticatedUser()
+            .RequireRole(AppRoles.Read));
+        options.AddPolicy("Invoices.Write", policy => policy
+            .RequireAuthenticatedUser()
+            .RequireRole(AppRoles.Write));
+        options.AddPolicy("Admin", policy => policy
+            .RequireAuthenticatedUser()
+            .RequireRole(AppRoles.Admin));
+        options.AddPolicy(DocumentsCapturePolicy, policy => policy
+            .RequireAuthenticatedUser()
+            .RequireRole(AppRoles.Write));
     }
 }

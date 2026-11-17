@@ -68,6 +68,8 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<StockSyncRunEntity> StockSyncRuns => Set<StockSyncRunEntity>();
 
+    public DbSet<CapturedDocumentEntity> CapturedDocuments => Set<CapturedDocumentEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<InvoiceCandidateEntity>(entity =>
@@ -518,6 +520,26 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
                 .WithMany()
                 .HasForeignKey(comment => comment.ExceptionTaskId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CapturedDocumentEntity>(entity =>
+        {
+            entity.ToTable("captured_documents");
+            entity.HasKey(document => document.Id);
+            entity.HasIndex(document => document.ClientDocumentId).IsUnique();
+            entity.HasIndex(document => document.MatchedReference);
+            entity.Property(document => document.DocumentType).HasMaxLength(32);
+            entity.Property(document => document.State).HasConversion<string>().HasMaxLength(32);
+            entity.Property(document => document.ReviewReason).HasConversion<string>().HasMaxLength(64);
+            entity.Property(document => document.BlobPath).HasMaxLength(512);
+            entity.Property(document => document.Sha256).HasMaxLength(64);
+            entity.Property(document => document.ExtractionJson).HasColumnType("jsonb");
+            entity.Property(document => document.MatchedReference).HasMaxLength(64);
+            entity.Property(document => document.MatchedCustomerName).HasMaxLength(256);
+            entity.Property(document => document.MatchedBy).HasMaxLength(320);
+            entity.Property(document => document.UploadedBy).HasMaxLength(320);
+            entity.Property(document => document.ResolvedBy).HasMaxLength(320);
+            entity.Property(document => document.ReviewNote).HasMaxLength(2048);
         });
 
         ConfigureReporting(modelBuilder);

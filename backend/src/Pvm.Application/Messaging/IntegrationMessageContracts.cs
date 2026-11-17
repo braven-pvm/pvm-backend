@@ -7,6 +7,7 @@ public static class IntegrationQueues
     public const string ShopritePurchaseOrderRefresh = "shoprite-po-refresh";
     public const string AcumaticaInvoiceDiscovery = "acumatica-invoice-discovery";
     public const string ShopriteInvoiceSubmit = "shoprite-invoice-submit";
+    public const string DocumentProcessing = "document-processing";
 }
 
 public static class IntegrationMessageTypes
@@ -16,6 +17,7 @@ public static class IntegrationMessageTypes
     public const string AcumaticaInvoiceReconciliationV1 = "acumatica.invoice-reconciliation.v1";
     public const string AcumaticaInvoiceChangedV1 = "acumatica.invoice-changed.v1";
     public const string ShopriteInvoiceSubmitV1 = "shoprite.invoice-submit.v1";
+    public const string DocumentReceivedV1 = "document.received.v1";
 }
 
 public sealed record IntegrationMessageEnvelope(
@@ -52,6 +54,8 @@ public sealed record SubmitShopriteInvoiceMessage(
     Guid CommandId,
     string RequestedBy,
     string Mode = "automatic");
+
+public sealed record ProcessCapturedDocumentMessage(Guid DocumentId);
 
 public interface IIntegrationCommandQueue
 {

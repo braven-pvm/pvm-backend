@@ -296,6 +296,98 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                     b.ToTable("automation_policy_versions", (string)null);
                 });
 
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.CapturedDocumentEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("AcumaticaAttachPending")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("AcumaticaAttachedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("BlobPath")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<Guid>("ClientDocumentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("ExtractionJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("MatchedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<string>("MatchedCustomerName")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("MatchedReference")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("PageCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ResolvedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<string>("ReviewNote")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<string>("ReviewReason")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("UploadedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UploadedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientDocumentId")
+                        .IsUnique();
+
+                    b.HasIndex("MatchedReference");
+
+                    b.ToTable("captured_documents", (string)null);
+                });
+
             modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ExceptionTaskCommentEntity", b =>
                 {
                     b.Property<Guid>("Id")
