@@ -4,59 +4,95 @@ namespace Pvm.Application.Documents;
 /// The match decision for a proof of delivery (design 6.5 steps 3 to 7). The lookups of steps 1
 /// and 2 happen elsewhere; this class gets their hits and decides. A number alone never files a
 /// document: one invoice must remain and a second, independent signal must agree with it.
+/// Every review outcome carries all in-scope invoices the lookups found, so a reviewer sees them all.
 /// </summary>
 public static class PodMatcher
 {
+    private const string InvoiceKind = "invoice";
+
     public static MatchOutcome Decide(PodExtraction extraction, IReadOnlyList<CandidateHit> hits)
     {
         // Step 3: the distinct invoices, voided and cancelled ones left out.
         var inScope = hits
             .Where(hit => !InvoiceStatuses.IsOutOfScope(hit.Invoice.Status))
             .ToList();
-        var invoices = inScope
-            .Select(hit => hit.Invoice)
-            .DistinctBy(invoice => invoice.ReferenceNumber, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var invoices = Distinct(inScope.Select(hit => hit.Invoice));
 
         if (invoices.Count == 0)
         {
             return new Review(ReviewReason.NoCandidate, []);
         }
 
-        // Step 4: more than one invoice; keep the nearest on or before the delivery date.
-        var remaining = invoices;
-        if (remaining.Count > 1 && extraction.DeliveryDate is { } delivered)
-        {
-            var onOrBefore = remaining.Where(invoice => invoice.Date <= delivered).ToList();
-            if (onOrBefore.Count > 0)
-            {
-                var nearest = onOrBefore.Max(invoice => invoice.Date);
-                remaining = onOrBefore.Where(invoice => invoice.Date == nearest).ToList();
-            }
-        }
+        // Step 4a: an invoice number printed on the paper outranks order numbers. A split shipment
+        // shares its sales order and PO across invoices, so only the invoices hit by an invoice
+        // number are candidates when there is one.
+        var byInvoiceNumber = Distinct(inScope
+            .Where(hit => string.Equals(hit.MatchedOn, InvoiceKind, StringComparison.OrdinalIgnoreCase))
+            .Select(hit => hit.Invoice));
 
-        if (remaining.Count > 1)
+        InvoiceCandidate invoice;
+        if (byInvoiceNumber.Count > 0)
         {
-            return new Review(ReviewReason.MultipleCandidates, invoices);
+            if (byInvoiceNumber.Count > 1)
+            {
+                return new Review(ReviewReason.MultipleCandidates, invoices);
+            }
+
+            invoice = byInvoiceNumber[0];
+        }
+        else if (invoices.Count == 1)
+        {
+            invoice = invoices[0];
+        }
+        else
+        {
+            // Step 4b: order-derived candidates only. The delivery date narrows them only when
+            // exactly one is dated on or before it; there is no "nearest" choice.
+            if (extraction.DeliveryDate is not { } delivered)
+            {
+                return new Review(ReviewReason.MultipleCandidates, invoices);
+            }
+
+            var onOrBefore = invoices.Where(candidate => candidate.Date <= delivered).ToList();
+            if (onOrBefore.Count != 1)
+            {
+                return new Review(ReviewReason.MultipleCandidates, invoices);
+            }
+
+            invoice = onOrBefore[0];
         }
 
         // Step 5: one invoice; it needs a second signal.
-        var invoice = remaining[0];
         if (!string.IsNullOrWhiteSpace(extraction.ClientName))
         {
-            return CompanyNameComparer.Agrees(extraction.ClientName, invoice)
-                ? new Matched(invoice)
-                : new Review(ReviewReason.ClientNameConflict, [invoice]);
+            if (CompanyNameComparer.Agrees(extraction.ClientName, invoice))
+            {
+                return new Matched(invoice);
+            }
+
+            return ReviewWith(ReviewReason.ClientNameConflict, invoice, invoices);
         }
 
         var kindsThatFoundIt = inScope
-            .Where(hit => string.Equals(hit.Invoice.ReferenceNumber, invoice.ReferenceNumber, StringComparison.OrdinalIgnoreCase))
+            .Where(hit => SameInvoice(hit.Invoice, invoice))
             .Select(hit => hit.MatchedOn)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Count();
 
         return kindsThatFoundIt >= 2
             ? new Matched(invoice)
-            : new Review(ReviewReason.NoSecondSignal, [invoice]);
+            : ReviewWith(ReviewReason.NoSecondSignal, invoice, invoices);
     }
+
+    /// <summary>A review with the invoice the matcher settled on first, then every other in-scope invoice.</summary>
+    private static Review ReviewWith(ReviewReason reason, InvoiceCandidate chosen, IReadOnlyList<InvoiceCandidate> all)
+        => new(reason, [chosen, .. all.Where(other => !SameInvoice(other, chosen))]);
+
+    private static bool SameInvoice(InvoiceCandidate left, InvoiceCandidate right)
+        => string.Equals(left.ReferenceNumber, right.ReferenceNumber, StringComparison.OrdinalIgnoreCase);
+
+    private static List<InvoiceCandidate> Distinct(IEnumerable<InvoiceCandidate> candidates)
+        => candidates
+            .DistinctBy(candidate => candidate.ReferenceNumber, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 }

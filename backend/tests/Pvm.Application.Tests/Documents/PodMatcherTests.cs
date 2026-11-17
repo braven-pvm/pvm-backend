@@ -138,4 +138,129 @@ public class PodMatcherTests
         Assert.Equal(ReviewReason.NoCandidate, review.Reason);
         Assert.Empty(review.Candidates);
     }
+
+    private static PodExtraction Paper(
+        string[] invoiceNumbers,
+        string[] salesOrders,
+        string[] customerOrders,
+        string? clientName = null,
+        string? deliveryDate = null)
+        => new(
+            invoiceNumbers,
+            salesOrders,
+            customerOrders,
+            clientName,
+            deliveryDate is null ? null : DateOnly.Parse(deliveryDate),
+            true,
+            null);
+
+    // Split shipment: invoices A (Nov 10) and B (Nov 12) both from sales order S / PO P, delivered Nov 12.
+    private static readonly InvoiceCandidate SplitA = Invoice("INV-A", "2026-11-10");
+    private static readonly InvoiceCandidate SplitB = Invoice("INV-B", "2026-11-12");
+
+    [Fact]
+    public void SplitShipment_PaperShowsInvoiceA_MatchedA()
+    {
+        var outcome = PodMatcher.Decide(
+            Paper(["INV-A"], ["S"], ["P"], deliveryDate: "2026-11-12"),
+            [
+                new CandidateHit(SplitA, "invoice"),
+                new CandidateHit(SplitA, "salesOrder"),
+                new CandidateHit(SplitA, "customerOrder"),
+                new CandidateHit(SplitB, "salesOrder"),
+                new CandidateHit(SplitB, "customerOrder"),
+            ]);
+
+        Assert.Equal(SplitA, Assert.IsType<Matched>(outcome).Invoice);
+    }
+
+    [Fact]
+    public void SplitShipment_PaperShowsInvoiceB_MatchedB()
+    {
+        var outcome = PodMatcher.Decide(
+            Paper(["INV-B"], ["S"], ["P"], deliveryDate: "2026-11-12"),
+            [
+                new CandidateHit(SplitB, "invoice"),
+                new CandidateHit(SplitB, "salesOrder"),
+                new CandidateHit(SplitB, "customerOrder"),
+                new CandidateHit(SplitA, "salesOrder"),
+                new CandidateHit(SplitA, "customerOrder"),
+            ]);
+
+        Assert.Equal(SplitB, Assert.IsType<Matched>(outcome).Invoice);
+    }
+
+    [Fact]
+    public void GrnWithOnlyCustomerOrder_TwoInvoicesOnOrBeforeDelivery_ReviewMultipleCandidatesWithBoth()
+    {
+        var outcome = PodMatcher.Decide(
+            Paper([], [], ["P"], "Shoprite Checkers", "2026-11-12"),
+            [new CandidateHit(SplitA, "customerOrder"), new CandidateHit(SplitB, "customerOrder")]);
+
+        var review = Assert.IsType<Review>(outcome);
+        Assert.Equal(ReviewReason.MultipleCandidates, review.Reason);
+        Assert.Equal([SplitA, SplitB], review.Candidates);
+    }
+
+    [Fact]
+    public void OrderHits_OnlyOneOnOrBeforeDelivery_ProceedsToSignalCheck()
+    {
+        var before = Invoice("INV001", "2026-11-10");
+        var after = Invoice("INV002", "2026-11-14");
+        var hits = new[] { new CandidateHit(before, "customerOrder"), new CandidateHit(after, "customerOrder") };
+
+        // No name and one kind of number: no second signal; the review carries both invoices.
+        var noSignal = PodMatcher.Decide(Paper([], [], ["P"], deliveryDate: "2026-11-12"), hits);
+        var review = Assert.IsType<Review>(noSignal);
+        Assert.Equal(ReviewReason.NoSecondSignal, review.Reason);
+        Assert.Equal(before, review.Candidates[0]);
+        Assert.Contains(after, review.Candidates);
+        Assert.Equal(2, review.Candidates.Count);
+
+        // A name that agrees is the second signal.
+        var named = PodMatcher.Decide(Paper([], [], ["P"], "Shoprite Checkers", "2026-11-12"), hits);
+        Assert.Equal(before, Assert.IsType<Matched>(named).Invoice);
+    }
+
+    [Fact]
+    public void InvoiceNumberHitsTwoInvoices_ReviewMultipleCandidates()
+    {
+        var first = Invoice("INV001", "2026-11-10");
+        var second = Invoice("INV002", "2026-11-11");
+
+        var outcome = PodMatcher.Decide(
+            Paper(["INV001", "INV002"], ["S"], [], "Shoprite Checkers", "2026-11-12"),
+            [
+                new CandidateHit(first, "invoice"),
+                new CandidateHit(second, "invoice"),
+                new CandidateHit(first, "salesOrder"),
+            ]);
+
+        var review = Assert.IsType<Review>(outcome);
+        Assert.Equal(ReviewReason.MultipleCandidates, review.Reason);
+        Assert.Equal(2, review.Candidates.Count);
+    }
+
+    [Fact]
+    public void ReviewOutcomes_CarryAllInScopeInvoices()
+    {
+        var byNumber = Invoice("INV001", "2026-11-10");
+        var byOrder = Invoice("INV002", "2026-11-11");
+        var voided = Invoice("INV003", "2026-11-11", status: "Voided");
+
+        // The invoice-number hit is the only candidate, but its name disagrees: the review still lists every in-scope invoice.
+        var outcome = PodMatcher.Decide(
+            Paper(["INV001"], ["S"], [], "Pick n Pay", "2026-11-12"),
+            [
+                new CandidateHit(byNumber, "invoice"),
+                new CandidateHit(byOrder, "salesOrder"),
+                new CandidateHit(voided, "salesOrder"),
+            ]);
+
+        var review = Assert.IsType<Review>(outcome);
+        Assert.Equal(ReviewReason.ClientNameConflict, review.Reason);
+        Assert.Equal(byNumber, review.Candidates[0]);
+        Assert.Equal(2, review.Candidates.Count);
+        Assert.DoesNotContain(voided, review.Candidates);
+    }
 }
