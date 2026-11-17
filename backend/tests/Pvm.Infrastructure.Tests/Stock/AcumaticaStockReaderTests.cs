@@ -81,7 +81,8 @@ public sealed class AcumaticaStockReaderTests
         };
         acumatica.OnHand["CER07"] = 3307;
         acumatica.CountDates["PI001400"] = "2026-09-30T00:00:00Z";
-        acumatica.CountDates["PI001450"] = "2026-10-30T00:00:00Z";
+        // The same day in the two formats Acumatica uses.
+        acumatica.CountDates["PI001450"] = "2026-10-30T00:00:00+02:00";
 
         var snapshot = await Reader(acumatica).ReadAsync(["CER07"], [], CancellationToken.None);
 

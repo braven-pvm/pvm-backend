@@ -247,9 +247,10 @@ public sealed class AcumaticaStockReader(
         foreach (var row in await GetDacAsync("INPIHeader?$select=PIID,CountDate", "stock-take dates", cancellationToken))
         {
             if (DacText(row, "PIID") is { Length: > 0 } id && row.TryGetProperty("CountDate", out var value)
-                && value.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(value.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+                && value.ValueKind == JsonValueKind.String && LocalDate(value.GetString()) is { } date)
             {
-                countDates[id] = DateOnly.FromDateTime(date.UtcDateTime);
+                // The calendar day as Acumatica shows it, whatever offset the value carries.
+                countDates[id] = date;
             }
         }
 
@@ -612,6 +613,12 @@ public sealed class AcumaticaStockReader(
             if (next is { IsAbsoluteUri: false })
             {
                 next = new Uri(new Uri(_acumatica.BaseUrl!.TrimEnd('/') + "/"), next);
+            }
+
+            // The credentials go only to the Acumatica host.
+            if (next is not null && !string.Equals(next.Host, new Uri(_acumatica.BaseUrl!).Host, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"Acumatica read of {what} pointed to another host, so the run stops.");
             }
         }
 
