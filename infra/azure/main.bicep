@@ -163,6 +163,10 @@ param woocommerceConsumerKey string = ''
 @secure()
 param woocommerceConsumerSecret string = ''
 
+@description('Claude API key for document extraction in the worker.')
+@secure()
+param anthropicApiKey string = ''
+
 @description('Disabled, Shadow or Write. Write sets stock in the live web store.')
 @allowed([
   'Disabled'
@@ -295,6 +299,7 @@ module platform 'modules/platform.bicep' = {
     woocommerceBaseUrl: woocommerceBaseUrl
     woocommerceConsumerKey: woocommerceConsumerKey
     woocommerceConsumerSecret: woocommerceConsumerSecret
+    anthropicApiKey: anthropicApiKey
     stockSyncMode: stockSyncMode
     sellInEnabled: sellInEnabled
     acumaticaEndpointName: acumaticaEndpointName

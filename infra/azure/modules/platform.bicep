@@ -103,6 +103,10 @@ param woocommerceConsumerKey string = ''
 @secure()
 param woocommerceConsumerSecret string = ''
 
+@description('Claude API key for document extraction in the worker.')
+@secure()
+param anthropicApiKey string = ''
+
 @description('Disabled, Shadow (read and log, write nothing) or Write. Write sets stock in the live web store.')
 @allowed([
   'Disabled'
@@ -176,6 +180,19 @@ var woocommerceCredentialSecrets = hasWooCommerceCredentials ? [
   {
     name: 'woocommerce-consumersecret'
     value: woocommerceConsumerSecret
+  }
+] : []
+var hasAnthropicApiKey = !empty(anthropicApiKey)
+var anthropicSecrets = hasAnthropicApiKey ? [
+  {
+    name: 'anthropic-apikey'
+    value: anthropicApiKey
+  }
+] : []
+var anthropicEnvironment = hasAnthropicApiKey ? [
+  {
+    name: 'Anthropic__ApiKey'
+    secretRef: 'anthropic-apikey'
   }
 ] : []
 var woocommerceEnvironment = hasWooCommerceCredentials ? [
@@ -1019,7 +1036,7 @@ resource workerContainerApp 'Microsoft.App/containerApps@2025-01-01' = {
           identity: identity.id
         }
       ]
-      secrets: commonRuntimeSecrets
+      secrets: concat(commonRuntimeSecrets, anthropicSecrets)
     }
     template: {
       scale: {
@@ -1049,7 +1066,7 @@ resource workerContainerApp 'Microsoft.App/containerApps@2025-01-01' = {
         {
           name: workerContainerAppName
           image: '${acr.properties.loginServer}/pvm-worker:${workerImageTag}'
-          env: workerEnvironment
+          env: concat(workerEnvironment, anthropicEnvironment)
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'

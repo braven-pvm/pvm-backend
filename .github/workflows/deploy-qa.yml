@@ -92,6 +92,7 @@ jobs:
           acumatica_username="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name acumatica--username --query value -o tsv 2>/dev/null || true)"
           acumatica_password="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name acumatica--password --query value -o tsv 2>/dev/null || true)"
           acumatica_webhook_secret="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name acumatica--webhooksecret --query value -o tsv 2>/dev/null || true)"
+          anthropic_api_key="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name anthropic--apikey --query value -o tsv 2>/dev/null || true)"
 
           if [ -z "$postgres_password" ]; then
             echo "Could not extract PostgreSQL password from Key Vault connection string." >&2
@@ -131,6 +132,7 @@ jobs:
           if [ -n "$acumatica_username" ]; then echo "::add-mask::$acumatica_username"; fi
           if [ -n "$acumatica_password" ]; then echo "::add-mask::$acumatica_password"; fi
           if [ -n "$acumatica_webhook_secret" ]; then echo "::add-mask::$acumatica_webhook_secret"; fi
+          if [ -n "$anthropic_api_key" ]; then echo "::add-mask::$anthropic_api_key"; fi
 
           {
             echo "image_tag=$image_tag"
@@ -167,6 +169,9 @@ jobs:
             echo "EOF"
             echo "acumatica_webhook_secret<<EOF"
             echo "$acumatica_webhook_secret"
+            echo "EOF"
+            echo "anthropic_api_key<<EOF"
+            echo "$anthropic_api_key"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -237,6 +242,7 @@ jobs:
             --parameters acumaticaUsername='${{ steps.values.outputs.acumatica_username }}' \
             --parameters acumaticaPassword='${{ steps.values.outputs.acumatica_password }}' \
             --parameters acumaticaWebhookSecret='${{ steps.values.outputs.acumatica_webhook_secret }}' \
+            --parameters anthropicApiKey='${{ steps.values.outputs.anthropic_api_key }}' \
             --parameters containerAppMinReplicas=1 \
             --only-show-errors
 
