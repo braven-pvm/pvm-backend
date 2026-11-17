@@ -162,6 +162,37 @@ public sealed class ClaudeDocumentExtractorTests
     }
 
     [Fact]
+    public async Task Extract_BadRequestAboutTheContent_LogsAWarning()
+    {
+        var handler = new FakeHandler(ErrorResponse(HttpStatusCode.BadRequest, "invalid_request_error", "The PDF could not be processed."));
+        var logger = new ListLogger();
+
+        var result = await Extract(handler, logger: logger);
+
+        Assert.Equal(new Unreadable("rejected"), result);
+        Assert.Equal(LogLevel.Warning, Assert.Single(logger.Entries).Level);
+    }
+
+    [Theory]
+    [InlineData("invalid_request_error", "model: claude-opus-9 is not a valid model")]
+    [InlineData("invalid_request_error", "Unexpected value for anthropic-beta header")]
+    [InlineData("invalid_request_error", "fallbacks: Extra inputs are not permitted (parameter)")]
+    [InlineData("not_found_error", "The PDF could not be processed.")]
+    [InlineData("permission_error", "denied")]
+    public async Task Extract_BadRequestThatLooksLikeMisconfiguration_LogsAnError_StillUnreadable(string errorType, string message)
+    {
+        var handler = new FakeHandler(ErrorResponse(HttpStatusCode.BadRequest, errorType, message));
+        var logger = new ListLogger();
+
+        var result = await Extract(handler, logger: logger);
+
+        Assert.Equal(new Unreadable("rejected"), result);
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Error, entry.Level);
+        Assert.Contains("misconfiguration", entry.Message);
+    }
+
+    [Fact]
     public async Task Extract_RequestTooLarge_ReturnsUnreadable()
     {
         var handler = new FakeHandler(ErrorResponse(HttpStatusCode.RequestEntityTooLarge, "request_too_large"));
@@ -238,11 +269,12 @@ public sealed class ClaudeDocumentExtractorTests
     private static Task<ExtractionResult> Extract(
         FakeHandler handler,
         IDocumentType? type = null,
-        byte[]? pdf = null)
+        byte[]? pdf = null,
+        ILogger<ClaudeDocumentExtractor>? logger = null)
     {
         var extractor = new ClaudeDocumentExtractor(
             Options.Create(new AnthropicOptions { ApiKey = "test-key" }),
-            logger: null,
+            logger,
             new HttpClient(handler),
             maxRetries: 0);
         return extractor.ExtractAsync(
@@ -251,11 +283,11 @@ public sealed class ClaudeDocumentExtractorTests
             CancellationToken.None);
     }
 
-    private static Func<HttpResponseMessage> ErrorResponse(HttpStatusCode status, string errorType)
+    private static Func<HttpResponseMessage> ErrorResponse(HttpStatusCode status, string errorType, string message = "test")
         => () => new HttpResponseMessage(status)
         {
             Content = new StringContent(
-                $$$"""{"type":"error","error":{"type":"{{{errorType}}}","message":"test"}}""",
+                JsonSerializer.Serialize(new { type = "error", error = new { type = errorType, message } }),
                 Encoding.UTF8,
                 "application/json"),
         };

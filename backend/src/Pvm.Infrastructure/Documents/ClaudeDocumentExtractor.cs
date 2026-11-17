@@ -116,11 +116,28 @@ public sealed class ClaudeDocumentExtractor : IDocumentExtractor
         catch (AnthropicApiException ex)
             when (ex.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.RequestEntityTooLarge)
         {
-            _logger.LogWarning(
-                "Claude rejected the {DocumentType} extraction request: HTTP {StatusCode}, {ErrorType}.",
-                type.Code,
-                (int)ex.StatusCode,
-                ex.Type?.ToString() ?? "unknown");
+            var (errorType, errorMessage) = ReadApiError(ex.ResponseBody);
+            if (ex.StatusCode == HttpStatusCode.BadRequest && LooksLikeMisconfiguration(errorType, errorMessage))
+            {
+                // Not about this PDF: every document fails the same way until the setup is fixed.
+                _logger.LogError(
+                    "Claude rejected the {DocumentType} extraction request: HTTP {StatusCode}, {ErrorType}: {ErrorMessage}. "
+                    + "This is a probable misconfiguration (model, beta or request parameter), not a bad scan.",
+                    type.Code,
+                    (int)ex.StatusCode,
+                    errorType ?? "unknown",
+                    errorMessage ?? "");
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "Claude rejected the {DocumentType} extraction request: HTTP {StatusCode}, {ErrorType}: {ErrorMessage}.",
+                    type.Code,
+                    (int)ex.StatusCode,
+                    errorType ?? "unknown",
+                    errorMessage ?? "");
+            }
+
             return new Unreadable("rejected");
         }
 
@@ -163,6 +180,46 @@ public sealed class ClaudeDocumentExtractor : IDocumentExtractor
 
         return HasAnyValue(fields) ? new Extracted(fields) : new Unreadable("empty");
     }
+
+    private static readonly string[] MisconfigurationWords = ["model", "beta", "parameter"];
+
+    /// <summary>
+    /// A 400 is about the content only when its type is <c>invalid_request_error</c> and its
+    /// message does not name the model, a beta or a request parameter.
+    /// </summary>
+    private static bool LooksLikeMisconfiguration(string? errorType, string? errorMessage)
+        => !string.Equals(errorType, "invalid_request_error", StringComparison.Ordinal)
+            || (errorMessage is not null
+                && MisconfigurationWords.Any(word => errorMessage.Contains(word, StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>The <c>error.type</c> and <c>error.message</c> of an API error body; nulls when it cannot be read.</summary>
+    private static (string? Type, string? Message) ReadApiError(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("error", out var error)
+                || error.ValueKind != JsonValueKind.Object)
+            {
+                return (null, null);
+            }
+
+            return (StringOrNull(error, "type"), StringOrNull(error, "message"));
+        }
+        catch (JsonException)
+        {
+            return (null, null);
+        }
+    }
+
+    private static string? StringOrNull(JsonElement element, string name)
+        => element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
 
     private IAnthropicClient CreateClient()
     {

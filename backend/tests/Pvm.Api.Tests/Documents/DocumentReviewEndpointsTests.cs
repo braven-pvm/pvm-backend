@@ -199,6 +199,20 @@ public sealed class DocumentReviewEndpointsTests : IAsyncLifetime
         Assert.Empty(body.GetProperty("candidates").EnumerateArray());
     }
 
+    [Theory]
+    [InlineData(null, "Shadow")]
+    [InlineData("Write", "Write")]
+    public async Task Detail_ReturnsTheAcumaticaAttachMode(string? configured, string expected)
+    {
+        var client = await StartAsync(attachMode: configured);
+        var id = await SeedAsync(DocumentState.NeedsReview);
+
+        var response = await client.SendAsync(Get($"/api/documents/{id:D}", AppRoles.Viewer));
+
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(expected, body.GetProperty("acumaticaAttachMode").GetString());
+    }
+
     [Fact]
     public async Task Detail_Unknown_Returns404()
     {
@@ -582,14 +596,15 @@ public sealed class DocumentReviewEndpointsTests : IAsyncLifetime
             Headers = { { TestAuthHandler.RoleHeader, role } }
         };
 
-    private async Task<HttpClient> StartAsync(bool resolveUser = true)
+    private async Task<HttpClient> StartAsync(bool resolveUser = true, string? attachMode = null)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Testing" });
         builder.WebHost.UseTestServer();
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["DocumentCapture:Provider"] = "FileSystem",
-            ["DocumentCapture:FileSystemRoot"] = _root
+            ["DocumentCapture:FileSystemRoot"] = _root,
+            ["DocumentCapture:AcumaticaAttachMode"] = attachMode
         });
         builder.Services.AddDbContext<PvmDbContext>(options => options
             .UseInMemoryDatabase(_databaseName)

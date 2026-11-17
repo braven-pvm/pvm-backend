@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Pvm.Api.Auth;
 using Pvm.Application.Documents;
 using Pvm.Infrastructure.Documents;
@@ -173,6 +174,7 @@ public static class DocumentReviewEndpoints
     private static async Task<IResult> DetailAsync(
         Guid id,
         PvmDbContext dbContext,
+        IOptions<DocumentCaptureOptions> captureOptions,
         CancellationToken cancellationToken)
     {
         var document = await dbContext.CapturedDocuments
@@ -210,7 +212,9 @@ public static class DocumentReviewEndpoints
             updatedAt = document.UpdatedAt,
             extraction,
             unreadableReason,
-            candidates
+            candidates,
+            // Read-only, so the workbench can word the file-to dialog for the mode in force.
+            acumaticaAttachMode = captureOptions.Value.AcumaticaAttachMode.ToString()
         });
     }
 
