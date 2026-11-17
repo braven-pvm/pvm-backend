@@ -615,8 +615,9 @@ public sealed class AcumaticaStockReader(
                 next = new Uri(new Uri(_acumatica.BaseUrl!.TrimEnd('/') + "/"), next);
             }
 
-            // The credentials go only to the Acumatica host.
-            if (next is not null && !string.Equals(next.Host, new Uri(_acumatica.BaseUrl!).Host, StringComparison.OrdinalIgnoreCase))
+            // The credentials go only to the Acumatica server: same scheme, host and port.
+            if (next is not null
+                && Uri.Compare(next, new Uri(_acumatica.BaseUrl!), UriComponents.SchemeAndServer, UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) != 0)
             {
                 throw new InvalidOperationException($"Acumatica read of {what} pointed to another host, so the run stops.");
             }

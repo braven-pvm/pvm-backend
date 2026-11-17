@@ -266,6 +266,24 @@ public sealed class AcumaticaStockReaderTests
         Assert.Equal("integration@PVM:not-a-real-password", decoded);
     }
 
+    [Theory]
+    [InlineData("https://elsewhere.example/t/PVM/api/odata/dac/INRegister?$skiptoken=1")]
+    [InlineData("http://acumatica.example/t/PVM/api/odata/dac/INRegister?$skiptoken=1")]
+    [InlineData("https://acumatica.example:8443/t/PVM/api/odata/dac/INRegister?$skiptoken=1")]
+    public async Task A_next_link_to_another_server_stops_the_run_before_the_credentials_go_there(string nextLink)
+    {
+        var acumatica = new FakeAcumatica { SplitRegisters = true, NextLink = nextLink };
+        acumatica.StockTakeRegisters.Add(("000882", "R"));
+        acumatica.StockTakeRegisters.Add(("000883", "R"));
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => Reader(acumatica).ReadAsync(["CER07"], [], CancellationToken.None));
+
+        Assert.Contains("another host", failure.Message, StringComparison.Ordinal);
+        Assert.Equal(1, acumatica.RegisterPages);
+        Assert.Equal(1, acumatica.SignOuts);
+    }
+
     [Fact]
     public async Task A_refused_table_read_stops_the_run_and_signs_out()
     {
@@ -373,6 +391,8 @@ public sealed class AcumaticaStockReaderTests
         public bool RefuseDac { get; init; }
 
         public bool SplitRegisters { get; init; }
+
+        public string NextLink { get; init; } = "https://acumatica.example/t/PVM/api/odata/dac/INRegister?$skiptoken=1";
 
         public List<string> InquiryBodies { get; } = [];
 
@@ -487,7 +507,7 @@ public sealed class AcumaticaStockReaderTests
                     var rows = StockTakeRegisters.Select(r => $$"""{"RefNbr":"{{r.RefNbr}}","Status":"{{r.Status}}"}""").ToList();
                     if (SplitRegisters && RegisterPages == 1)
                     {
-                        return Json($$"""{"value":[{{rows[0]}}],"@odata.nextLink":"https://acumatica.example/t/PVM/api/odata/dac/INRegister?$skiptoken=1"}""");
+                        return Json($$"""{"value":[{{rows[0]}}],"@odata.nextLink":"{{NextLink}}"}""");
                     }
 
                     return Json($$"""{"value":[{{string.Join(",", SplitRegisters ? rows.Skip(1) : rows)}}]}""");
