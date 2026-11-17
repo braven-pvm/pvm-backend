@@ -2,6 +2,7 @@ using Azure.Identity;
 using Azure.Storage.Blobs;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Pvm.Application.Documents;
 
@@ -25,7 +26,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDocumentType, ProofOfDeliveryDocumentType>();
         services.Configure<AnthropicOptions>(configuration.GetSection(AnthropicOptions.SectionName));
         services.AddSingleton<IDocumentExtractor>(sp =>
-            new ClaudeDocumentExtractor(sp.GetRequiredService<IOptions<AnthropicOptions>>()));
+            new ClaudeDocumentExtractor(
+                sp.GetRequiredService<IOptions<AnthropicOptions>>(),
+                sp.GetRequiredService<ILogger<ClaudeDocumentExtractor>>()));
 
         if (string.Equals(options.Provider, "AzureBlob", StringComparison.OrdinalIgnoreCase))
         {

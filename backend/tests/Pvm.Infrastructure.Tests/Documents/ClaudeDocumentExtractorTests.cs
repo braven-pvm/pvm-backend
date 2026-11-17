@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Anthropic.Exceptions;
 using Microsoft.Extensions.Options;
 using Pvm.Application.Documents;
 using Pvm.Infrastructure.Documents;
@@ -136,15 +137,65 @@ public sealed class ClaudeDocumentExtractorTests
     [Fact]
     public async Task Extract_ServerError_Throws()
     {
-        var handler = new FakeHandler(() => new HttpResponseMessage(HttpStatusCode.InternalServerError)
-        {
-            Content = new StringContent(
-                """{"type":"error","error":{"type":"api_error","message":"boom"}}""",
-                Encoding.UTF8,
-                "application/json"),
-        });
+        var handler = new FakeHandler(ErrorResponse(HttpStatusCode.InternalServerError, "api_error"));
 
-        await Assert.ThrowsAnyAsync<Exception>(() => Extract(handler));
+        await Assert.ThrowsAsync<Anthropic5xxException>(() => Extract(handler));
+    }
+
+    [Fact]
+    public async Task Extract_RateLimited_Throws()
+    {
+        var handler = new FakeHandler(ErrorResponse(HttpStatusCode.TooManyRequests, "rate_limit_error"));
+
+        await Assert.ThrowsAsync<AnthropicRateLimitException>(() => Extract(handler));
+    }
+
+    [Fact]
+    public async Task Extract_BadRequest_ReturnsUnreadable()
+    {
+        var handler = new FakeHandler(ErrorResponse(HttpStatusCode.BadRequest, "invalid_request_error"));
+
+        var result = await Extract(handler);
+
+        Assert.Equal(new Unreadable("rejected"), result);
+    }
+
+    [Fact]
+    public async Task Extract_RequestTooLarge_ReturnsUnreadable()
+    {
+        var handler = new FakeHandler(ErrorResponse(HttpStatusCode.RequestEntityTooLarge, "request_too_large"));
+
+        var result = await Extract(handler);
+
+        Assert.Equal(new Unreadable("rejected"), result);
+    }
+
+    [Fact]
+    public async Task Extract_PdfTooLargeForApi_ReturnsUnreadableWithoutCall()
+    {
+        var handler = new FakeHandler(MessageResponse("end_turn", ValidFields));
+        // 23,250,001 bytes -> 31,000,004 base64 characters, just over the 31,000,000 limit.
+        var pdf = new byte[23_250_001];
+
+        var result = await Extract(handler, pdf: pdf);
+
+        Assert.Equal(new Unreadable("too_large"), result);
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public async Task Extract_AllFieldsEmpty_ReturnsUnreadable()
+    {
+        var handler = new FakeHandler(MessageResponse("end_turn", """
+            {
+              "InvoiceNumbers": [], "SalesOrderNumbers": [], "CustomerOrderNumbers": [],
+              "ClientName": null, "DeliveryDate": null, "SignaturePresent": true, "Note": null
+            }
+            """));
+
+        var result = await Extract(handler);
+
+        Assert.Equal(new Unreadable("empty"), result);
     }
 
     [Fact]
@@ -153,7 +204,9 @@ public sealed class ClaudeDocumentExtractorTests
         var handler = new FakeHandler(MessageResponse("end_turn", ValidFields));
         var extractor = new ClaudeDocumentExtractor(
             Options.Create(new AnthropicOptions { ApiKey = " " }),
-            new HttpClient(handler));
+            logger: null,
+            new HttpClient(handler),
+            maxRetries: 0);
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             extractor.ExtractAsync(new ProofOfDeliveryDocumentType(), new MemoryStream(PdfBytes), CancellationToken.None));
@@ -164,16 +217,28 @@ public sealed class ClaudeDocumentExtractorTests
 
     private static Task<ExtractionResult> Extract(
         FakeHandler handler,
-        IDocumentType? type = null)
+        IDocumentType? type = null,
+        byte[]? pdf = null)
     {
         var extractor = new ClaudeDocumentExtractor(
             Options.Create(new AnthropicOptions { ApiKey = "test-key" }),
-            new HttpClient(handler));
+            logger: null,
+            new HttpClient(handler),
+            maxRetries: 0);
         return extractor.ExtractAsync(
             type ?? new ProofOfDeliveryDocumentType(),
-            new MemoryStream(PdfBytes),
+            new MemoryStream(pdf ?? PdfBytes),
             CancellationToken.None);
     }
+
+    private static Func<HttpResponseMessage> ErrorResponse(HttpStatusCode status, string errorType)
+        => () => new HttpResponseMessage(status)
+        {
+            Content = new StringContent(
+                $$$"""{"type":"error","error":{"type":"{{{errorType}}}","message":"test"}}""",
+                Encoding.UTF8,
+                "application/json"),
+        };
 
     private static Func<HttpResponseMessage> MessageResponse(string stopReason, string? text)
     {

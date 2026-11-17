@@ -1,6 +1,10 @@
 using System.Text.Json;
+using System.Net;
 using Anthropic;
+using Anthropic.Exceptions;
 using Anthropic.Models.Beta.Messages;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Pvm.Application.Documents;
 
@@ -8,29 +12,44 @@ namespace Pvm.Infrastructure.Documents;
 
 /// <summary>
 /// Sends a scanned PDF to Claude with the document type's field schema as structured output
-/// (design 6.4). Content problems return <see cref="Unreadable"/>; transport failures
-/// (network, 429, 5xx after the SDK's retries) throw so the queue message is retried.
+/// (design 6.4). Content problems return <see cref="Unreadable"/>, and so does a request the API
+/// rejects for its content (400, 413), which a retry cannot fix. Transport failures (network,
+/// 401/403, 429, 5xx after the SDK's retries) throw so the queue message is retried.
 /// </summary>
 public sealed class ClaudeDocumentExtractor : IDocumentExtractor
 {
     private const int MaxTokens = 4000;
     private const string FallbackBeta = "server-side-fallback-2026-07-01";
 
-    private readonly AnthropicOptions _options;
-    private readonly HttpClient? _httpClient;
-    private readonly Lazy<AnthropicClient> _client;
+    /// <summary>Base64 characters above which the request would pass the API's 32 MB limit.</summary>
+    private const long MaxBase64Length = 31_000_000;
 
-    public ClaudeDocumentExtractor(IOptions<AnthropicOptions> options)
-        : this(options, httpClient: null)
+    private readonly AnthropicOptions _options;
+    private readonly ILogger _logger;
+    private readonly HttpClient? _httpClient;
+    private readonly int? _maxRetries;
+    private readonly Lazy<IAnthropicClient> _client;
+
+    public ClaudeDocumentExtractor(
+        IOptions<AnthropicOptions> options,
+        ILogger<ClaudeDocumentExtractor> logger)
+        : this(options, logger, httpClient: null, maxRetries: null)
     {
     }
 
     /// <param name="httpClient">The HTTP client the SDK uses; null for the SDK default.</param>
-    public ClaudeDocumentExtractor(IOptions<AnthropicOptions> options, HttpClient? httpClient)
+    /// <param name="maxRetries">The SDK's retry count; null for the SDK default.</param>
+    public ClaudeDocumentExtractor(
+        IOptions<AnthropicOptions> options,
+        ILogger<ClaudeDocumentExtractor>? logger,
+        HttpClient? httpClient,
+        int? maxRetries)
     {
         _options = options.Value;
+        _logger = logger ?? (ILogger)NullLogger.Instance;
         _httpClient = httpClient;
-        _client = new Lazy<AnthropicClient>(CreateClient);
+        _maxRetries = maxRetries;
+        _client = new Lazy<IAnthropicClient>(CreateClient);
     }
 
     public async Task<ExtractionResult> ExtractAsync(
@@ -44,6 +63,11 @@ public sealed class ClaudeDocumentExtractor : IDocumentExtractor
 
         using var buffer = new MemoryStream();
         await pdf.CopyToAsync(buffer, cancellationToken);
+        if ((buffer.Length + 2) / 3 * 4 > MaxBase64Length)
+        {
+            return new Unreadable("too_large");
+        }
+
         var base64 = Convert.ToBase64String(buffer.GetBuffer(), 0, (int)buffer.Length);
 
         var parameters = new MessageCreateParams
@@ -70,7 +94,21 @@ public sealed class ClaudeDocumentExtractor : IDocumentExtractor
             ],
         };
 
-        var response = await client.Beta.Messages.Create(parameters, cancellationToken);
+        BetaMessage response;
+        try
+        {
+            response = await client.Beta.Messages.Create(parameters, cancellationToken);
+        }
+        catch (AnthropicApiException ex)
+            when (ex.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.RequestEntityTooLarge)
+        {
+            _logger.LogWarning(
+                "Claude rejected the {DocumentType} extraction request: HTTP {StatusCode}, {ErrorType}.",
+                type.Code,
+                (int)ex.StatusCode,
+                ex.Type?.ToString() ?? "unknown");
+            return new Unreadable("rejected");
+        }
 
         var stopReason = response.StopReason?.Raw();
         if (stopReason is "refusal" or "max_tokens")
@@ -104,12 +142,15 @@ public sealed class ClaudeDocumentExtractor : IDocumentExtractor
             return new Unreadable("malformed");
         }
 
-        return MatchesTopLevelShape(fields, type.FieldSchema)
-            ? new Extracted(fields)
-            : new Unreadable("schema");
+        if (!MatchesTopLevelShape(fields, type.FieldSchema))
+        {
+            return new Unreadable("schema");
+        }
+
+        return HasAnyValue(fields) ? new Extracted(fields) : new Unreadable("empty");
     }
 
-    private AnthropicClient CreateClient()
+    private IAnthropicClient CreateClient()
     {
         if (string.IsNullOrWhiteSpace(_options.ApiKey))
         {
@@ -118,10 +159,26 @@ public sealed class ClaudeDocumentExtractor : IDocumentExtractor
                 + "document extraction cannot run.");
         }
 
-        return _httpClient is null
+        IAnthropicClient client = _httpClient is null
             ? new AnthropicClient { ApiKey = _options.ApiKey }
             : new AnthropicClient { ApiKey = _options.ApiKey, HttpClient = _httpClient };
+        return _maxRetries is { } retries
+            ? client.WithOptions(o => o with { MaxRetries = retries })
+            : client;
     }
+
+    /// <summary>
+    /// True when any field holds a value: a non-empty list, a non-blank string, a number, or an
+    /// object with such a field. Nulls, empty lists and booleans do not count.
+    /// </summary>
+    private static bool HasAnyValue(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.Object => element.EnumerateObject().Any(p => HasAnyValue(p.Value)),
+        JsonValueKind.Array => element.EnumerateArray().Any(HasAnyValue),
+        JsonValueKind.String => !string.IsNullOrWhiteSpace(element.GetString()),
+        JsonValueKind.Number => true,
+        _ => false,
+    };
 
     private static Dictionary<string, JsonElement> ToSchemaDictionary(JsonElement schema)
     {
