@@ -19,7 +19,8 @@ public sealed class ServiceBusConsumerService(
         {
             IntegrationQueues.ShopritePurchaseOrderRefresh,
             IntegrationQueues.AcumaticaInvoiceDiscovery,
-            IntegrationQueues.ShopriteInvoiceSubmit
+            IntegrationQueues.ShopriteInvoiceSubmit,
+            IntegrationQueues.DocumentProcessing
         })
         {
             var processor = client.CreateProcessor(queueName, new ServiceBusProcessorOptions

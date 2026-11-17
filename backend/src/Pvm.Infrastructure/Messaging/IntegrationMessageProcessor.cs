@@ -2,6 +2,7 @@ using System.Text.Json;
 using Pvm.Application.Messaging;
 using Pvm.Application.Submissions;
 using Pvm.Infrastructure.Acumatica;
+using Pvm.Infrastructure.Documents;
 using Pvm.Infrastructure.Operations;
 
 namespace Pvm.Infrastructure.Messaging;
@@ -23,7 +24,8 @@ public sealed class IntegrationMessageProcessor(
     ShopritePurchaseOrderRefreshMessageHandler purchaseOrderRefreshHandler,
     AcumaticaInvoiceReconciliationMessageHandler acumaticaReconciliationHandler,
     AcumaticaInvoiceCandidateRefreshService acumaticaRefreshService,
-    SubmitShopriteInvoiceHandler submitHandler)
+    SubmitShopriteInvoiceHandler submitHandler,
+    DocumentProcessor documentProcessor)
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
@@ -105,6 +107,7 @@ public sealed class IntegrationMessageProcessor(
         }
         catch (JsonException exception)
         {
+            await OnFinalFailureAsync(envelope, cancellationToken);
             return await DeadLetterAsync(delivery.Id, "invalid-message-data", exception.Message, cancellationToken);
         }
         catch (Exception exception) when (deliveryCount < maxDeliveryCount)
@@ -118,6 +121,7 @@ public sealed class IntegrationMessageProcessor(
         }
         catch (Exception exception)
         {
+            await OnFinalFailureAsync(envelope, cancellationToken);
             return await DeadLetterAsync(delivery.Id, "max-delivery-count",
                 $"Handler failed after {deliveryCount} deliveries: {exception.Message}", cancellationToken);
         }
@@ -186,8 +190,48 @@ public sealed class IntegrationMessageProcessor(
                     _ => throw new InvalidOperationException("Unknown submission result.")
                 };
 
+            case IntegrationMessageTypes.DocumentReceivedV1:
+                var document = envelope.Data.Deserialize<ProcessCapturedDocumentMessage>(SerializerOptions)
+                    ?? throw new JsonException("Captured document data is required.");
+                if (document.DocumentId == Guid.Empty)
+                {
+                    throw new JsonException("Captured document ID is required.");
+                }
+
+                await documentProcessor.ProcessAsync(document.DocumentId, cancellationToken);
+                return null;
+
             default:
                 return ("unknown-message-type", $"Message type '{envelope.MessageType}' is not supported.");
+        }
+    }
+
+    /// <summary>
+    /// Runs before a handler failure dead-letters the message, so the work item the message
+    /// carried does not stay in progress forever. A failure here propagates: the message is then
+    /// not settled, comes back, and this runs again.
+    /// </summary>
+    private async Task OnFinalFailureAsync(IntegrationMessageEnvelope envelope, CancellationToken cancellationToken)
+    {
+        if (envelope.MessageType != IntegrationMessageTypes.DocumentReceivedV1)
+        {
+            return;
+        }
+
+        Guid documentId;
+        try
+        {
+            documentId = envelope.Data.Deserialize<ProcessCapturedDocumentMessage>(SerializerOptions)?.DocumentId
+                ?? Guid.Empty;
+        }
+        catch (JsonException)
+        {
+            return;
+        }
+
+        if (documentId != Guid.Empty)
+        {
+            await documentProcessor.MarkFailedAsync(documentId, cancellationToken);
         }
     }
 
@@ -222,6 +266,7 @@ public sealed class IntegrationMessageProcessor(
         (IntegrationQueues.AcumaticaInvoiceDiscovery, IntegrationMessageTypes.AcumaticaInvoiceReconciliationV1) => true,
         (IntegrationQueues.AcumaticaInvoiceDiscovery, IntegrationMessageTypes.AcumaticaInvoiceChangedV1) => true,
         (IntegrationQueues.ShopriteInvoiceSubmit, IntegrationMessageTypes.ShopriteInvoiceSubmitV1) => true,
+        (IntegrationQueues.DocumentProcessing, IntegrationMessageTypes.DocumentReceivedV1) => true,
         _ => false
     };
 }

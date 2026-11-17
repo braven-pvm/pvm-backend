@@ -1,0 +1,345 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Pvm.Application.Documents;
+using Pvm.Infrastructure.Persistence;
+using Pvm.Infrastructure.Persistence.Entities;
+
+namespace Pvm.Infrastructure.Documents;
+
+/// <summary>
+/// Reads, matches and files one captured document (design 6.4 to 6.6), and attaches the filed
+/// documents that wait for Acumatica. A document is never filed on a guess: anything that is not
+/// a safe match goes to the review list. Transport failures of the extractor and of the Acumatica
+/// lookup propagate, so Service Bus retries the message; the last delivery marks the row Failed.
+/// </summary>
+public sealed class DocumentProcessor(
+    PvmDbContext dbContext,
+    IEnumerable<IDocumentType> documentTypes,
+    IDocumentExtractor extractor,
+    IAcumaticaDocumentClient acumatica,
+    IDocumentStore store,
+    IOptions<DocumentCaptureOptions> options,
+    ILogger<DocumentProcessor> logger)
+{
+    /// <summary>The <see cref="CapturedDocumentEntity.MatchedBy"/> value for a match the worker made.</summary>
+    public const string MatchedByWorker = "auto";
+
+    public const int BackfillBatchSize = 20;
+
+    private const string ProofOfDeliveryCode = "POD";
+
+    private static readonly JsonSerializerOptions FieldOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
+    private static readonly JsonSerializerOptions CandidateOptions = new(JsonSerializerDefaults.Web);
+
+    private readonly AcumaticaAttachMode _attachMode = options.Value.AcumaticaAttachMode;
+
+    public async Task ProcessAsync(Guid documentId, CancellationToken cancellationToken)
+    {
+        var document = await dbContext.CapturedDocuments
+            .SingleOrDefaultAsync(item => item.Id == documentId, cancellationToken);
+        if (document is null)
+        {
+            logger.LogWarning("document.process.skipped DocumentId={DocumentId} Reason=not-found", documentId);
+            return;
+        }
+
+        if (document.State is DocumentState.Filed or DocumentState.NeedsReview or DocumentState.Failed)
+        {
+            logger.LogInformation(
+                "document.process.skipped DocumentId={DocumentId} Reason=already-{State}",
+                documentId,
+                document.State);
+            return;
+        }
+
+        // Received, or Processing after a crash mid-run: process (again).
+        document.State = DocumentState.Processing;
+        await SaveAsync(document, cancellationToken);
+
+        var type = ResolveType(document.DocumentType);
+        if (type is null || !string.Equals(type.Code, ProofOfDeliveryCode, StringComparison.OrdinalIgnoreCase))
+        {
+            // Only POD has a match strategy. Another type can never be filed automatically.
+            document.ExtractionJson = UnreadableJson("unknown-document-type");
+            await ReviewAsync(document, ReviewReason.ReadFailure, cancellationToken);
+            return;
+        }
+
+        ExtractionResult result;
+        await using (var pdf = await store.OpenReadAsync(document.BlobPath, cancellationToken))
+        {
+            result = await extractor.ExtractAsync(type, pdf, cancellationToken);
+        }
+
+        if (result is not Extracted extracted)
+        {
+            var reason = result is Unreadable unreadable ? unreadable.Reason : "unknown-result";
+            document.ExtractionJson = UnreadableJson(reason);
+            await ReviewAsync(document, ReviewReason.ReadFailure, cancellationToken);
+            return;
+        }
+
+        document.ExtractionJson = extracted.Fields.GetRawText();
+        await SaveAsync(document, cancellationToken);
+
+        var extraction = TryReadPodExtraction(extracted.Fields);
+        if (extraction is null)
+        {
+            await ReviewAsync(document, ReviewReason.ReadFailure, cancellationToken);
+            return;
+        }
+
+        var hits = await acumatica.FindInvoicesAsync(extraction, cancellationToken);
+        switch (PodMatcher.Decide(extraction, hits))
+        {
+            case Matched matched:
+                await FileAsync(document, type, matched.Invoice, cancellationToken);
+                break;
+
+            case Review review:
+                document.ExtractionJson = WithCandidates(extracted.Fields, review.Candidates);
+                await ReviewAsync(document, review.Reason, cancellationToken);
+                break;
+
+            default:
+                throw new InvalidOperationException("Unknown match outcome.");
+        }
+    }
+
+    /// <summary>
+    /// The dead-letter hook: the message for this document will not be delivered again, so a row
+    /// that is still Received or Processing becomes Failed. The PDF and the row stay for a retry.
+    /// </summary>
+    public async Task MarkFailedAsync(Guid documentId, CancellationToken cancellationToken)
+    {
+        // A tracked copy from the failed run must not overwrite Failed on a later SaveChanges.
+        var tracked = dbContext.CapturedDocuments.Local.FirstOrDefault(item => item.Id == documentId);
+        if (tracked is not null)
+        {
+            dbContext.Entry(tracked).State = EntityState.Detached;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var updated = await dbContext.CapturedDocuments
+            .Where(item => item.Id == documentId
+                && (item.State == DocumentState.Received || item.State == DocumentState.Processing))
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(item => item.State, DocumentState.Failed)
+                    .SetProperty(item => item.UpdatedAt, now),
+                cancellationToken);
+        logger.LogWarning(
+            "document.process.failed DocumentId={DocumentId} RowsUpdated={RowsUpdated}",
+            documentId,
+            updated);
+    }
+
+    /// <summary>
+    /// In Write mode, attaches up to <see cref="BackfillBatchSize"/> filed documents whose
+    /// attachment waits, oldest first. A failure is logged and the next document is tried.
+    /// Shadow mode does nothing. Returns the number attached.
+    /// </summary>
+    public async Task<int> BackfillPendingAttachmentsAsync(CancellationToken cancellationToken)
+    {
+        if (_attachMode != AcumaticaAttachMode.Write)
+        {
+            return 0;
+        }
+
+        var pending = await dbContext.CapturedDocuments
+            .Where(item => item.State == DocumentState.Filed
+                && item.AcumaticaAttachPending
+                && item.MatchedReference != null)
+            .OrderBy(item => item.UploadedAt)
+            .ThenBy(item => item.Id)
+            .Take(BackfillBatchSize)
+            .ToListAsync(cancellationToken);
+
+        var attached = 0;
+        foreach (var document in pending)
+        {
+            var type = ResolveType(document.DocumentType);
+            if (type is null)
+            {
+                logger.LogWarning(
+                    "document.attach.skipped DocumentId={DocumentId} Reason=unknown-document-type DocumentType={DocumentType}",
+                    document.Id,
+                    document.DocumentType);
+                continue;
+            }
+
+            if (await TryAttachAsync(document, type, cancellationToken))
+            {
+                attached++;
+            }
+        }
+
+        logger.LogInformation(
+            "document.attach.backfill Pending={Pending} Attached={Attached}",
+            pending.Count,
+            attached);
+        return attached;
+    }
+
+    /// <summary>The Acumatica file name: <c>{documentType}-{invoiceNumber}-{documentId}.pdf</c>.</summary>
+    public static string AttachmentFileName(CapturedDocumentEntity document)
+        => $"{document.DocumentType}-{document.MatchedReference}-{document.Id:D}.pdf";
+
+    private async Task FileAsync(
+        CapturedDocumentEntity document,
+        IDocumentType type,
+        InvoiceCandidate invoice,
+        CancellationToken cancellationToken)
+    {
+        // Filed first, with the attachment pending: the recall works even if the attach fails.
+        document.State = DocumentState.Filed;
+        document.ReviewReason = null;
+        document.MatchedReference = invoice.ReferenceNumber;
+        document.MatchedCustomerName = invoice.CustomerName;
+        document.MatchedBy = MatchedByWorker;
+        document.AcumaticaAttachPending = true;
+        document.AcumaticaAttachedAt = null;
+        await SaveAsync(document, cancellationToken);
+
+        if (_attachMode == AcumaticaAttachMode.Write)
+        {
+            await TryAttachAsync(document, type, cancellationToken);
+        }
+        else
+        {
+            logger.LogInformation(
+                "document.attach.shadow DocumentId={DocumentId} Entity={Entity} Reference={Reference} FileName={FileName}",
+                document.Id,
+                type.AcumaticaEntity,
+                document.MatchedReference,
+                AttachmentFileName(document));
+        }
+    }
+
+    private async Task<bool> TryAttachAsync(
+        CapturedDocumentEntity document,
+        IDocumentType type,
+        CancellationToken cancellationToken)
+    {
+        var fileName = AttachmentFileName(document);
+        try
+        {
+            await using (var pdf = await store.OpenReadAsync(document.BlobPath, cancellationToken))
+            {
+                await acumatica.AttachFileAsync(
+                    type.AcumaticaEntity,
+                    document.MatchedReference!,
+                    fileName,
+                    pdf,
+                    cancellationToken);
+            }
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            // The document stays Filed with the attachment pending; the backfill tries again.
+            logger.LogWarning(
+                exception,
+                "document.attach.failed DocumentId={DocumentId} Reference={Reference} FileName={FileName}",
+                document.Id,
+                document.MatchedReference,
+                fileName);
+            return false;
+        }
+
+        document.AcumaticaAttachPending = false;
+        document.AcumaticaAttachedAt = DateTimeOffset.UtcNow;
+        await SaveAsync(document, cancellationToken);
+        logger.LogInformation(
+            "document.attach.completed DocumentId={DocumentId} Reference={Reference} FileName={FileName}",
+            document.Id,
+            document.MatchedReference,
+            fileName);
+        return true;
+    }
+
+    private async Task ReviewAsync(
+        CapturedDocumentEntity document,
+        ReviewReason reason,
+        CancellationToken cancellationToken)
+    {
+        document.State = DocumentState.NeedsReview;
+        document.ReviewReason = reason;
+        await SaveAsync(document, cancellationToken);
+        logger.LogInformation(
+            "document.process.review DocumentId={DocumentId} Reason={Reason}",
+            document.Id,
+            reason);
+    }
+
+    private Task SaveAsync(CapturedDocumentEntity document, CancellationToken cancellationToken)
+    {
+        document.UpdatedAt = DateTimeOffset.UtcNow;
+        return dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private IDocumentType? ResolveType(string code)
+        => documentTypes.FirstOrDefault(type => string.Equals(type.Code, code, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The extracted fields as a <see cref="PodExtraction"/>, or null when they do not fit its shape.</summary>
+    private static PodExtraction? TryReadPodExtraction(JsonElement fields)
+    {
+        PodFields? parsed;
+        try
+        {
+            parsed = fields.Deserialize<PodFields>(FieldOptions);
+        }
+        catch (Exception exception) when (exception is JsonException or NotSupportedException or FormatException)
+        {
+            return null;
+        }
+
+        if (parsed is null)
+        {
+            return null;
+        }
+
+        return new PodExtraction(
+            Clean(parsed.InvoiceNumbers),
+            Clean(parsed.SalesOrderNumbers),
+            Clean(parsed.CustomerOrderNumbers),
+            string.IsNullOrWhiteSpace(parsed.ClientName) ? null : parsed.ClientName.Trim(),
+            parsed.DeliveryDate,
+            parsed.SignaturePresent ?? false,
+            parsed.Note);
+    }
+
+    private static IReadOnlyList<string> Clean(IReadOnlyList<string?>? values)
+        => values is null
+            ? []
+            : values
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value!.Trim())
+                .ToList();
+
+    private static string UnreadableJson(string reason)
+        => new JsonObject { ["unreadable"] = reason }.ToJsonString();
+
+    /// <summary>The raw fields with the matcher's candidates next to them, for the review list.</summary>
+    private static string WithCandidates(JsonElement fields, IReadOnlyList<InvoiceCandidate> candidates)
+    {
+        var json = JsonNode.Parse(fields.GetRawText())!.AsObject();
+        json["candidates"] = JsonSerializer.SerializeToNode(candidates, CandidateOptions);
+        return json.ToJsonString();
+    }
+
+    private sealed record PodFields(
+        IReadOnlyList<string?>? InvoiceNumbers,
+        IReadOnlyList<string?>? SalesOrderNumbers,
+        IReadOnlyList<string?>? CustomerOrderNumbers,
+        string? ClientName,
+        DateOnly? DeliveryDate,
+        bool? SignaturePresent,
+        string? Note);
+}

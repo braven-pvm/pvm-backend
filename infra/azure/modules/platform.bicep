@@ -161,7 +161,6 @@ var serviceBusNamespaceName = 'sb-pvm-integrations-${suffix}'
 var shopritePurchaseOrderRefreshQueueName = 'shoprite-po-refresh'
 var acumaticaInvoiceDiscoveryQueueName = 'acumatica-invoice-discovery'
 var shopriteInvoiceSubmitQueueName = 'shoprite-invoice-submit'
-// No worker scale rule yet: the worker consumes this queue once document processing lands.
 var documentProcessingQueueName = 'document-processing'
 var postgresServerName = 'psql-pvm-integrations-${suffix}'
 var postgresAdminUser = 'pvmadmin'
@@ -1031,6 +1030,7 @@ resource workerContainerApp 'Microsoft.App/containerApps@2025-01-01' = {
           shopritePurchaseOrderRefreshQueueName
           acumaticaInvoiceDiscoveryQueueName
           shopriteInvoiceSubmitQueueName
+          documentProcessingQueueName
         ]: {
           name: replace(queueName, '-', '')
           custom: {
