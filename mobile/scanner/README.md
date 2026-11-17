@@ -23,14 +23,24 @@ default and remembered. A chooser appears only when the backend returns more tha
 
 ## Upload queue
 
-- Files: `<app documents>/upload_queue/queue.json` (the item list) and
-  `<app documents>/upload_queue/pdfs/<clientDocumentId>.pdf`. The queue survives an app restart.
+- Files: `<app documents>/upload_queue/queue.json` (the item list; the previous good copy in
+  `queue.json.bak`) and `<app documents>/upload_queue/pdfs/<clientDocumentId>.pdf`. The queue
+  survives an app restart. Saves run one at a time (temporary file, then rename).
+- A new scan: the PDF is copied into the queue folder, the item is saved, and only then is the
+  scanner's original deleted.
+- Recovery at start: an unreadable `queue.json` is replaced by `queue.json.bak`; without a good
+  backup, every PDF in `pdfs/` that no item references becomes a waiting item (type POD, page
+  count read from the PDF, its GUID file name kept as the client document ID). A waiting item
+  whose PDF is gone after an upload attempt shows as Received, "Sent earlier". If the start
+  still fails, the app shows "The app could not start" with "Try again".
 - One upload at a time, oldest first, to `POST /api/documents` with `file`, `clientDocumentId`
   (a GUID made on the phone), `documentType` and `pageCount`.
-- 200 or 201: the item is Received and the local PDF is deleted.
+- 200 or 201 (the status alone counts): the item is saved as Received, then the local PDF is
+  deleted.
 - Network error, timeout or 5xx: the item waits and is retried after 5 s, 10 s, 20 s, ... up to
   5 minutes, always with the same `clientDocumentId`, so the backend ignores a second copy. The
-  queue also retries when the app comes back to the foreground.
+  item goes behind the other waiting items, so one bad item does not block the rest. The queue
+  also retries when the app comes back to the foreground.
 - 400 or 413: the item is Failed with a plain-language reason and keeps its PDF. The user can
   remove a failed item, after a confirmation.
 - 401: the app gets a token silently once more and repeats the upload. A second 401 (or no
@@ -121,21 +131,23 @@ hash and needs its own entry.
 storePassword=<store password>
 keyPassword=<key password>
 keyAlias=upload
-storeFile=<path to the keystore; relative paths are relative to android/app>
+storeFile=../pvm-scanner-upload.jks
+# storeFile is relative to android/app; ../pvm-scanner-upload.jks is android/pvm-scanner-upload.jks
 ```
 
 Without `android/key.properties` the release APK is signed with the debug key (a warning shows
 in the build). That is fine for a test install only: the debug key differs per machine, so the
 redirect URI differs too.
 
-Create a keystore once and keep it, with its passwords, in the company password store (not in
-Git):
+Create a keystore once, from `mobile/scanner`, so that it lands under `android/` (git-ignored),
+and keep it, with its passwords, in the company password store (not in Git):
 
 ```bash
-keytool -genkey -v -keystore pvm-scanner-upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+keytool -genkey -v -keystore android/pvm-scanner-upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
 ```
 
-Never commit a keystore or `key.properties`; both are git-ignored (`android/.gitignore`). An
+Never commit a keystore or `key.properties`; `*.jks`, `*.keystore` and `key.properties` are
+git-ignored (`mobile/scanner/.gitignore` and `android/.gitignore`). An
 update of an installed app must be signed with the same key.
 
 ## Code map

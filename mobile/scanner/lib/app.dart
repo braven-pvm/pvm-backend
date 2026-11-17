@@ -71,7 +71,7 @@ class ScannerApp extends StatelessWidget {
   }
 }
 
-enum _Phase { starting, notConfigured, signedOut, signedIn }
+enum _Phase { starting, notConfigured, startFailed, signedOut, signedIn }
 
 /// Chooses the screen: sign-in, or the batch screen once a user is signed in.
 class AppShell extends StatefulWidget {
@@ -87,6 +87,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   var _phase = _Phase.starting;
   UploadQueue? _queue;
   String? _signInError;
+  String? _startError;
   var _signingIn = false;
 
   AppServices get _services => widget.services;
@@ -113,25 +114,44 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   }
 
   Future<void> _start() async {
+    setState(() {
+      _phase = _Phase.starting;
+      _startError = null;
+    });
     if (_services.config.missing.isNotEmpty) {
       setState(() => _phase = _Phase.notConfigured);
       return;
     }
 
-    SignedInUser? user;
     try {
-      user = await _services.auth.restore();
-    } on Exception catch (error) {
-      _signInError = '$error';
-    }
+      SignedInUser? user;
+      try {
+        user = await _services.auth.restore();
+      } on SignInException catch (error) {
+        _signInError = error.message;
+      }
 
-    if (user == null) {
-      setState(() => _phase = _Phase.signedOut);
-      return;
-    }
+      if (user == null) {
+        setState(() => _phase = _Phase.signedOut);
+        return;
+      }
 
-    await _openQueue();
-    setState(() => _phase = _Phase.signedIn);
+      await _openQueue();
+      if (mounted) {
+        setState(() => _phase = _Phase.signedIn);
+      }
+    } on Object catch (error) {
+      _showStartFailure(error);
+    }
+  }
+
+  void _showStartFailure(Object error) {
+    if (mounted) {
+      setState(() {
+        _phase = _Phase.startFailed;
+        _startError = '$error';
+      });
+    }
   }
 
   Future<void> _openQueue() async {
@@ -165,6 +185,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       if (mounted && !error.cancelled) {
         setState(() => _signInError = error.message);
       }
+      return false;
+    } on Object catch (error) {
+      _showStartFailure(error);
       return false;
     } finally {
       if (mounted) {
@@ -205,6 +228,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
       case _Phase.notConfigured:
         return _NotConfiguredScreen(missing: _services.config.missing);
+      case _Phase.startFailed:
+        return _StartFailedScreen(error: _startError ?? '', onTryAgain: _start);
       case _Phase.signedOut:
         return SignInScreen(
           busy: _signingIn,
@@ -240,6 +265,45 @@ class _NotConfiguredScreen extends StatelessWidget {
           'This copy of the app was built without its server settings. '
           'Ask IT for a new copy.\n\nMissing: ${missing.join(', ')}',
           style: Theme.of(context).textTheme.titleMedium,
+        ),
+      ),
+    );
+  }
+}
+
+class _StartFailedScreen extends StatelessWidget {
+  const _StartFailedScreen({required this.error, required this.onTryAgain});
+
+  final String error;
+  final VoidCallback onTryAgain;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(title: const Text('PVM Scanner')),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('The app could not start.', style: theme.textTheme.headlineSmall),
+              const SizedBox(height: 12),
+              Text(
+                'Your scans are kept on this phone. Try again; if this keeps happening, tell IT.',
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: 12),
+              SelectableText(error, style: theme.textTheme.bodySmall),
+              const Spacer(),
+              FilledButton.icon(
+                onPressed: onTryAgain,
+                icon: const Icon(Icons.refresh, size: 28),
+                label: const Text('Try again'),
+              ),
+            ],
+          ),
         ),
       ),
     );

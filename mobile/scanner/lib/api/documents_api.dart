@@ -22,12 +22,13 @@ sealed class UploadOutcome {
   const UploadOutcome();
 }
 
-/// 201 for a new document, 200 for a client document ID the backend already has.
+/// 201 for a new document, 200 for a client document ID the backend already has. The status
+/// alone counts; [documentId] and [state] are null when the body cannot be read.
 final class UploadAccepted extends UploadOutcome {
-  const UploadAccepted({required this.documentId, required this.state});
+  const UploadAccepted({this.documentId, this.state});
 
-  final String documentId;
-  final String state;
+  final String? documentId;
+  final String? state;
 }
 
 /// 400 or 413: the backend will never accept this file. Retrying does not help.
@@ -173,11 +174,7 @@ class DocumentsApi implements DocumentUploader {
     switch (response.statusCode) {
       case 200:
       case 201:
-        final body = jsonDecode(response.body) as Map<String, dynamic>;
-        return UploadAccepted(
-          documentId: '${body['documentId']}',
-          state: '${body['state']}',
-        );
+        return _accepted(response);
       case 400:
         return UploadRejected('The server did not accept this document. ${_detail(response)}'.trim());
       case 413:
@@ -189,6 +186,22 @@ class DocumentsApi implements DocumentUploader {
       default:
         return UploadRetryLater('The server had a problem (HTTP ${response.statusCode}). ${_detail(response)}'.trim());
     }
+  }
+
+  /// The receipt; the body is read best-effort, because the status already says the backend has it.
+  static UploadAccepted _accepted(http.Response response) {
+    try {
+      final body = jsonDecode(response.body);
+      if (body is Map<String, dynamic>) {
+        return UploadAccepted(
+          documentId: body['documentId'] is String ? body['documentId'] as String : null,
+          state: body['state'] is String ? body['state'] as String : null,
+        );
+      }
+    } on FormatException {
+      // Not JSON.
+    }
+    return const UploadAccepted();
   }
 
   static String _detail(http.Response response) {

@@ -37,12 +37,13 @@ class MainActivity : FlutterActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             val info = packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
             val signingInfo = info.signingInfo ?: error("The app has no signing information.")
-            val signatures = if (signingInfo.hasMultipleSigners()) {
-                signingInfo.apkContentsSigners
+            // The current signer: with several signers, the APK's own; otherwise the last entry of
+            // the rotation history (index 0 is the original certificate before any rotation).
+            return if (signingInfo.hasMultipleSigners()) {
+                signingInfo.apkContentsSigners.first()
             } else {
-                signingInfo.signingCertificateHistory
+                signingInfo.signingCertificateHistory.last()
             }
-            return signatures.first()
         }
 
         @Suppress("DEPRECATION")

@@ -20,6 +20,7 @@ class QueuedDocument {
     this.attempts = 0,
     this.lastError,
     this.documentId,
+    this.note,
   });
 
   static const waiting = 'waiting';
@@ -43,7 +44,10 @@ class QueuedDocument {
   /// The backend document ID, once received.
   final String? documentId;
 
-  QueuedDocument copyWith({String? state, int? attempts, String? lastError, String? documentId}) =>
+  /// A short remark for the user, for example "Sent earlier".
+  final String? note;
+
+  QueuedDocument copyWith({String? state, int? attempts, String? lastError, String? documentId, String? note}) =>
       QueuedDocument(
         clientDocumentId: clientDocumentId,
         documentType: documentType,
@@ -53,6 +57,7 @@ class QueuedDocument {
         attempts: attempts ?? this.attempts,
         lastError: lastError ?? this.lastError,
         documentId: documentId ?? this.documentId,
+        note: note ?? this.note,
       );
 
   Map<String, Object?> toJson() => {
@@ -64,6 +69,7 @@ class QueuedDocument {
         'attempts': attempts,
         'lastError': lastError,
         'documentId': documentId,
+        'note': note,
       };
 
   factory QueuedDocument.fromJson(Map<String, dynamic> json) => QueuedDocument(
@@ -75,6 +81,7 @@ class QueuedDocument {
         attempts: json['attempts'] as int? ?? 0,
         lastError: json['lastError'] as String?,
         documentId: json['documentId'] as String?,
+        note: json['note'] as String?,
       );
 }
 
@@ -96,15 +103,18 @@ Duration defaultBackoff(int attempt) {
 /// A persistent upload queue.
 ///
 /// Each PDF is copied into `directory/pdfs/<clientDocumentId>.pdf` and the item list is kept in
-/// `directory/queue.json`, so nothing is lost when the app stops. Items upload one at a time,
-/// oldest first. A failed attempt that may succeed later is retried with backoff and the same
-/// client document ID. The local PDF is deleted only after the backend confirms receipt. A
-/// rejected upload (400 or 413) is marked [QueuedDocument.failed] and keeps its PDF.
+/// `directory/queue.json` (the previous good copy in `queue.json.bak`), so nothing is lost when
+/// the app stops. Saves run one at a time. Items upload one at a time; an item that failed and
+/// may succeed later goes behind the other waiting items and is retried with backoff and the
+/// same client document ID. The local PDF is deleted only after the receipt is saved. A rejected
+/// upload (400 or 413) is marked [QueuedDocument.failed] and keeps its PDF.
 class UploadQueue {
   UploadQueue._(this._directory, this._uploader, this._backoff, this._delay, this._items);
 
   static const _stateFile = 'queue.json';
+  static const _backupFile = 'queue.json.bak';
   static const _pdfFolder = 'pdfs';
+  static final _guid = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
 
   final Directory _directory;
   final DocumentUploader _uploader;
@@ -118,32 +128,139 @@ class UploadQueue {
   var _closed = false;
   Future<void>? _loop;
   Completer<void>? _wake;
+  Future<void> _saveChain = Future<void>.value();
 
-  /// Opens the queue in [directory]. Items left in the uploading state by a stopped app are
-  /// waiting again; received items from an earlier run are dropped.
+  /// Opens the queue in [directory]. It never fails because of a bad queue file:
+  /// - an unreadable `queue.json` is replaced by `queue.json.bak`, or else by nothing;
+  /// - a PDF in the queue folder that no item references becomes a waiting item
+  ///   ([orphanDocumentType]); its file name is kept as the client document ID when it is a
+  ///   GUID, so the backend can still recognise a second copy;
+  /// - an item left uploading by a stopped app is waiting again;
+  /// - a waiting item whose PDF is gone after an attempt was sent earlier (the receipt was not
+  ///   saved); it shows as received with the note "Sent earlier";
+  /// - received items from an earlier run are dropped.
   static Future<UploadQueue> open({
     required Directory directory,
     required DocumentUploader uploader,
     Duration Function(int attempt) backoff = defaultBackoff,
     Future<void> Function(Duration)? delay,
+    String orphanDocumentType = 'POD',
   }) async {
-    await Directory('${directory.path}/$_pdfFolder').create(recursive: true);
-    final items = <QueuedDocument>[];
+    final pdfFolder = Directory('${directory.path}/$_pdfFolder');
+    await pdfFolder.create(recursive: true);
+
     final stateFile = File('${directory.path}/$_stateFile');
-    if (await stateFile.exists()) {
-      final list = jsonDecode(await stateFile.readAsString()) as List<dynamic>;
-      for (final entry in list.cast<Map<String, dynamic>>()) {
-        final item = QueuedDocument.fromJson(entry);
-        if (item.state == QueuedDocument.received) {
-          continue;
+    var saved = await _read(stateFile);
+    if (saved == null) {
+      saved = await _read(File('${directory.path}/$_backupFile')) ?? const <QueuedDocument>[];
+      // Remove the bad file, so the next save does not keep it as the backup.
+      try {
+        if (await stateFile.exists()) {
+          await stateFile.delete();
         }
-        items.add(item.state == QueuedDocument.uploading ? item.copyWith(state: QueuedDocument.waiting) : item);
+      } on FileSystemException {
+        // The next save replaces it.
       }
     }
 
+    final items = <QueuedDocument>[];
+    for (final stored in saved) {
+      if (stored.state == QueuedDocument.received) {
+        continue;
+      }
+      var item = stored.state == QueuedDocument.uploading ? stored.copyWith(state: QueuedDocument.waiting) : stored;
+      if (item.state == QueuedDocument.waiting && !await _pdfPath(directory, item.clientDocumentId).exists()) {
+        item = item.attempts > 0
+            ? item.copyWith(state: QueuedDocument.received, note: 'Sent earlier')
+            : item.copyWith(
+                state: QueuedDocument.failed,
+                lastError: 'The scan file is missing on this phone. Scan the paper again.',
+              );
+      }
+      items.add(item);
+    }
+
+    await _adoptOrphans(directory, pdfFolder, items, orphanDocumentType);
+
     final queue = UploadQueue._(directory, uploader, backoff, delay ?? Future<void>.delayed, items);
-    await queue._save();
+    try {
+      await queue._save();
+    } on FileSystemException {
+      // The next save tries again; the items are in memory.
+    }
     return queue;
+  }
+
+  static File _pdfPath(Directory directory, String clientDocumentId) =>
+      File('${directory.path}/$_pdfFolder/$clientDocumentId.pdf');
+
+  /// The items of a queue file, or null when the file is missing or unreadable.
+  static Future<List<QueuedDocument>?> _read(File file) async {
+    try {
+      if (!await file.exists()) {
+        return null;
+      }
+      final list = jsonDecode(await file.readAsString()) as List<dynamic>;
+      return [for (final entry in list) QueuedDocument.fromJson(entry as Map<String, dynamic>)];
+    } on Object {
+      return null; // Truncated or otherwise bad: the caller tries the next source.
+    }
+  }
+
+  static Future<void> _adoptOrphans(
+    Directory directory,
+    Directory pdfFolder,
+    List<QueuedDocument> items,
+    String documentType,
+  ) async {
+    final referenced = {for (final item in items) item.clientDocumentId};
+    final List<FileSystemEntity> entries;
+    try {
+      entries = await pdfFolder.list().toList();
+    } on FileSystemException {
+      return;
+    }
+
+    for (final entry in entries) {
+      final name = entry.uri.pathSegments.last;
+      if (entry is! File || !name.toLowerCase().endsWith('.pdf')) {
+        continue;
+      }
+      final baseName = name.substring(0, name.length - 4);
+      if (referenced.contains(baseName)) {
+        continue;
+      }
+
+      try {
+        var file = entry;
+        var clientDocumentId = baseName;
+        if (!_guid.hasMatch(baseName)) {
+          clientDocumentId = const Uuid().v4();
+          file = await file.rename(_pdfPath(directory, clientDocumentId).path);
+        }
+        items.add(QueuedDocument(
+          clientDocumentId: clientDocumentId,
+          documentType: documentType,
+          pageCount: await _countPages(file),
+          state: QueuedDocument.waiting,
+          createdAt: await file.lastModified(),
+          note: 'Recovered on this phone',
+        ));
+        referenced.add(clientDocumentId);
+      } on FileSystemException {
+        // Leave this file; the next start tries again.
+      }
+    }
+  }
+
+  /// A best-effort page count of a PDF; at least 1.
+  static Future<int> _countPages(File pdf) async {
+    try {
+      final text = latin1.decode(await pdf.readAsBytes());
+      return math.max(1, RegExp(r'/Type\s*/Page(?![s\w])').allMatches(text).length);
+    } on Object {
+      return 1;
+    }
   }
 
   /// The items, newest first. A new listener gets the current list at once.
@@ -152,7 +269,7 @@ class UploadQueue {
     yield* _changes.stream;
   }
 
-  /// The items in the order they upload (oldest first).
+  /// The items in the order they upload.
   List<QueuedDocument> get current => List.unmodifiable(_items);
 
   /// Set while the queue waits for the user (sign in again, or no upload permission).
@@ -162,10 +279,15 @@ class UploadQueue {
   Future<void> get whenIdle => _loop ?? Future<void>.value();
 
   /// The local PDF of [item]. It exists until the backend confirms receipt.
-  File pdfOf(QueuedDocument item) => File('${_directory.path}/$_pdfFolder/${item.clientDocumentId}.pdf');
+  File pdfOf(QueuedDocument item) => _pdfPath(_directory, item.clientDocumentId);
 
-  /// Adds a scanned PDF. The file is moved into the queue folder.
+  /// Adds a scanned PDF: copies it into the queue folder, saves the item, and only then deletes
+  /// the scanner's original. Throws [FileSystemException] when the scan cannot be kept.
   Future<QueuedDocument> enqueue(File pdf, String documentType, int pageCount) async {
+    if (_closed) {
+      throw StateError('The upload queue is closed.');
+    }
+
     final item = QueuedDocument(
       clientDocumentId: const Uuid().v4(),
       documentType: documentType,
@@ -173,16 +295,30 @@ class UploadQueue {
       state: QueuedDocument.waiting,
       createdAt: DateTime.now(),
     );
+    final copy = pdfOf(item);
 
-    await pdf.copy(pdfOf(item).path);
+    try {
+      await pdf.copy(copy.path);
+      _items.add(item);
+      await _save();
+    } on Object {
+      // Undo, so that a half-kept scan does not come back later; the original is untouched.
+      _items.remove(item);
+      _emit();
+      try {
+        await copy.delete();
+      } on FileSystemException {
+        // Nothing was copied.
+      }
+      rethrow;
+    }
+
     try {
       await pdf.delete();
     } on FileSystemException {
       // The scanner's own copy is in the cache folder; Android clears it later.
     }
 
-    _items.add(item);
-    await _save();
     _kick();
     return item;
   }
@@ -195,11 +331,11 @@ class UploadQueue {
     }
 
     final item = _items.removeAt(index);
+    await _save();
     final pdf = pdfOf(item);
     if (await pdf.exists()) {
       await pdf.delete();
     }
-    await _save();
   }
 
   /// Starts uploading. Call once, after sign-in.
@@ -217,11 +353,21 @@ class UploadQueue {
   /// Ends the current wait and tries the next upload now.
   void retryNow() => _kick();
 
-  /// Stops the queue. A running upload finishes; nothing new starts.
+  /// Stops the queue: nothing new starts, a running upload finishes and its result is saved,
+  /// then the queue saves nothing more.
   Future<void> close() async {
     _closed = true;
-    _wake?.complete();
+    final wake = _wake;
     _wake = null;
+    wake?.complete();
+
+    await _loop;
+    try {
+      await _saveChain;
+    } on Object {
+      // A failed save was already reported to its caller.
+    }
+    await _changes.close();
   }
 
   void _kick() {
@@ -265,11 +411,14 @@ class UploadQueue {
 
       switch (outcome) {
         case UploadAccepted(:final documentId):
-          final pdf = pdfOf(item);
-          if (await pdf.exists()) {
-            await pdf.delete();
+          // Save the receipt first; the PDF goes only once the receipt is on disk.
+          if (await _replace(item.copyWith(state: QueuedDocument.received, documentId: documentId))) {
+            try {
+              await pdfOf(item).delete();
+            } on FileSystemException {
+              // Already gone.
+            }
           }
-          await _replace(item.copyWith(state: QueuedDocument.received, documentId: documentId));
         case UploadRejected(:final reason):
           await _replace(item.copyWith(state: QueuedDocument.failed, attempts: item.attempts + 1, lastError: reason));
         case UploadSignInRequired():
@@ -280,8 +429,13 @@ class UploadQueue {
           _hold.value = QueueHold.accessDenied;
         case UploadRetryLater(:final reason):
           final attempts = item.attempts + 1;
-          await _replace(item.copyWith(state: QueuedDocument.waiting, attempts: attempts, lastError: reason));
-          await _wait(_backoff(attempts));
+          // Behind the other waiting items, so one bad item does not block the rest.
+          _items.removeWhere((existing) => existing.clientDocumentId == item.clientDocumentId);
+          _items.add(item.copyWith(state: QueuedDocument.waiting, attempts: attempts, lastError: reason));
+          await _saveQuietly();
+          if (!_closed) {
+            await _wait(_backoff(attempts));
+          }
       }
     }
   }
@@ -295,23 +449,57 @@ class UploadQueue {
     }
   }
 
-  Future<void> _replace(QueuedDocument item) async {
+  /// Replaces the item and saves; returns false when the save failed (the item stays changed in
+  /// memory and the next save writes it). The upload loop never stops for a failed save.
+  Future<bool> _replace(QueuedDocument item) async {
     final index = _items.indexWhere((existing) => existing.clientDocumentId == item.clientDocumentId);
-    if (index >= 0) {
-      _items[index] = item;
+    if (index < 0) {
+      return false;
+    }
+    _items[index] = item;
+    return _saveQuietly();
+  }
+
+  Future<bool> _saveQuietly() async {
+    try {
       await _save();
+      return true;
+    } on Object {
+      return false;
     }
   }
 
-  List<QueuedDocument> _newestFirst() => List.unmodifiable(_items.reversed);
+  List<QueuedDocument> _newestFirst() {
+    final indexed = [for (var i = 0; i < _items.length; i++) (i, _items[i])];
+    indexed.sort((a, b) {
+      final byTime = b.$2.createdAt.compareTo(a.$2.createdAt);
+      return byTime != 0 ? byTime : b.$1.compareTo(a.$1);
+    });
+    return List.unmodifiable([for (final (_, item) in indexed) item]);
+  }
 
-  Future<void> _save() async {
-    final stateFile = File('${_directory.path}/$_stateFile');
-    final temporary = File('${stateFile.path}.tmp');
-    await temporary.writeAsString(jsonEncode([for (final item in _items) item.toJson()]), flush: true);
-    await temporary.rename(stateFile.path);
+  void _emit() {
     if (!_changes.isClosed) {
       _changes.add(_newestFirst());
     }
+  }
+
+  /// Saves a snapshot of the items. Saves run one after the other, in call order.
+  Future<void> _save() {
+    final json = jsonEncode([for (final item in _items) item.toJson()]);
+    _emit();
+    final write = _saveChain.then((_) => _write(json));
+    _saveChain = write.then((_) {}, onError: (Object _) {});
+    return write;
+  }
+
+  Future<void> _write(String json) async {
+    final stateFile = File('${_directory.path}/$_stateFile');
+    final temporary = File('${_directory.path}/$_stateFile.tmp');
+    await temporary.writeAsString(json, flush: true);
+    if (await stateFile.exists()) {
+      await stateFile.copy('${_directory.path}/$_backupFile');
+    }
+    await temporary.rename(stateFile.path);
   }
 }

@@ -71,12 +71,15 @@ class MsalAuthService implements AuthService {
     // computes it; debug and release builds then need no code change.
     try {
       final redirectUri = await _appChannel.invokeMethod<String>('redirectUri');
+      if (redirectUri == null || redirectUri.isEmpty) {
+        throw const SignInException('The sign-in could not start: the app could not work out its redirect URI.');
+      }
       _redirectUri = redirectUri;
       return _pca = await SingleAccountPca.create(
         clientId: _config.clientId,
         androidConfig: AndroidConfig(
           configFilePath: 'assets/msal_config.json',
-          redirectUri: redirectUri!,
+          redirectUri: redirectUri,
         ),
       );
     } on MsalException catch (error) {

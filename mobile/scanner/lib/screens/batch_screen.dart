@@ -380,6 +380,11 @@ class _DocumentTile extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(item.lastError!, style: theme.textTheme.bodyMedium),
                   ),
+                if (item.note != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(item.note!, style: theme.textTheme.bodyMedium),
+                  ),
                 if (item.state == QueuedDocument.failed)
                   Align(
                     alignment: Alignment.centerLeft,

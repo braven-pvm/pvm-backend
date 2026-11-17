@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -250,6 +251,137 @@ void main() {
     expect(delays, hasLength(1));
     expect(queue.current.single.state, QueuedDocument.received);
     await queue.close();
+  });
+
+  test('concurrent_enqueues_and_uploads_leave_a_readable_queue_file', () async {
+    final uploader = FakeUploader([const UploadAccepted(documentId: 'doc', state: 'Received')]);
+    final queue = await openQueue(uploader);
+    queue.start();
+
+    final enqueued = await Future.wait([
+      for (var i = 0; i < 20; i++) queue.enqueue(scannedPdf('scan-$i.pdf'), 'POD', 1),
+    ]);
+    await queue.whenIdle;
+    await queue.close();
+
+    expect(enqueued, hasLength(20));
+    expect(uploader.calls, hasLength(20));
+    expect(queue.current.where((item) => item.state == QueuedDocument.received), hasLength(20));
+    final saved = jsonDecode(File('${queueDirectory.path}/queue.json').readAsStringSync()) as List<dynamic>;
+    expect(saved, hasLength(20));
+    expect(saved.every((entry) => (entry as Map<String, dynamic>)['state'] == QueuedDocument.received), isTrue);
+
+    final reopened = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
+    expect(reopened.current, isEmpty);
+    await reopened.close();
+  });
+
+  test('a_corrupt_queue_file_is_restored_from_the_backup', () async {
+    final first = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
+    final queued = await first.enqueue(scannedPdf(), 'POD', 2);
+    await first.close();
+    File('${queueDirectory.path}/queue.json').copySync('${queueDirectory.path}/queue.json.bak');
+    File('${queueDirectory.path}/queue.json').writeAsStringSync('[{"clientDocumentId": "trunc');
+
+    final second = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
+
+    expect(second.current.single.clientDocumentId, queued.clientDocumentId);
+    expect(second.current.single.pageCount, 2);
+    expect(second.current.single.state, QueuedDocument.waiting);
+    await second.close();
+  });
+
+  test('a_corrupt_queue_file_without_backup_adopts_the_pdfs', () async {
+    final pdfs = Directory('${queueDirectory.path}/pdfs')..createSync(recursive: true);
+    File('${pdfs.path}/0b6f3c3e-9a51-4c38-9d0e-2b8f5a1c7d11.pdf').writeAsBytesSync('%PDF-1.7 a'.codeUnits);
+    File('${pdfs.path}/5d2a9e7b-1c44-4f6a-8e3b-7a9c0d4e2f22.pdf').writeAsBytesSync('%PDF-1.7 b'.codeUnits);
+    File('${queueDirectory.path}/queue.json').writeAsStringSync('not json');
+
+    final queue = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
+
+    expect(queue.current, hasLength(2));
+    for (final item in queue.current) {
+      expect(item.state, QueuedDocument.waiting);
+      expect(item.documentType, 'POD');
+      expect(item.pageCount, greaterThanOrEqualTo(1));
+      expect(queue.pdfOf(item).existsSync(), isTrue);
+    }
+    await queue.close();
+  });
+
+  test('a_pdf_no_item_references_is_adopted_and_referenced_pdfs_are_not_duplicated', () async {
+    final first = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
+    await first.enqueue(scannedPdf(), 'POD', 1);
+    await first.close();
+    File('${queueDirectory.path}/pdfs/7e1d2c3b-4a5f-4e6d-9c8b-1a2b3c4d5e6f.pdf').writeAsBytesSync('%PDF-1.7 c'.codeUnits);
+
+    final second = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
+
+    expect(second.current, hasLength(2));
+    expect(second.current.map((item) => item.clientDocumentId).toSet(), hasLength(2));
+    await second.close();
+  });
+
+  test('a_waiting_item_whose_pdf_is_gone_after_an_attempt_is_received_unconfirmed', () async {
+    final first = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
+    final queued = await first.enqueue(scannedPdf(), 'POD', 1);
+    await first.close();
+    final saved = jsonDecode(File('${queueDirectory.path}/queue.json').readAsStringSync()) as List<dynamic>;
+    (saved.single as Map<String, dynamic>)['attempts'] = 1;
+    File('${queueDirectory.path}/queue.json').writeAsStringSync(jsonEncode(saved));
+    first.pdfOf(queued).deleteSync();
+
+    final second = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
+
+    expect(second.current.single.state, QueuedDocument.received);
+    expect(second.current.single.note, 'Sent earlier');
+    await second.close();
+  });
+
+  test('a_retryable_failure_moves_the_item_behind_the_other_waiting_items', () async {
+    final order = <String>[];
+    late QueuedDocument first;
+    final uploader = _GatedUploader((clientDocumentId) async {
+      order.add(clientDocumentId);
+      if (clientDocumentId == first.clientDocumentId && order.length == 1) {
+        return const UploadRetryLater('Server error.');
+      }
+      return const UploadAccepted(documentId: 'x', state: 'Received');
+    });
+    final queue = await openQueue(uploader, delays: []);
+
+    first = await queue.enqueue(scannedPdf('a.pdf'), 'POD', 1);
+    final second = await queue.enqueue(scannedPdf('b.pdf'), 'POD', 1);
+    queue.start();
+    await queue.whenIdle;
+
+    expect(order, [first.clientDocumentId, second.clientDocumentId, first.clientDocumentId]);
+    final newestFirst = await queue.items.first;
+    expect(newestFirst.map((item) => item.clientDocumentId), [second.clientDocumentId, first.clientDocumentId]);
+    await queue.close();
+  });
+
+  test('close_waits_for_the_running_upload_and_nothing_saves_after_it', () async {
+    final gate = Completer<UploadOutcome>();
+    final queue = await openQueue(_GatedUploader((_) => gate.future));
+    await queue.enqueue(scannedPdf(), 'POD', 1);
+    queue.start();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    var closed = false;
+    final closing = queue.close().then((_) => closed = true);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(closed, isFalse);
+
+    gate.complete(const UploadAccepted(documentId: 'doc-5', state: 'Received'));
+    await closing;
+    final stateFile = File('${queueDirectory.path}/queue.json');
+    final savedAtClose = stateFile.readAsStringSync();
+    expect(savedAtClose, contains(QueuedDocument.received));
+
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(stateFile.readAsStringSync(), savedAtClose);
+    expect(() => queue.enqueue(scannedPdf('late.pdf'), 'POD', 1), throwsStateError);
   });
 
   test('an_item_left_uploading_by_a_crash_is_waiting_after_restart', () async {

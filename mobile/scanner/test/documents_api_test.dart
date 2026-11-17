@@ -95,6 +95,15 @@ void main() {
     expect((outcome as UploadAccepted).state, 'Filed');
   });
 
+  test('upload_201_without_a_readable_body_is_still_accepted', () async {
+    final client = MockClient((_) async => http.Response('<html>proxy page</html>', 201));
+
+    final outcome = await upload(api(client, FakeTokens(['t'])));
+
+    expect(outcome, isA<UploadAccepted>());
+    expect((outcome as UploadAccepted).documentId, isNull);
+  });
+
   test('upload_400_is_rejected_with_the_backend_reason', () async {
     final client = MockClient((_) async => problem(400, 'The file is not a PDF.'));
 
