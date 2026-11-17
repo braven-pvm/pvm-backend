@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  acumaticaInvoiceUrl,
   buildDocumentSearchQuery,
+  isDocumentId,
   canActOnDocument,
   documentTypeLabel,
   fileToErrorMessage,
@@ -9,6 +11,7 @@ import {
   formatReviewReason,
   readExtraction,
   rejectErrorMessage,
+  unconfirmedMessage,
 } from "./documents.ts";
 
 test("each document state has a plain label", () => {
@@ -126,4 +129,46 @@ test("reject errors tell the user what happened", () => {
 test("document types have a name", () => {
   assert.equal(documentTypeLabel("POD"), "Proof of delivery");
   assert.equal(documentTypeLabel("XYZ"), "XYZ");
+});
+
+test("the Acumatica link opens the invoice screen with the encoded reference", () => {
+  assert.equal(
+    acumaticaInvoiceUrl("https://pvm.acumatica.com", "INV001234"),
+    "https://pvm.acumatica.com/Main?ScreenId=AR301000&DocType=INV&RefNbr=INV001234",
+  );
+  assert.equal(
+    acumaticaInvoiceUrl("https://pvm.acumatica.com/erp/", " INV 12/3&x "),
+    "https://pvm.acumatica.com/erp/Main?ScreenId=AR301000&DocType=INV&RefNbr=INV%2012%2F3%26x",
+  );
+});
+
+test("no setting or no reference gives no link", () => {
+  assert.equal(acumaticaInvoiceUrl(undefined, "INV001234"), null);
+  assert.equal(acumaticaInvoiceUrl("", "INV001234"), null);
+  assert.equal(acumaticaInvoiceUrl("https://pvm.acumatica.com", null), null);
+  assert.equal(acumaticaInvoiceUrl("https://pvm.acumatica.com", "  "), null);
+});
+
+test("a setting that is not an https URL is ignored", () => {
+  assert.equal(acumaticaInvoiceUrl("http://pvm.acumatica.com", "INV001234"), null);
+  assert.equal(acumaticaInvoiceUrl("javascript:alert(1)", "INV001234"), null);
+  assert.equal(acumaticaInvoiceUrl("pvm.acumatica.com", "INV001234"), null);
+});
+
+test("document ids are GUIDs", () => {
+  assert.equal(isDocumentId("d0c00000-0000-4000-8000-000000000001"), true);
+  assert.equal(isDocumentId("../etc/passwd"), false);
+  assert.equal(isDocumentId(""), false);
+  assert.equal(isDocumentId(undefined), false);
+});
+
+test("an unconfirmed write tells the user to reload", () => {
+  assert.equal(
+    unconfirmedMessage("filed"),
+    "We could not confirm whether the document was filed. Reload the page to see its state.",
+  );
+  assert.equal(
+    unconfirmedMessage("rejected"),
+    "We could not confirm whether the document was rejected. Reload the page to see its state.",
+  );
 });

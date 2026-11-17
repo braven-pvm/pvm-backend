@@ -1,11 +1,28 @@
 import type { InvoiceCandidate } from "../../src/api/documents";
-import { formatDocumentState } from "../../src/documents";
+import { acumaticaInvoiceUrl, formatDocumentState } from "../../src/documents";
 import { formatDate } from "../../src/formatters.mjs";
 import { StatusBadge, type Column } from "../../src/ui";
 
 /** The state of a document as a badge. A stuck document shows as stuck. */
 export function DocumentStateBadge({ state, stuck = false }: { state: string; stuck?: boolean }) {
   return <StatusBadge status={stuck ? "Stuck" : state} label={formatDocumentState(state, stuck)} />;
+}
+
+/**
+ * The invoice number, as a link to the invoice in Acumatica when the
+ * ACUMATICA_BASE_URL setting is there, otherwise as plain text.
+ */
+export function AcumaticaInvoice({ reference, baseUrl }: { reference: string; baseUrl: string | undefined }) {
+  const href = acumaticaInvoiceUrl(baseUrl, reference);
+  if (!href) {
+    return <>{reference}</>;
+  }
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer">
+      {reference}
+      <span className="sr-only"> (opens Acumatica in a new tab)</span>
+    </a>
+  );
 }
 
 /** Where the PDF stands in Acumatica, for a filed document. */

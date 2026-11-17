@@ -632,6 +632,9 @@ Rules:
 - The first column identifies the record. If the row has a page, the first
   column is the link.
 - At most 7 columns. Put more detail on the record page.
+- A linked row can hold one more link in another cell, such as the invoice
+  number as a link to Acumatica. It opens in a new tab and sits above the row
+  link. Never put it in the first cell.
 - An action column is the last column. It holds one tertiary `ButtonLink` per
   row, such as "Map item". Use it only when the row has no record page.
 - A status column uses `StatusBadge`.

@@ -1,4 +1,5 @@
 import { fetchDocumentFile } from "../../../../src/api/documents";
+import { isDocumentId } from "../../../../src/documents";
 
 /*
  * The PDF of one document, for the <iframe> on the document page. The
@@ -9,11 +10,9 @@ import { fetchDocumentFile } from "../../../../src/api/documents";
 
 export const dynamic = "force-dynamic";
 
-const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  if (!guid.test(id)) {
+  if (!isDocumentId(id)) {
     return new Response("Not found", { status: 404 });
   }
 

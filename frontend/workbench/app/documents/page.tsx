@@ -1,4 +1,4 @@
-import { searchDocuments, type DocumentSearchItem } from "../../src/api/documents";
+import { acumaticaBaseUrl, getDocumentTypes, searchDocuments, type DocumentSearchItem } from "../../src/api/documents";
 import { requireWorkbenchUser } from "../../src/auth/session";
 import { buildDocumentSearchQuery, documentStates, documentTypeLabel, formatReviewReason, type DocumentSearchFilters } from "../../src/documents";
 import { formatDateTime } from "../../src/formatters.mjs";
@@ -13,7 +13,7 @@ import {
   TextField,
   type Column,
 } from "../../src/ui";
-import { DocumentStateBadge, acumaticaLabel } from "./document-parts";
+import { AcumaticaInvoice, DocumentStateBadge, acumaticaLabel } from "./document-parts";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Documents" };
@@ -21,20 +21,33 @@ export const metadata = { title: "Documents" };
 type SearchParams = { invoice?: string; client?: string; type?: string; state?: string; from?: string; to?: string; page?: string };
 
 // The state comes right after the invoice: on a phone the table scrolls sideways.
-const columns: Column<DocumentSearchItem>[] = [
-  { key: "invoice", header: "Invoice", render: (row) => row.matchedReference ?? "Not filed", mono: true },
-  { key: "state", header: "State", render: (row) => <DocumentStateBadge state={row.state} /> },
-  { key: "client", header: "Client", render: (row) => row.matchedCustomerName ?? "—" },
-  {
-    key: "detail",
-    header: "Acumatica or reason",
-    render: (row) => acumaticaLabel(row) ?? formatReviewReason(row.reviewReason, row.state) ?? "—",
-    weak: true,
-  },
-  { key: "uploaded", header: "Uploaded", render: (row) => formatDateTime(row.uploadedAt), weak: true },
-  { key: "type", header: "Document", render: (row) => documentTypeLabel(row.documentType), weak: true },
-  { key: "by", header: "Uploaded by", render: (row) => row.uploadedBy, weak: true },
-];
+// The first cell links to the document page; the Acumatica link sits in its own column.
+function columnsFor(acumaticaUrl: string | undefined): Column<DocumentSearchItem>[] {
+  return [
+    { key: "invoice", header: "Invoice", render: (row) => row.matchedReference ?? "Not filed", mono: true },
+    { key: "state", header: "State", render: (row) => <DocumentStateBadge state={row.state} /> },
+    { key: "client", header: "Client", render: (row) => row.matchedCustomerName ?? "—" },
+    {
+      key: "detail",
+      header: "Acumatica or reason",
+      render: (row) => {
+        const attach = acumaticaLabel(row);
+        if (attach && row.matchedReference) {
+          return (
+            <>
+              <AcumaticaInvoice reference={row.matchedReference} baseUrl={acumaticaUrl} /> · {attach}
+            </>
+          );
+        }
+        return attach ?? formatReviewReason(row.reviewReason, row.state) ?? "—";
+      },
+      weak: true,
+    },
+    { key: "uploaded", header: "Uploaded", render: (row) => formatDateTime(row.uploadedAt), weak: true },
+    { key: "type", header: "Document", render: (row) => documentTypeLabel(row.documentType), weak: true },
+    { key: "by", header: "Uploaded by", render: (row) => row.uploadedBy, weak: true },
+  ];
+}
 
 export default async function DocumentsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   await requireWorkbenchUser("/documents");
@@ -48,7 +61,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
     to: params.to,
   };
   const page = Math.max(Number(params.page) || 1, 1);
-  const result = await searchDocuments({ ...filters, page });
+  const [result, types] = await Promise.all([searchDocuments({ ...filters, page }), getDocumentTypes()]);
 
   const href = (changes: Partial<DocumentSearchFilters>) => {
     const query = buildDocumentSearchQuery({ ...filters, ...changes }, { forApi: false });
@@ -84,6 +97,17 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
               })),
             ]}
           />
+          <FilterChips
+            label="Filter documents by type"
+            chips={[
+              { label: "All types", href: href({ type: undefined }), current: !filters.type },
+              ...types.map((type) => ({
+                label: type.displayName,
+                href: href({ type: type.code }),
+                current: filters.type?.toUpperCase() === type.code.toUpperCase(),
+              })),
+            ]}
+          />
           <FilterBar action="/documents" label="Search documents" keep={keep} activeCount={barCount}>
             <TextField
               name="invoice"
@@ -102,7 +126,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
       table={
         <DataTable
           caption="Documents"
-          columns={columns}
+          columns={columnsFor(acumaticaBaseUrl())}
           rows={result.items}
           rowKey={(row) => row.id}
           rowHref={(row) => `/documents/${row.id}`}

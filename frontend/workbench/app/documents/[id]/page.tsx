@@ -1,12 +1,13 @@
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { getDocument, searchReviewInvoices, type DocumentDetail, type InvoiceCandidate } from "../../../src/api/documents";
+import { acumaticaBaseUrl, getDocument, searchReviewInvoices, type DocumentDetail, type InvoiceCandidate } from "../../../src/api/documents";
 import { hasAnyRole, requireWorkbenchUser } from "../../../src/auth/session";
 import {
   canActOnDocument,
   documentTypeLabel,
   formatDocumentState,
   formatReviewReason,
+  isDocumentId,
   readExtraction,
 } from "../../../src/documents";
 import { formatDate, formatDateTime } from "../../../src/formatters.mjs";
@@ -29,7 +30,7 @@ import {
   type TimelineEntry,
 } from "../../../src/ui";
 import { fileDocumentToAction, rejectDocumentAction } from "../actions";
-import { DocumentStateBadge, acumaticaLabel, customerOf, invoiceColumns } from "../document-parts";
+import { AcumaticaInvoice, DocumentStateBadge, acumaticaLabel, customerOf, invoiceColumns } from "../document-parts";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Document" };
@@ -39,11 +40,9 @@ type DocumentPageProps = {
   searchParams: Promise<{ q?: string; documentError?: string; documentStatus?: string }>;
 };
 
-const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export default async function DocumentPage({ params, searchParams }: DocumentPageProps) {
   const { id } = await params;
-  if (!guid.test(id)) {
+  if (!isDocumentId(id)) {
     notFound();
   }
   const query = await searchParams;
@@ -66,7 +65,7 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
       back={onReviewList ? { href: "/documents/review", label: "Review list" } : { href: "/documents", label: "Documents" }}
       header={{
         eyebrow: typeLabel,
-        title: document.matchedReference ?? (onReviewList ? "Document to review" : "Unfiled document"),
+        title: document.matchedReference ?? (document.stuck ? "Document being processed" : onReviewList ? "Document to review" : "Unfiled document"),
         description: `Uploaded ${formatDateTime(document.uploadedAt)} by ${document.uploadedBy} · ${pages(document.pageCount)}`,
         actions: <DocumentStateBadge state={document.state} stuck={document.stuck} />,
       }}
@@ -91,10 +90,21 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
           items={[
             { label: "State", value: formatDocumentState(document.state, document.stuck) },
             ...(reason ? [{ label: "Reason", value: reason }] : []),
-            { label: "Invoice", value: document.matchedReference, mono: true },
-            { label: "Client", value: document.matchedCustomerName },
-            { label: "Filed by", value: document.matchedBy ? matchedByLabel(document.matchedBy) : null },
-            { label: "Acumatica", value: acumaticaLabel(document) },
+            // The filing facts only mean something once the document is filed.
+            ...(document.state === "Filed"
+              ? [
+                  {
+                    label: "Invoice",
+                    value: document.matchedReference ? (
+                      <AcumaticaInvoice reference={document.matchedReference} baseUrl={acumaticaBaseUrl()} />
+                    ) : null,
+                    mono: true,
+                  },
+                  { label: "Client", value: document.matchedCustomerName },
+                  { label: "Filed by", value: document.matchedBy ? matchedByLabel(document.matchedBy) : null },
+                  { label: "Acumatica", value: acumaticaLabel(document) },
+                ]
+              : []),
             { label: "Uploaded by", value: document.uploadedBy },
           ]}
         />

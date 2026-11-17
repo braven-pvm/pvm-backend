@@ -178,3 +178,38 @@ export function rejectErrorMessage(status: number): string {
       return `The document could not be rejected (error ${status}). Nothing changed. Try again in a minute.`;
   }
 }
+
+/** A document id is a GUID. Checked before an id goes into an API path. */
+export const documentIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isDocumentId(value: unknown): value is string {
+  return typeof value === "string" && documentIdPattern.test(value);
+}
+
+/**
+ * The Acumatica invoice screen (AR301000) for a reference, or null. The base
+ * URL comes from the ACUMATICA_BASE_URL setting; anything that is not an
+ * https URL is ignored, so a bad setting gives plain text, never a bad link.
+ */
+export function acumaticaInvoiceUrl(baseUrl: string | null | undefined, reference: string | null | undefined): string | null {
+  const ref = reference?.trim();
+  if (!baseUrl || !ref) {
+    return null;
+  }
+  let url: URL;
+  try {
+    url = new URL(baseUrl.trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:") {
+    return null;
+  }
+  const base = `${url.origin}${url.pathname}`.replace(/\/+$/, "");
+  return `${base}/Main?ScreenId=AR301000&DocType=INV&RefNbr=${encodeURIComponent(ref)}`;
+}
+
+/** When the API call itself failed (timeout, network), the write may or may not have happened. */
+export function unconfirmedMessage(outcome: "filed" | "rejected"): string {
+  return `We could not confirm whether the document was ${outcome}. Reload the page to see its state.`;
+}

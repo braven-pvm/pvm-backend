@@ -486,6 +486,7 @@ const routes = {
   "POST /api/exceptions/*": () => ({}),
   // Documents. The review routes come before "/:id" so they match first.
   "GET /api/documents": (context) => searchDocuments(context.url),
+  "GET /api/documents/types": () => [{ code: "POD", displayName: "Proof of delivery" }],
   "GET /api/documents/review": () => reviewList(),
   "GET /api/documents/review/invoice-search": (context) => {
     const q = context.url.searchParams.get("q")?.trim().toLowerCase();

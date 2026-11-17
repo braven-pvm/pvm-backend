@@ -3,13 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { fileDocumentTo, rejectDocument } from "../../src/api/documents";
-import { fileToErrorMessage, rejectErrorMessage } from "../../src/documents";
-
-const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { fileToErrorMessage, isDocumentId, rejectErrorMessage, unconfirmedMessage } from "../../src/documents";
 
 function documentId(formData: FormData): string {
   const id = formData.get("documentId");
-  if (typeof id !== "string" || !guid.test(id)) {
+  if (!isDocumentId(id)) {
     throw new Error("The document id is missing.");
   }
   return id;
@@ -38,7 +36,13 @@ export async function fileDocumentToAction(formData: FormData) {
     finish(id, { error: fileToErrorMessage(400, invoiceReference || "(none)") });
   }
 
-  const result = await fileDocumentTo(id, invoiceReference);
+  let result: Awaited<ReturnType<typeof fileDocumentTo>>;
+  try {
+    result = await fileDocumentTo(id, invoiceReference);
+  } catch {
+    // A timeout or a network error: the backend may have filed it. Never guess.
+    finish(id, { error: unconfirmedMessage("filed") });
+  }
   if (!result.ok) {
     finish(id, { error: fileToErrorMessage(result.status, invoiceReference) });
   }
@@ -52,7 +56,12 @@ export async function rejectDocumentAction(formData: FormData) {
     finish(id, { error: rejectErrorMessage(400) });
   }
 
-  const result = await rejectDocument(id, note);
+  let result: Awaited<ReturnType<typeof rejectDocument>>;
+  try {
+    result = await rejectDocument(id, note);
+  } catch {
+    finish(id, { error: unconfirmedMessage("rejected") });
+  }
   if (!result.ok) {
     finish(id, { error: rejectErrorMessage(result.status) });
   }

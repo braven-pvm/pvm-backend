@@ -83,6 +83,30 @@ export type DocumentDetail = {
   candidates: InvoiceCandidate[];
 };
 
+export type DocumentType = { code: string; displayName: string };
+
+/** The types the backend accepts. If the call fails, the types the workbench knows. */
+export async function getDocumentTypes(): Promise<DocumentType[]> {
+  try {
+    const types = await getJson<DocumentType[]>("/api/documents/types", "document types");
+    if (Array.isArray(types) && types.length > 0) {
+      return types;
+    }
+  } catch (error) {
+    console.warn("documents.types.unavailable", { error: String(error) });
+  }
+  return [{ code: "POD", displayName: "Proof of delivery" }];
+}
+
+/**
+ * ACUMATICA_BASE_URL: the Acumatica site, such as https://pvm.acumatica.com.
+ * Optional and read on the server only. Without it, invoice numbers are plain
+ * text; acumaticaInvoiceUrl ignores a value that is not an https URL.
+ */
+export function acumaticaBaseUrl(): string | undefined {
+  return process.env.ACUMATICA_BASE_URL || undefined;
+}
+
 /** The result of a call whose failure the page explains to the user. */
 export type ApiResult<T> = { ok: true; value: T } | { ok: false; status: number };
 
