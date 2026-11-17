@@ -231,19 +231,49 @@ public sealed class DocumentProcessor(
             return;
         }
 
+        await AttachOrRecordAsync(document, type, invoice.ReferenceNumber, cancellationToken);
+    }
+
+    /// <summary>
+    /// For a document a person just filed to <paramref name="reference"/>: in Write mode attaches
+    /// it now (a failure is logged and the document stays pending for the backfill); in Shadow
+    /// mode logs the attachment it would make. Returns true only when the file reached Acumatica.
+    /// </summary>
+    public async Task<bool> AttachFiledAsync(Guid documentId, string reference, CancellationToken cancellationToken)
+    {
+        var document = await dbContext.CapturedDocuments
+            .AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == documentId, cancellationToken);
+        var type = document is null ? null : ResolveType(document.DocumentType);
+        if (document is null || type is null)
+        {
+            logger.LogWarning(
+                "document.attach.skipped DocumentId={DocumentId} Reason=missing-row-or-unknown-document-type",
+                documentId);
+            return false;
+        }
+
+        return await AttachOrRecordAsync(document, type, reference, cancellationToken);
+    }
+
+    private async Task<bool> AttachOrRecordAsync(
+        CapturedDocumentEntity document,
+        IDocumentType type,
+        string reference,
+        CancellationToken cancellationToken)
+    {
         if (_attachMode == AcumaticaAttachMode.Write)
         {
-            await TryAttachAsync(document, invoice.ReferenceNumber, type, cancellationToken);
+            return await TryAttachAsync(document, reference, type, cancellationToken);
         }
-        else
-        {
-            logger.LogInformation(
-                "document.attach.shadow DocumentId={DocumentId} Entity={Entity} Reference={Reference} FileName={FileName}",
-                document.Id,
-                type.AcumaticaEntity,
-                invoice.ReferenceNumber,
-                AttachmentFileName(document.DocumentType, invoice.ReferenceNumber, document.Id));
-        }
+
+        logger.LogInformation(
+            "document.attach.shadow DocumentId={DocumentId} Entity={Entity} Reference={Reference} FileName={FileName}",
+            document.Id,
+            type.AcumaticaEntity,
+            reference,
+            AttachmentFileName(document.DocumentType, reference, document.Id));
+        return false;
     }
 
     private async Task<bool> TryAttachAsync(

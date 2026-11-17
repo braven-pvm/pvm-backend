@@ -539,6 +539,7 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(document => document.MatchedBy).HasMaxLength(320);
             entity.Property(document => document.UploadedBy).HasMaxLength(320);
             entity.Property(document => document.ResolvedBy).HasMaxLength(320);
+            entity.Property(document => document.RejectedBy).HasMaxLength(320);
             entity.Property(document => document.ReviewNote).HasMaxLength(2048);
         });
 

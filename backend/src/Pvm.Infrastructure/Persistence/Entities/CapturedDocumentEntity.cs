@@ -53,5 +53,10 @@ public sealed class CapturedDocumentEntity
 
     public string? ReviewNote { get; set; }
 
+    /// <summary>When a person rejected the document from the review list, for example a bad scan; the note is in <see cref="ReviewNote"/>.</summary>
+    public DateTimeOffset? RejectedAt { get; set; }
+
+    public string? RejectedBy { get; set; }
+
     public DateTimeOffset UpdatedAt { get; set; }
 }

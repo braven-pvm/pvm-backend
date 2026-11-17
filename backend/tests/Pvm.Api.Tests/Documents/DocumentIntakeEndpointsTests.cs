@@ -175,6 +175,17 @@ public sealed class DocumentIntakeEndpointsTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Upload_UserNotResolved_Returns500_StoresNothing()
+    {
+        var client = await StartAsync(resolveUser: false);
+
+        var response = await client.SendAsync(Upload(Guid.NewGuid(), "POD", Pdf));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        await AssertNothingStoredAsync();
+    }
+
+    [Fact]
     public async Task DocumentTypes_ReturnsTheKnownTypes()
     {
         var client = await StartAsync();
@@ -224,7 +235,7 @@ public sealed class DocumentIntakeEndpointsTests : IAsyncLifetime
         };
     }
 
-    private async Task<HttpClient> StartAsync(long? maxUploadBytes = null)
+    private async Task<HttpClient> StartAsync(long? maxUploadBytes = null, bool resolveUser = true)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Testing" });
         builder.WebHost.UseTestServer();
@@ -255,12 +266,16 @@ public sealed class DocumentIntakeEndpointsTests : IAsyncLifetime
         _app.Use(async (context, next) =>
         {
             // Stands in for AppUserClaimsMiddleware, which resolves the user from the database.
-            context.RequestServices.GetRequiredService<CurrentAppUserAccessor>().User = new CurrentAppUser(
-                Guid.NewGuid(),
-                null,
-                "operator@pvm.test",
-                null,
-                context.User.FindAll(AppAuthClaims.Role).Select(claim => claim.Value).ToArray());
+            if (resolveUser)
+            {
+                context.RequestServices.GetRequiredService<CurrentAppUserAccessor>().User = new CurrentAppUser(
+                    Guid.NewGuid(),
+                    null,
+                    "operator@pvm.test",
+                    null,
+                    context.User.FindAll(AppAuthClaims.Role).Select(claim => claim.Value).ToArray());
+            }
+
             await next(context);
         });
         _app.UseAuthorization();

@@ -342,6 +342,13 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                     b.Property<int>("PageCount")
                         .HasColumnType("integer");
 
+                    b.Property<DateTimeOffset?>("RejectedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RejectedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
                     b.Property<DateTimeOffset?>("ResolvedAt")
                         .HasColumnType("timestamp with time zone");
 

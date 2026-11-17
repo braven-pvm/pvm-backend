@@ -86,6 +86,12 @@ public static class DocumentIntakeEndpoints
             return Results.Ok(Receipt(existing));
         }
 
+        var uploadedBy = DocumentReviewEndpoints.CurrentEmail(currentUser);
+        if (uploadedBy is null)
+        {
+            return DocumentReviewEndpoints.UserNotResolved();
+        }
+
         var captureOptions = options.Value;
         if (file.Length > captureOptions.MaxUploadBytes)
         {
@@ -120,7 +126,7 @@ public static class DocumentIntakeEndpoints
             PageCount = pageCount,
             SizeBytes = stored.SizeBytes,
             Sha256 = stored.Sha256,
-            UploadedBy = currentUser.User?.Email ?? "unknown",
+            UploadedBy = uploadedBy,
             UploadedAt = now,
             UpdatedAt = now
         };

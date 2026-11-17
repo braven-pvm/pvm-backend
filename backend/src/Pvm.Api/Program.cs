@@ -50,6 +50,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddPvmPersistence(builder.Configuration);
 builder.Services.AddPayloadArchive(builder.Configuration);
 builder.Services.AddDocumentCapture(builder.Configuration);
+builder.Services.AddScoped<DocumentProcessor>();
+builder.Services.AddScoped<DocumentReviewService>();
 builder.Services.AddPvmAuth(builder.Configuration, builder.Environment);
 builder.Services.AddAcumaticaInvoiceSource(builder.Configuration);
 builder.Services.AddStockSyncRunReader();
@@ -91,6 +93,7 @@ app.MapInventoryMappingEndpoints();
 app.MapAutomationPolicyEndpoints();
 app.MapExceptionEndpoints();
 app.MapDocumentIntakeEndpoints();
+app.MapDocumentReviewEndpoints();
 
 app.Run();
 
