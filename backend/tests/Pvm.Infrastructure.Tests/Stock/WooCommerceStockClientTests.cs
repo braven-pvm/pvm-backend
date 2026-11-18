@@ -127,13 +127,32 @@ public sealed class WooCommerceStockClientTests
     }
 
     [Fact]
-    public async Task SetStockQuantityAsync_refuses_an_item_whose_stock_belongs_to_the_parent()
+    public async Task SetStockQuantityAsync_gives_a_parent_variation_its_own_stock()
+    {
+        string? body = null;
+        using var handler = new RouteHandler(request =>
+        {
+            body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return Json("""{"id":201,"stock_quantity":4449}""");
+        });
+        var client = NewClient(handler);
+
+        await client.SetStockQuantityAsync(
+            new WebStockItem("ENER7", 20, 201, WebStockManagement.Parent, 454),
+            4449,
+            CancellationToken.None);
+
+        Assert.Equal("""{"manage_stock":true,"stock_quantity":4449}""", body);
+    }
+
+    [Fact]
+    public async Task SetStockQuantityAsync_refuses_an_item_whose_stock_the_store_does_not_track()
     {
         using var handler = new RouteHandler(_ => Json("{}"));
         var client = NewClient(handler);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.SetStockQuantityAsync(
-            new WebStockItem("ENER1", 20, 201, WebStockManagement.Parent, 458),
+            new WebStockItem("BOTT8", 20, null, WebStockManagement.None, null),
             7000,
             CancellationToken.None));
         Assert.Equal(0, handler.Calls);
