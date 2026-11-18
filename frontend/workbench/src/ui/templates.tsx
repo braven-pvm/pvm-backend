@@ -185,6 +185,53 @@ export function RecordPage({ back, header, notice, summary, activity, sections, 
   );
 }
 
+type ViewerPageProps = {
+  /** The list the record was opened from: "Review list", or "Documents" for a direct link. */
+  back: SectionLink;
+  /** Previous / position / Next, a RecordNav. Left out when the record was not opened from a list. */
+  nav?: ReactNode;
+  /** The record's name; a StatusBadge as status; the one-line context as description. */
+  header: { eyebrow?: string; title: string; status?: ReactNode; description?: ReactNode };
+  /** The file itself: a PdfFrame with size "fill". */
+  viewer: ReactNode;
+  /** Everything else, top to bottom: notices, actions, the panels. */
+  children: ReactNode;
+};
+
+/**
+ * A Record page built around one file, such as a scanned document: the file
+ * fills about two thirds of the width and the height of the screen, the facts
+ * and actions sit in a narrow panel on the right that scrolls on its own. On a
+ * phone the file comes first and the panel under it.
+ * Spec: docs/design/design-system.md#viewerpage
+ */
+export function ViewerPage({ back, nav, header, viewer, children }: ViewerPageProps) {
+  return (
+    <PageFrame width="full">
+      <div className={styles.viewerPage}>
+        <div className={styles.viewerBar}>
+          <BackLink href={back.href} label={back.label} />
+          <header className={styles.viewerTitle}>
+            {header.eyebrow ? <p className={styles.viewerEyebrow}>{header.eyebrow}</p> : null}
+            <div className={styles.viewerHeading}>
+              <h1>{header.title}</h1>
+              {header.status}
+            </div>
+            {header.description ? <p className={styles.viewerDescription}>{header.description}</p> : null}
+          </header>
+          {nav ? <div className={styles.viewerNav}>{nav}</div> : null}
+        </div>
+        <div className={styles.viewerBody}>
+          <div className={styles.viewerMain}>{viewer}</div>
+          <aside className={styles.viewerAside} aria-label="Details and actions">
+            {children}
+          </aside>
+        </div>
+      </div>
+    </PageFrame>
+  );
+}
+
 type TaskPageProps = {
   back: SectionLink;
   header: PageHeaderProps;

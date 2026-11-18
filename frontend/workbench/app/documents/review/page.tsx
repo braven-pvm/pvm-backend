@@ -1,5 +1,6 @@
 import { getReviewList, type ReviewListItem } from "../../../src/api/documents";
 import { hasAnyRole, requireWorkbenchUser } from "../../../src/auth/session";
+import { documentHref } from "../../../src/document-list";
 import { documentTypeLabel, formatReviewReason, uploaderText } from "../../../src/documents";
 import { formatDateTime } from "../../../src/formatters.mjs";
 import { ButtonLink, DataTable, EmptyState, ListPage, Notice, Pagination, type Column } from "../../../src/ui";
@@ -29,7 +30,15 @@ const columns: Column<ReviewListItem>[] = [
   },
 ];
 
-export default async function ReviewListPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+type SearchParams = {
+  page?: string;
+  /** After File-to, Reject or Delete of the last document on the list: the result notice. */
+  documentStatus?: string;
+  documentWarning?: string;
+  documentError?: string;
+};
+
+export default async function ReviewListPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const user = await requireWorkbenchUser("/documents/review");
   const canAct = hasAnyRole(user, ["Admin", "Operator"]);
   const params = await searchParams;
@@ -50,6 +59,17 @@ export default async function ReviewListPage({ searchParams }: { searchParams: P
       }}
       notice={
         <>
+          {params.documentError ? (
+            <Notice tone="error" title="Nothing changed" live>
+              {params.documentError}
+            </Notice>
+          ) : null}
+          {params.documentStatus ? <Notice tone="success" title={params.documentStatus} live /> : null}
+          {params.documentWarning ? (
+            <Notice tone="warning" title="The PDF is still in storage">
+              {params.documentWarning}
+            </Notice>
+          ) : null}
           {stuck > 0 ? (
             <Notice tone="warning" title={stuck === 1 ? "1 document is stuck" : `${stuck} documents are stuck`}>
               Processing did not finish within 30 minutes. These rows are for information: there is nothing to file or
@@ -69,7 +89,8 @@ export default async function ReviewListPage({ searchParams }: { searchParams: P
           columns={columns}
           rows={result.items}
           rowKey={(row) => row.id}
-          rowHref={(row) => `/documents/${row.id}`}
+          // The link carries the list, so the document page can go back to it and step through it.
+          rowHref={(row) => documentHref(row.id, { kind: "review", page: result.page })}
           empty={
             <EmptyState
               title="Nothing to review"

@@ -309,6 +309,8 @@ function documentRecord(id, state, reviewReason, options) {
     unreadableReason: options.unreadableReason ?? null,
     candidates: options.candidates ?? [],
     acumaticaAttachMode: "Shadow",
+    // The backend's delete rule (design 6.11): unfiled, not attached, and not freshly processing.
+    canDelete: state === "NeedsReview" || state === "Failed" || ((state === "Received" || state === "Processing") && (options.stuck ?? false)),
   };
 }
 
@@ -558,6 +560,18 @@ const routes = {
     if (!item) return problem(404, "Not found.");
     if (item.state !== "Failed" && !item.stuck) return problem(409, "Only a Failed document, or one stuck in Received or Processing for more than 30 minutes, can be processed again.");
     return { documentId: id, state: "Received" };
+  },
+  // Deletes answer success and change nothing. The second needs-review document answers 409
+  // document-filed, as if someone filed it meanwhile; filed ones answer the matching 409.
+  "POST /api/documents/:id/delete": (id, context) => {
+    const item = documents.find((document) => document.id === id);
+    if (!item) return problem(404, "The document was not found.");
+    const reason = String(context.json?.reason ?? "").trim();
+    if (!reason || reason.length > 500) return problem(400, "'reason' is required, at most 500 characters.");
+    if (item.acumaticaAttachedAt) return problem(409, "The PDF is already attached to the invoice in Acumatica; the document cannot be deleted.", "document-attached");
+    if (item.state === "Filed" || id.endsWith("0004")) return problem(409, "The document is filed. Send it back to review first.", "document-filed");
+    if (!item.canDelete) return problem(409, "The document was uploaded recently and is still processing. Wait until processing ends.", "document-processing");
+    return { documentId: id, deleted: true, warning: null };
   },
   "POST /api/documents/:id/reject": (id, context) => {
     const item = documents.find((document) => document.id === id);

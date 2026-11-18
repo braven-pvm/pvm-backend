@@ -1,5 +1,8 @@
+using System.Data.Common;
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Pvm.Application.Documents;
@@ -434,6 +437,211 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
         Assert.Null(row.RejectedBy);
     }
 
+    [Fact]
+    public async Task Delete_NeedsReview_RowAndBlobGone_AuditEventWithTheFacts()
+    {
+        var deviceId = await SeedDeviceAsync("Dispatch phone 1");
+        var id = await SeedAsync(DocumentState.NeedsReview, scannerDeviceId: deviceId, scannerStaffName: "Thabo");
+        var before = await LoadAsync(id);
+
+        var result = await DeleteAsync(id, "Duplicate scan of the same delivery note");
+
+        Assert.Equal(DeleteOutcome.Deleted, result.Outcome);
+        Assert.False(result.BlobDeleteFailed);
+        Assert.Null(await FindAsync(id));
+        Assert.False(_store.Blobs.ContainsKey(before.BlobPath));
+        Assert.Equal([before.BlobPath], _store.Deleted);
+
+        await using var check = CreateDbContext();
+        var audit = Assert.Single(await check.AuditEvents.AsNoTracking().Where(audit => audit.EntityType == "CapturedDocument").ToListAsync());
+        Assert.Equal("CapturedDocument", audit.EntityType);
+        Assert.Equal(id.ToString("D"), audit.EntityId);
+        Assert.Equal("document-deleted", audit.Action);
+        Assert.Equal(User, audit.Actor);
+        Assert.True(audit.CreatedAt > DateTimeOffset.UtcNow.AddMinutes(-1));
+        using var details = JsonDocument.Parse(audit.DetailsJson!);
+        var root = details.RootElement;
+        Assert.Equal(id, root.GetProperty("documentId").GetGuid());
+        Assert.Equal("Duplicate scan of the same delivery note", root.GetProperty("reason").GetString());
+        Assert.Equal(User, root.GetProperty("deletedBy").GetString());
+        Assert.True(root.GetProperty("deletedAt").GetDateTimeOffset() > DateTimeOffset.UtcNow.AddMinutes(-1));
+        Assert.Equal("POD", root.GetProperty("documentType").GetString());
+        Assert.Equal("NeedsReview", root.GetProperty("state").GetString());
+        Assert.Equal("driver@pvm.co.za", root.GetProperty("uploadedBy").GetString());
+        Assert.Equal(deviceId, root.GetProperty("scannerDeviceId").GetGuid());
+        Assert.Equal("Dispatch phone 1", root.GetProperty("scannerDeviceName").GetString());
+        Assert.Equal("Thabo", root.GetProperty("scannerStaffName").GetString());
+        Assert.Equal(before.ClientDocumentId, root.GetProperty("clientDocumentId").GetGuid());
+        Assert.Equal(before.Sha256, root.GetProperty("sha256").GetString());
+        Assert.Equal(before.BlobPath, root.GetProperty("blobPath").GetString());
+    }
+
+    [Fact]
+    public async Task Delete_Failed_Deleted()
+    {
+        var id = await SeedAsync(DocumentState.Failed);
+
+        var result = await DeleteAsync(id, "Not a delivery note");
+
+        Assert.Equal(DeleteOutcome.Deleted, result.Outcome);
+        Assert.Null(await FindAsync(id));
+    }
+
+    [Theory]
+    [InlineData(DocumentState.Received)]
+    [InlineData(DocumentState.Processing)]
+    public async Task Delete_Stuck_Deleted(DocumentState state)
+    {
+        var id = await SeedAsync(state, uploadedAt: DateTimeOffset.UtcNow.AddMinutes(-31));
+
+        var result = await DeleteAsync(id, "Stuck test upload");
+
+        Assert.Equal(DeleteOutcome.Deleted, result.Outcome);
+        Assert.Null(await FindAsync(id));
+    }
+
+    [Theory]
+    [InlineData(DocumentState.Received)]
+    [InlineData(DocumentState.Processing)]
+    public async Task Delete_RecentlyUploadedAndProcessing_Processing_NothingChanged(DocumentState state)
+    {
+        var id = await SeedAsync(state, uploadedAt: DateTimeOffset.UtcNow.AddMinutes(-5));
+
+        var result = await DeleteAsync(id, "Too early");
+
+        Assert.Equal(DeleteOutcome.Processing, result.Outcome);
+        await AssertUntouchedAsync(id, state);
+    }
+
+    [Fact]
+    public async Task Delete_Filed_Filed_NothingChanged()
+    {
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV1");
+
+        var result = await DeleteAsync(id, "Wrong invoice");
+
+        Assert.Equal(DeleteOutcome.Filed, result.Outcome);
+        await AssertUntouchedAsync(id, DocumentState.Filed);
+    }
+
+    [Fact]
+    public async Task Delete_AttachedInAcumatica_Attached_NothingChanged()
+    {
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV1", acumaticaAttachedAt: DateTimeOffset.UtcNow.AddHours(-1));
+
+        var result = await DeleteAsync(id, "Wrong invoice");
+
+        Assert.Equal(DeleteOutcome.Attached, result.Outcome);
+        await AssertUntouchedAsync(id, DocumentState.Filed);
+    }
+
+    [Fact]
+    public async Task Delete_Unknown_NotFound()
+    {
+        var result = await DeleteAsync(Guid.NewGuid(), "Gone");
+
+        Assert.Equal(DeleteOutcome.NotFound, result.Outcome);
+        Assert.Empty(_store.Deleted);
+    }
+
+    [Fact]
+    public async Task Delete_RowFiledBetweenTheReadAndTheDelete_Filed_RowIntact()
+    {
+        var id = await SeedAsync(DocumentState.NeedsReview);
+        var race = new BeforeDeleteInterceptor(async () =>
+        {
+            // The worker or another person files the document while this request runs.
+            await using var other = CreateDbContext();
+            await other.CapturedDocuments.Where(item => item.Id == id).ExecuteUpdateAsync(setters => setters
+                .SetProperty(item => item.State, DocumentState.Filed)
+                .SetProperty(item => item.MatchedReference, "INV777"));
+        });
+
+        DeleteResult result;
+        await using (var db = CreateDbContext(race))
+        {
+            result = await CreateService(db, AcumaticaAttachMode.Shadow).DeleteAsync(id, "Duplicate", User, default);
+        }
+
+        Assert.True(race.Fired);
+        Assert.Equal(DeleteOutcome.Filed, result.Outcome);
+        var row = await LoadAsync(id);
+        Assert.Equal(DocumentState.Filed, row.State);
+        Assert.Equal("INV777", row.MatchedReference);
+        Assert.True(_store.Blobs.ContainsKey(row.BlobPath));
+        Assert.Empty(_store.Deleted);
+        await using var check = CreateDbContext();
+        Assert.Empty(await check.AuditEvents.AsNoTracking().Where(audit => audit.EntityType == "CapturedDocument").ToListAsync());
+    }
+
+    [Fact]
+    public async Task Delete_BlobDeleteFails_DeletedWithWarning_RowGone_AuditKept()
+    {
+        var id = await SeedAsync(DocumentState.NeedsReview);
+        _store.DeleteFails = true;
+
+        var result = await DeleteAsync(id, "Duplicate");
+
+        Assert.Equal(DeleteOutcome.Deleted, result.Outcome);
+        Assert.True(result.BlobDeleteFailed);
+        Assert.Null(await FindAsync(id));
+        await using var check = CreateDbContext();
+        Assert.Single(await check.AuditEvents.AsNoTracking().Where(audit => audit.EntityType == "CapturedDocument").ToListAsync());
+    }
+
+    [Fact]
+    public async Task Process_AfterDelete_CompletesQuietly()
+    {
+        var id = await SeedAsync(DocumentState.Failed);
+        Assert.Equal(DeleteOutcome.Deleted, (await DeleteAsync(id, "Duplicate")).Outcome);
+
+        await using (var db = CreateDbContext())
+        {
+            // A later document.received.v1 for the deleted document: nothing to claim, no throw.
+            await CreateProcessor(db, AcumaticaAttachMode.Write).ProcessAsync(id, default);
+        }
+
+        Assert.Null(await FindAsync(id));
+        Assert.Empty(_acumatica.AttachAttempts);
+    }
+
+    private async Task<DeleteResult> DeleteAsync(Guid id, string reason)
+    {
+        await using var db = CreateDbContext();
+        return await CreateService(db, AcumaticaAttachMode.Shadow).DeleteAsync(id, reason, User, default);
+    }
+
+    private async Task AssertUntouchedAsync(Guid id, DocumentState state)
+    {
+        var row = await LoadAsync(id);
+        Assert.Equal(state, row.State);
+        Assert.True(_store.Blobs.ContainsKey(row.BlobPath));
+        Assert.Empty(_store.Deleted);
+        await using var check = CreateDbContext();
+        Assert.Empty(await check.AuditEvents.AsNoTracking().Where(audit => audit.EntityType == "CapturedDocument").ToListAsync());
+    }
+
+    private async Task<CapturedDocumentEntity?> FindAsync(Guid id)
+    {
+        await using var db = CreateDbContext();
+        return await db.CapturedDocuments.AsNoTracking().SingleOrDefaultAsync(document => document.Id == id);
+    }
+
+    private async Task<Guid> SeedDeviceAsync(string name)
+    {
+        var id = Guid.NewGuid();
+        await using var db = CreateDbContext();
+        db.ScannerDevices.Add(new ScannerDeviceEntity
+        {
+            Id = id,
+            Name = name,
+            CreatedBy = User,
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
+        return id;
+    }
+
     private async Task<ProcessAgainOutcome> ProcessAgainAsync(Guid id)
     {
         await using var db = CreateDbContext();
@@ -453,7 +661,7 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
     }
 
     private DocumentReviewService CreateService(PvmDbContext db, AcumaticaAttachMode mode)
-        => new(db, _acumatica, CreateProcessor(db, mode), new IntegrationCommandQueue(db), NullLogger<DocumentReviewService>.Instance);
+        => new(db, _acumatica, CreateProcessor(db, mode), new IntegrationCommandQueue(db), _store, NullLogger<DocumentReviewService>.Instance);
 
     private DocumentProcessor CreateProcessor(PvmDbContext db, AcumaticaAttachMode mode)
         => new(
@@ -473,7 +681,10 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
         string? matchedReference = null,
         string? reviewNote = null,
         DateTimeOffset? uploadedAt = null,
-        string? extractionJson = null)
+        string? extractionJson = null,
+        DateTimeOffset? acumaticaAttachedAt = null,
+        Guid? scannerDeviceId = null,
+        string? scannerStaffName = null)
     {
         var id = Guid.NewGuid();
         var at = uploadedAt ?? DateTimeOffset.UtcNow;
@@ -494,6 +705,9 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
             MatchedReference = matchedReference,
             ReviewNote = reviewNote,
             ExtractionJson = extractionJson,
+            AcumaticaAttachedAt = acumaticaAttachedAt,
+            ScannerDeviceId = scannerDeviceId,
+            ScannerStaffName = scannerStaffName,
             UploadedBy = "driver@pvm.co.za",
             UploadedAt = at,
             UpdatedAt = at,
@@ -508,12 +722,37 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
         return await db.CapturedDocuments.AsNoTracking().SingleAsync(document => document.Id == id);
     }
 
-    private PvmDbContext CreateDbContext()
+    private PvmDbContext CreateDbContext(IInterceptor? interceptor = null)
     {
-        var options = new DbContextOptionsBuilder<PvmDbContext>()
-            .UseNpgsql(_postgres.GetConnectionString())
-            .Options;
-        return new PvmDbContext(options);
+        var builder = new DbContextOptionsBuilder<PvmDbContext>()
+            .UseNpgsql(_postgres.GetConnectionString());
+        if (interceptor is not null)
+        {
+            builder.AddInterceptors(interceptor);
+        }
+
+        return new PvmDbContext(builder.Options);
+    }
+
+    /// <summary>Runs the race once, just before the first DELETE statement goes to the database.</summary>
+    private sealed class BeforeDeleteInterceptor(Func<Task> race) : DbCommandInterceptor
+    {
+        public bool Fired { get; private set; }
+
+        public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!Fired && command.CommandText.TrimStart().StartsWith("DELETE", StringComparison.OrdinalIgnoreCase))
+            {
+                Fired = true;
+                await race();
+            }
+
+            return result;
+        }
     }
 
     private sealed class UnusedExtractor : IDocumentExtractor
@@ -577,6 +816,22 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
     private sealed class FakeStore : IDocumentStore
     {
         public Dictionary<string, byte[]> Blobs { get; } = new(StringComparer.Ordinal);
+
+        public List<string> Deleted { get; } = [];
+
+        public bool DeleteFails { get; set; }
+
+        public Task DeleteAsync(string blobPath, CancellationToken cancellationToken)
+        {
+            if (DeleteFails)
+            {
+                throw new IOException("Storage refused the delete.");
+            }
+
+            Deleted.Add(blobPath);
+            Blobs.Remove(blobPath);
+            return Task.CompletedTask;
+        }
 
         public Task<StoredDocument> SaveAsync(string blobPath, Stream pdf, CancellationToken cancellationToken)
             => throw new NotSupportedException();

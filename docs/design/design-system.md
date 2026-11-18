@@ -42,7 +42,7 @@ Rules that apply to every screen:
   - Status: [StatusBadge](#statusbadge), [Notice](#notice), [Spinner](#spinner), [EmptyState](#emptystate).
   - Forms: [Fields](#fields), [FileDrop](#filedrop).
   - Lists: [DataTable](#datatable), [FilterChips](#filterchips), [FilterBar](#filterbar), [Pagination](#pagination).
-  - Navigation: [TabNav and Tabs](#tabs), [BackLink](#backlink), [Stepper](#stepper).
+  - Navigation: [TabNav and Tabs](#tabs), [BackLink](#backlink), [RecordNav](#recordnav), [Stepper](#stepper).
   - Records: [KeyValueList](#keyvaluelist), [Timeline](#timeline).
   - Dashboards: [AttentionList](#attentionlist), [StatTile](#stattile), [Tile](#tile), [BarList](#barlist).
   - Automation: [ModeSwitch](#modeswitch).
@@ -185,13 +185,14 @@ example data are at `/ui-kit/templates` in development.
 | Dashboard | Today and each module overview | `DashboardPage` | Wide, 1280px |
 | List | Records with filters, sorting and pages | `ListPage` | Wide |
 | Record | One invoice, statement, run or automation | `RecordPage` | Wide |
+| Record, built around a file | One scanned document, where the PDF is the content | `ViewerPage` | Full |
 | Task | A guided job that writes to another system | `TaskPage` | Narrow, 864px |
 | Settings | Forms, saved one section at a time | `SettingsPage` and `SettingsSection` | Narrow |
 
 To choose a template:
 
 - If the page shows many records, use List.
-- If the page shows one record, use Record.
+- If the page shows one record, use Record. If that record is a file the user reads, such as a scanned document, use its `ViewerPage` form.
 - If the user changes data in Acumatica, Shoprite, a bank or the web store, use Task.
 - If the user changes how the backoffice behaves, use Settings.
 - If the page summarises a module, use Dashboard.
@@ -253,6 +254,28 @@ side (one column on a phone), then `sections` (a `TabNav`), then `children`.
 - `sections`: Details and Raw. Raw (payloads) is for Admin only.
 - `back` is optional only for a record that has no list yet, such as the
   Shoprite automation policy until step C2.
+
+### ViewerPage
+
+The Record page for a record that is a file, such as a scanned delivery
+document (`/documents/{id}`). The file is the content.
+
+Order: a top bar (the `back` link, the header, then `nav`), then the file
+(`viewer`) at about two thirds of the width and the full height of the screen
+below the bar, and a narrow side panel (`children`, at least 400px) on the right
+that scrolls on its own. On a phone (900px and below) the file comes first and
+the panel under it; the top bar stays at the top while the page scrolls.
+
+- `back`: the list the record was opened from, such as "Back to the review
+  list". With no list (a direct link), the record's main list.
+- `nav`: a `RecordNav` when the record was opened from a list. Leave it out
+  otherwise.
+- `header`: `eyebrow`, `title`, `status` (the `StatusBadge`) and the one-line
+  `description`. The bar keeps them small: the file is the content.
+- `viewer`: a `PdfFrame` with `size="fill"`.
+- `children`, top to bottom: the result notices, the notice that says why the
+  record needs a person, the actions, then the panels (for a document: possible
+  invoices and the invoice search, what was read, Summary, Activity).
 
 ### TaskPage
 
@@ -353,7 +376,8 @@ error to the user. The server logs it.
 ### PageFrame
 
 The `<main>` element of a converted page. It sets the width (`wide`, 1280px,
-or `narrow`, 864px), the page padding and `data-ds`. The space between its
+`narrow`, 864px, or `full`, the whole width with less padding, for
+`ViewerPage`), the page padding and `data-ds`. The space between its
 children is `--space-l`. The templates use it. A page uses it directly only
 when the page is not one of the five templates, such as `/ui-kit`.
 
@@ -491,10 +515,15 @@ A PDF in the page, shown by the browser's own viewer, with the link "Open the
 PDF in a new tab" under it for a phone or a browser that does not show PDFs
 inline. It is 720px high (at most 80 % of the screen), 480px on a phone.
 
+With `size="fill"` it is as high as its container and opens at page width
+without the page thumbnails (`#navpanes=0&view=FitH`, which Chrome and Edge
+read). `ViewerPage` uses it; on a phone it is 75 % of the screen high.
+
 | Prop | Notes |
 | --- | --- |
 | `src` | A workbench URL that serves the PDF, such as `/documents/{id}/file`. Never a backend URL: the workbench route calls the API with the user's token on the server |
 | `title` | Names the document for screen readers: "Proof of delivery uploaded 17 Nov, 09:12" |
+| `size` | `default` (720px) or `fill` (the container's height, at page width) |
 
 Put it in a `Panel` in a `Columns`, next to the panel with the fields read from
 it, so the user can compare them.
@@ -714,7 +743,27 @@ Labels are short nouns. At most 6 tabs.
 ### BackLink
 
 The link from a Record or Task page up to its list. The label names the list:
-"Shoprite invoices". Never "Back". It goes above the `PageHeader`.
+"Shoprite invoices". Never "Back" alone. It goes above the `PageHeader`. On a
+`ViewerPage`, where one record can be opened from more than one list, the
+label is "Back to" plus the list it returns to: "Back to the review list",
+"Back to Documents".
+
+### RecordNav
+
+Previous, the position ("3 of 12") and Next, for a record opened from a list.
+It walks the same list, with its filters: the list travels in the URL, never in
+browser storage. On the first record Previous is disabled; on the last, Next.
+On a phone the buttons show only their arrows and keep their names for screen
+readers.
+
+J or → opens the next record and K or ← the previous one, unless a field, an
+editable area or an open dialog has the keys, or a modifier key is held.
+
+| Prop | Notes |
+| --- | --- |
+| `previousHref`, `nextHref` | The neighbours, with the list context. Leave one out to disable its button |
+| `position` | "3 of 12" (`positionText` in `src/document-list.ts`) |
+| `noun` | Names the records for screen readers: "document" gives "Previous document" |
 
 ### Stepper
 

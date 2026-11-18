@@ -1,8 +1,10 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Pvm.Application.Documents;
 using Pvm.Application.Messaging;
 using Pvm.Infrastructure.Persistence;
+using Pvm.Infrastructure.Persistence.Entities;
 
 namespace Pvm.Infrastructure.Documents;
 
@@ -50,6 +52,24 @@ public enum ProcessAgainOutcome
     NotRetryable,
 }
 
+public enum DeleteOutcome
+{
+    Deleted,
+    NotFound,
+
+    /// <summary>The document is Filed; send it back to review first.</summary>
+    Filed,
+
+    /// <summary>The PDF already reached Acumatica.</summary>
+    Attached,
+
+    /// <summary>Received or Processing, uploaded less than <see cref="DocumentReviewService.StuckAfter"/> ago.</summary>
+    Processing,
+}
+
+/// <param name="BlobDeleteFailed">The row is gone but the PDF could not be removed from storage; it is logged with its path.</param>
+public sealed record DeleteResult(DeleteOutcome Outcome, bool BlobDeleteFailed = false);
+
 /// <summary>
 /// A person's resolution of a document on the review list (design 6.8): file it to an invoice
 /// that an exact Acumatica lookup confirms, or reject it with a note. Both writes are conditional on
@@ -60,12 +80,17 @@ public sealed class DocumentReviewService(
     IAcumaticaDocumentClient acumatica,
     DocumentProcessor processor,
     IIntegrationCommandQueue commandQueue,
+    IDocumentStore documentStore,
     ILogger<DocumentReviewService> logger)
 {
+    private static readonly JsonSerializerOptions AuditJsonOptions = new(JsonSerializerDefaults.Web);
+
     /// <summary>A document still Received or Processing this long after the upload shows on the review list as stuck.</summary>
     public static readonly TimeSpan StuckAfter = TimeSpan.FromMinutes(30);
 
     public const int MaxNoteLength = 1000;
+
+    public const int MaxDeleteReasonLength = 500;
 
     public static string MatchedByUser(string email) => $"user:{email}";
 
@@ -332,6 +357,163 @@ public sealed class DocumentReviewService(
             messageId,
             user);
         return ProcessAgainOutcome.Queued;
+    }
+
+    /// <summary>
+    /// The delete rule (design 6.11), for one row as it is: <see cref="DeleteOutcome.Deleted"/> means
+    /// a delete is allowed. Only an unfiled document whose PDF is not in Acumatica can go: NeedsReview,
+    /// Failed, or Received/Processing once it is stuck. The detail endpoint shows it as <c>canDelete</c>.
+    /// </summary>
+    public static DeleteOutcome DeleteCheck(
+        DocumentState state,
+        DateTimeOffset? acumaticaAttachedAt,
+        DateTimeOffset uploadedAt,
+        DateTimeOffset stuckBefore)
+    {
+        if (acumaticaAttachedAt is not null)
+        {
+            return DeleteOutcome.Attached;
+        }
+
+        return state switch
+        {
+            DocumentState.NeedsReview or DocumentState.Failed => DeleteOutcome.Deleted,
+            DocumentState.Received or DocumentState.Processing => uploadedAt < stuckBefore ? DeleteOutcome.Deleted : DeleteOutcome.Processing,
+            _ => DeleteOutcome.Filed,
+        };
+    }
+
+    /// <summary>
+    /// Removes an unfiled document for good (design 6.11): a conditional DELETE of the row and an
+    /// audit event in one transaction, then the PDF. The DELETE repeats the rule in its WHERE, so a
+    /// row that the worker or another person filed meanwhile is never deleted. If the PDF cannot be
+    /// removed after the row is gone, the delete stands and the result says so; the path is logged.
+    /// A later processing message for the document finds no row and completes quietly. A phone that
+    /// uploads the same clientDocumentId again after the delete creates a new document; that is
+    /// accepted, because the person chose to remove the old one.
+    /// </summary>
+    public async Task<DeleteResult> DeleteAsync(
+        Guid documentId,
+        string reason,
+        string user,
+        CancellationToken cancellationToken)
+    {
+        var stuckBefore = DateTimeOffset.UtcNow - StuckAfter;
+        var document = await dbContext.CapturedDocuments
+            .AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == documentId, cancellationToken);
+        if (document is null)
+        {
+            return new DeleteResult(DeleteOutcome.NotFound);
+        }
+
+        var check = DeleteCheck(document.State, document.AcumaticaAttachedAt, document.UploadedAt, stuckBefore);
+        if (check is not DeleteOutcome.Deleted)
+        {
+            return new DeleteResult(check);
+        }
+
+        var deviceName = document.ScannerDeviceId is { } deviceId
+            ? await dbContext.ScannerDevices
+                .AsNoTracking()
+                .Where(device => device.Id == deviceId)
+                .Select(device => device.Name)
+                .SingleOrDefaultAsync(cancellationToken)
+            : null;
+
+        var now = DateTimeOffset.UtcNow;
+        await using (var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken))
+        {
+            var deleted = await dbContext.CapturedDocuments
+                .Where(item => item.Id == documentId
+                    && item.AcumaticaAttachedAt == null
+                    && (item.State == DocumentState.NeedsReview
+                        || item.State == DocumentState.Failed
+                        || ((item.State == DocumentState.Received || item.State == DocumentState.Processing)
+                            && item.UploadedAt < stuckBefore)))
+                .ExecuteDeleteAsync(cancellationToken);
+            if (deleted == 0)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                var outcome = await CurrentDeleteCheckAsync(documentId, stuckBefore, cancellationToken);
+                logger.LogWarning(
+                    "document.delete.superseded DocumentId={DocumentId} Outcome={Outcome}",
+                    documentId,
+                    outcome);
+                // The row changed and changed back between the two reads: treat it as still busy.
+                return new DeleteResult(outcome is DeleteOutcome.Deleted ? DeleteOutcome.Processing : outcome);
+            }
+
+            dbContext.AuditEvents.Add(new AuditEventEntity
+            {
+                Id = Guid.NewGuid(),
+                EntityType = "CapturedDocument",
+                EntityId = documentId.ToString("D"),
+                Action = "document-deleted",
+                Actor = user,
+                DetailsJson = JsonSerializer.Serialize(
+                    new
+                    {
+                        documentId,
+                        reason,
+                        deletedBy = user,
+                        deletedAt = now,
+                        documentType = document.DocumentType,
+                        state = document.State.ToString(),
+                        uploadedBy = document.UploadedBy,
+                        uploadedAt = document.UploadedAt,
+                        scannerDeviceId = document.ScannerDeviceId,
+                        scannerDeviceName = deviceName,
+                        scannerStaffId = document.ScannerStaffId,
+                        scannerStaffName = document.ScannerStaffName,
+                        clientDocumentId = document.ClientDocumentId,
+                        sha256 = document.Sha256,
+                        blobPath = document.BlobPath,
+                    },
+                    AuditJsonOptions),
+                CreatedAt = now,
+            });
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        logger.LogInformation(
+            "document.deleted DocumentId={DocumentId} State={State} DeletedBy={DeletedBy}",
+            documentId,
+            document.State,
+            user);
+
+        try
+        {
+            await documentStore.DeleteAsync(document.BlobPath, CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            // The row and its audit event are gone for good; the PDF is left behind. Never roll back.
+            logger.LogError(
+                exception,
+                "document.delete.blob-failed DocumentId={DocumentId} BlobPath={BlobPath}",
+                documentId,
+                document.BlobPath);
+            return new DeleteResult(DeleteOutcome.Deleted, BlobDeleteFailed: true);
+        }
+
+        return new DeleteResult(DeleteOutcome.Deleted);
+    }
+
+    private async Task<DeleteOutcome> CurrentDeleteCheckAsync(
+        Guid documentId,
+        DateTimeOffset stuckBefore,
+        CancellationToken cancellationToken)
+    {
+        var current = await dbContext.CapturedDocuments
+            .AsNoTracking()
+            .Where(item => item.Id == documentId)
+            .Select(item => new { item.State, item.AcumaticaAttachedAt, item.UploadedAt })
+            .SingleOrDefaultAsync(cancellationToken);
+        return current is null
+            ? DeleteOutcome.NotFound
+            : DeleteCheck(current.State, current.AcumaticaAttachedAt, current.UploadedAt, stuckBefore);
     }
 
     private static bool IsRetryable(DocumentState state, DateTimeOffset uploadedAt, DateTimeOffset stuckBefore)

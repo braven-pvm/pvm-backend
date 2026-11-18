@@ -513,6 +513,168 @@ public sealed class DocumentReviewEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData(DocumentState.NeedsReview, 60, false, true)]
+    [InlineData(DocumentState.Failed, 60, false, true)]
+    [InlineData(DocumentState.Received, 31, false, true)]
+    [InlineData(DocumentState.Processing, 31, false, true)]
+    [InlineData(DocumentState.Received, 5, false, false)]
+    [InlineData(DocumentState.Processing, 5, false, false)]
+    [InlineData(DocumentState.Filed, 60, false, false)]
+    [InlineData(DocumentState.Filed, 60, true, false)]
+    public async Task Detail_CanDelete_FollowsTheDeleteRule(DocumentState state, int minutesOld, bool attached, bool expected)
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(
+            state,
+            uploadedAt: DateTimeOffset.UtcNow.AddMinutes(-minutesOld),
+            matchedReference: state == DocumentState.Filed ? "INV1" : null,
+            acumaticaAttachedAt: attached ? DateTimeOffset.UtcNow.AddMinutes(-10) : null);
+
+        var response = await client.SendAsync(Get($"/api/documents/{id:D}", AppRoles.Viewer));
+
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(expected, body.GetProperty("canDelete").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Delete_BlankReason_Returns400(string reason)
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.NeedsReview);
+
+        var response = await client.SendAsync(Delete(id, reason));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(DocumentState.NeedsReview, (await LoadAsync(id)).State);
+    }
+
+    [Fact]
+    public async Task Delete_NoBody_Returns400()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.NeedsReview);
+
+        var response = await client.SendAsync(new HttpRequestMessage(HttpMethod.Post, $"/api/documents/{id:D}/delete")
+        {
+            Content = JsonContent.Create(new { }),
+            Headers = { { TestAuthHandler.RoleHeader, AppRoles.Operator } }
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_ReasonOver500_Returns400()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.NeedsReview);
+
+        var response = await client.SendAsync(Delete(id, new string('x', 501)));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_Viewer_Returns403()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.NeedsReview);
+
+        var response = await client.SendAsync(Delete(id, "Duplicate", AppRoles.Viewer));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(DocumentState.NeedsReview, (await LoadAsync(id)).State);
+    }
+
+    [Fact]
+    public async Task Delete_Anonymous_Returns401()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.NeedsReview);
+
+        var response = await client.PostAsJsonAsync($"/api/documents/{id:D}/delete", new { reason = "Duplicate" });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_UnknownDocument_Returns404()
+    {
+        var client = await StartAsync();
+
+        var response = await client.SendAsync(Delete(Guid.NewGuid(), "Duplicate"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_UserNotResolved_Returns500_AndDeletesNothing()
+    {
+        var client = await StartAsync(resolveUser: false);
+        var id = await SeedAsync(DocumentState.NeedsReview);
+
+        var response = await client.SendAsync(Delete(id, "Duplicate"));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(DocumentState.NeedsReview, (await LoadAsync(id)).State);
+    }
+
+    [Fact]
+    public async Task Delete_Filed_Returns409_DocumentFiled()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV1");
+
+        var response = await client.SendAsync(Delete(id, "Duplicate"));
+
+        await AssertConflictAsync(response, "document-filed", "Send it back to review first.");
+        Assert.Equal(DocumentState.Filed, (await LoadAsync(id)).State);
+    }
+
+    [Fact]
+    public async Task Delete_AttachedInAcumatica_Returns409_DocumentAttached()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV1", acumaticaAttachedAt: DateTimeOffset.UtcNow.AddHours(-1));
+
+        var response = await client.SendAsync(Delete(id, "Duplicate"));
+
+        await AssertConflictAsync(response, "document-attached", "Acumatica");
+        Assert.Equal(DocumentState.Filed, (await LoadAsync(id)).State);
+    }
+
+    [Theory]
+    [InlineData(DocumentState.Received)]
+    [InlineData(DocumentState.Processing)]
+    public async Task Delete_RecentlyUploaded_Returns409_DocumentProcessing(DocumentState state)
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(state, uploadedAt: DateTimeOffset.UtcNow.AddMinutes(-5));
+
+        var response = await client.SendAsync(Delete(id, "Duplicate"));
+
+        await AssertConflictAsync(response, "document-processing", "Wait until processing ends.");
+        Assert.Equal(state, (await LoadAsync(id)).State);
+    }
+
+    private static async Task AssertConflictAsync(HttpResponseMessage response, string code, string detailContains)
+    {
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(code, problem.GetProperty("code").GetString());
+        Assert.Contains(detailContains, problem.GetProperty("detail").GetString());
+    }
+
+    private static HttpRequestMessage Delete(Guid id, string reason, string role = AppRoles.Operator)
+        => new(HttpMethod.Post, $"/api/documents/{id:D}/delete")
+        {
+            Content = JsonContent.Create(new { reason }),
+            Headers = { { TestAuthHandler.RoleHeader, role } }
+        };
+
     private static InvoiceCandidate Invoice(string reference)
         => new(reference, new DateOnly(2026, 11, 1), "C001", "Acme Stores (Pty) Ltd", null, null, "Open");
 

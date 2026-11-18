@@ -51,6 +51,17 @@ public sealed class FileSystemDocumentStore(
     public Task<Stream> OpenReadAsync(string blobPath, CancellationToken cancellationToken)
         => Task.FromResult<Stream>(File.OpenRead(ResolvePath(blobPath)));
 
+    public Task DeleteAsync(string blobPath, CancellationToken cancellationToken)
+    {
+        var path = ResolvePath(blobPath);
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+
+        return Task.CompletedTask;
+    }
+
     private string ResolvePath(string blobPath)
     {
         var relativePath = DocumentStorePath.WithinContainer(blobPath, containerName);

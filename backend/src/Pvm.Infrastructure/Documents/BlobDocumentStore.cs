@@ -50,4 +50,9 @@ public sealed class BlobDocumentStore(
         => await container
             .GetBlobClient(DocumentStorePath.WithinContainer(blobPath, containerName))
             .OpenReadAsync(cancellationToken: cancellationToken);
+
+    public async Task DeleteAsync(string blobPath, CancellationToken cancellationToken)
+        => await container
+            .GetBlobClient(DocumentStorePath.WithinContainer(blobPath, containerName))
+            .DeleteIfExistsAsync(DeleteSnapshotsOption.IncludeSnapshots, cancellationToken: cancellationToken);
 }

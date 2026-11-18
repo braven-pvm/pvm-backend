@@ -92,6 +92,8 @@ export type DocumentDetail = {
   candidates: InvoiceCandidate[];
   /** The backend's Acumatica attach mode: "Shadow" or "Write". Read-only. */
   acumaticaAttachMode?: string;
+  /** The backend's delete rule for this document as it is now (design 6.11). Missing means no. */
+  canDelete?: boolean;
 };
 
 export type DocumentType = { code: string; displayName: string };
@@ -194,6 +196,31 @@ export function returnDocumentToReview(id: string, note: string): Promise<ApiRes
 
 export function processDocumentAgain(id: string): Promise<ApiResult<unknown>> {
   return postJson(`/api/documents/${encodeURIComponent(id)}/process-again`, {});
+}
+
+export type DeleteDocumentResult =
+  | { ok: true; warning: string | null }
+  | { ok: false; status: number; code: string | null };
+
+/** Deletes an unfiled document and its PDF for good. A 409 carries a stable `code`. */
+export async function deleteDocument(id: string, reason: string): Promise<DeleteDocumentResult> {
+  const headers = await getApiAuthHeaders();
+  const response = await timedFetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(id)}/delete`, {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+    cache: "no-store",
+  });
+  let body: { code?: unknown; warning?: unknown } | null = null;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+  if (!response.ok) {
+    return { ok: false, status: response.status, code: typeof body?.code === "string" ? body.code : null };
+  }
+  return { ok: true, warning: typeof body?.warning === "string" ? body.warning : null };
 }
 
 /** The PDF, as the backend streams it. For the workbench's own file route only. */
