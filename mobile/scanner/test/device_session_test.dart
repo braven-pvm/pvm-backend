@@ -255,6 +255,7 @@ void main() {
     expect(store.credentials, isNull);
     expect(subject.phase, SessionPhase.needsSetup);
     expect(subject.setupMessage, DeviceSession.removedMessage);
+    await subject.close();
   });
 
   test('reset_deletes_the_key_only_and_shows_setup_without_a_message', () async {
@@ -272,6 +273,39 @@ void main() {
     expect(subject.setupMessage, isNull);
     expect(queueFile().single['clientDocumentId'], queued.clientDocumentId);
     expect(File('${queueDirectory.path}/pdfs/${queued.clientDocumentId}.pdf').existsSync(), isTrue);
+    await subject.close();
+  });
+
+  test('after_a_revoke_or_reset_the_held_queue_still_takes_a_scan_and_sends_nothing', () async {
+    for (final revoke in [true, false]) {
+      clients.clear();
+      store.credentials = enrolled;
+      nextConfig = revoke ? const DeviceRevokedException() : config;
+      nextOutcomes = () => [const UploadAccepted(documentId: 'd', state: 'Received')];
+      final subject = session(FakeEnroller(const EnrolSucceeded(deviceKey: 'pvmd_new', deviceName: 'x')));
+      await subject.start();
+      final held = subject.queue!;
+
+      if (revoke) {
+        await subject.refreshConfig();
+      } else {
+        await subject.reset();
+      }
+      final late = await held.enqueue(scannedPdf('late-$revoke.pdf'), 'POD', 1, staffId: 's-1');
+      await held.whenIdle;
+
+      expect(subject.phase, SessionPhase.needsSetup, reason: 'revoke: $revoke');
+      expect(clients.single.uploads, isEmpty, reason: 'revoke: $revoke');
+      expect(queueFile().map((item) => item['clientDocumentId']), contains(late.clientDocumentId));
+
+      // The next enrolment closes the held queue and sends the scan with the new key.
+      await subject.enrol(SetupCode(api: Uri.parse('https://api.example.test'), code: 'c'));
+      await subject.queue!.whenIdle;
+      expect(clients.last.uploads.map((upload) => upload.clientDocumentId), contains(late.clientDocumentId));
+      expect(clients.last.uploads.single.staffId, 's-1');
+      await subject.close();
+      queueDirectory.deleteSync(recursive: true);
+    }
   });
 
   test('offline_at_start_the_last_config_is_used', () async {

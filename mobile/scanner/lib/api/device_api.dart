@@ -141,6 +141,8 @@ abstract interface class Enroller {
   Future<EnrolOutcome> enrol(SetupCode code);
 }
 
+// Every device request sets followRedirects = false: a redirect would carry the device key (or
+// the setup code) to another address. A 3xx is then an ordinary failed status.
 Uri _endpoint(Uri baseUri, String path) {
   final basePath = baseUri.path.endsWith('/') ? baseUri.path : '${baseUri.path}/';
   return baseUri.replace(path: '$basePath$path');
@@ -177,13 +179,11 @@ class DeviceEnrolClient implements Enroller {
   Future<EnrolOutcome> enrol(SetupCode code) async {
     final http.Response response;
     try {
-      response = await _client
-          .post(
-            _endpoint(code.api, 'api/device/enrol'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'code': code.code}),
-          )
-          .timeout(timeout);
+      final request = http.Request('POST', _endpoint(code.api, 'api/device/enrol'))
+        ..followRedirects = false
+        ..headers['Content-Type'] = 'application/json'
+        ..body = jsonEncode({'code': code.code});
+      response = await http.Response.fromStream(await _client.send(request).timeout(timeout)).timeout(timeout);
     } on Exception {
       return const EnrolRefused(EnrolMessages.noConnection);
     }
@@ -233,9 +233,10 @@ class DeviceApi implements DeviceClient {
   Future<DeviceConfig> config() async {
     final http.Response response;
     try {
-      response = await _client
-          .get(_endpoint(baseUri, 'api/device/config'), headers: {'Authorization': _authorization})
-          .timeout(timeout);
+      final request = http.Request('GET', _endpoint(baseUri, 'api/device/config'))
+        ..followRedirects = false
+        ..headers['Authorization'] = _authorization;
+      response = await http.Response.fromStream(await _client.send(request).timeout(timeout)).timeout(timeout);
     } on Exception catch (error) {
       throw DeviceApiException('The settings could not be loaded: ${_describe(error)}');
     }
@@ -277,6 +278,7 @@ class DeviceApi implements DeviceClient {
     String? staffId,
   ) async {
     final request = http.MultipartRequest('POST', _endpoint(baseUri, 'api/device/documents'))
+      ..followRedirects = false
       ..headers['Authorization'] = _authorization
       ..fields['clientDocumentId'] = clientDocumentId
       ..fields['documentType'] = documentType

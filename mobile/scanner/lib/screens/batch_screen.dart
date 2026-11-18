@@ -154,12 +154,18 @@ class _BatchScreenState extends State<BatchScreen> {
       if (!await _ensureStaff()) {
         return;
       }
-      while (mounted) {
+      // The queue of this screen. On a revoke or reset the session holds it but keeps it open, so a
+      // scan that ends after this screen is gone is still saved, with the type and name it was
+      // taken under; it uploads after the next enrolment.
+      final queue = widget.queue;
+      while (mounted && widget.session.phase == SessionPhase.ready) {
+        final typeCode = _typeCode;
+        final staffId = _staff?.id;
         final document = await widget.scanner.scan();
         if (document == null) {
           break;
         }
-        await widget.queue.enqueue(document.pdf, _typeCode, document.pageCount, staffId: _staff?.id);
+        await queue.enqueue(document.pdf, typeCode, document.pageCount, staffId: staffId);
       }
     } on ScannerException catch (error) {
       await _showMessage('The scanner did not work', error.message);

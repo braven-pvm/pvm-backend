@@ -43,7 +43,9 @@ class DeviceSession extends ChangeNotifier {
   DeviceClient? _client;
   UploadQueue? _queue;
   DeviceConfig? _config;
-  Future<void> _closing = Future<void>.value();
+
+  /// The queue of a revoked or reset phone: held, but still open for [UploadQueue.enqueue].
+  UploadQueue? _heldQueue;
 
   SessionPhase get phase => _phase;
 
@@ -103,10 +105,10 @@ class DeviceSession extends ChangeNotifier {
   Future<void> reset() async {
     _client = null;
     _credentials = null;
+    _holdQueue(QueueHold.deviceReset);
     await _store.deleteKey();
     _setupMessage = null;
     _set(SessionPhase.needsSetup);
-    await _closeQueue();
   }
 
   /// Loads the config from the server. Offline, the last known config stays. A 401 sends the
@@ -146,11 +148,18 @@ class DeviceSession extends ChangeNotifier {
   /// Stops the queue; for the end of the app or a test.
   Future<void> close() async {
     _client = null;
-    await _closeQueue();
+    final queues = [?_queue, ?_heldQueue];
+    _queue = null;
+    _heldQueue = null;
+    for (final queue in queues) {
+      queue.hold.removeListener(_onHold);
+      await queue.close().catchError((Object _) {});
+    }
   }
 
   Future<void> _open(DeviceCredentials credentials) async {
-    await _closing;
+    // The held queue took scans until now; it saves them before the same folder opens again.
+    await close();
     final client = _clientFor(credentials);
     final queue = await UploadQueue.open(
       directory: await _queueDirectory(),
@@ -179,20 +188,24 @@ class DeviceSession extends ChangeNotifier {
     }
     _client = null;
     _credentials = null;
+    _holdQueue(QueueHold.deviceRevoked);
     await _store.deleteKey();
     _setupMessage = removedMessage;
     _set(SessionPhase.needsSetup);
-    await _closeQueue();
   }
 
-  Future<void> _closeQueue() {
+  /// Stops uploading without closing the queue: a scan that ends now (the camera was open when
+  /// the key went) is still saved into it. The queue closes when the next enrolment opens the
+  /// folder again, or when the app ends.
+  void _holdQueue(QueueHold reason) {
     final queue = _queue;
     _queue = null;
     if (queue == null) {
-      return _closing;
+      return;
     }
     queue.hold.removeListener(_onHold);
-    return _closing = queue.close().catchError((Object _) {});
+    queue.pause(reason);
+    _heldQueue = queue;
   }
 
   void _set(SessionPhase phase) {

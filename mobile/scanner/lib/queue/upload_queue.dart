@@ -97,6 +97,9 @@ enum QueueHold {
   /// The backend answered 401: the device was removed or set up again. The items wait for a
   /// new enrolment.
   deviceRevoked,
+
+  /// "Reset this phone": the key was deleted on purpose. The items wait for a new enrolment.
+  deviceReset,
 }
 
 /// Default retry delay: 5 s, 10 s, 20 s, ... up to 5 minutes.
@@ -349,6 +352,15 @@ class UploadQueue {
   void start() {
     _started = true;
     _kick();
+  }
+
+  /// Holds the queue: nothing new uploads (a running upload finishes and its result is saved),
+  /// a retry wait ends at once. [enqueue] still works, so a scan taken now is kept.
+  void pause(QueueHold reason) {
+    _hold.value = reason;
+    final wake = _wake;
+    _wake = null;
+    wake?.complete();
   }
 
   /// Clears a hold and uploads again.

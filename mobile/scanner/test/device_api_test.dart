@@ -286,6 +286,36 @@ void main() {
     });
   });
 
+  group('redirects', () {
+    http.Response redirect() =>
+        http.Response('', 302, headers: {'location': 'https://elsewhere.example.test/api/device/config'});
+
+    test('no_device_call_follows_a_redirect', () async {
+      final seen = <bool>[];
+      final client = MockClient((request) async {
+        seen.add(request.followRedirects);
+        return redirect();
+      });
+
+      await DeviceEnrolClient(client: client).enrol(SetupCode(api: baseUri, code: 'c'));
+      await expectLater(api(client).config(), throwsA(isA<DeviceApiException>()));
+      await upload(api(client));
+
+      expect(seen, [false, false, false]);
+    });
+
+    test('a_302_is_not_success_for_enrol_config_or_upload', () async {
+      final client = MockClient((_) async => redirect());
+
+      final enrolled = await DeviceEnrolClient(client: client).enrol(SetupCode(api: baseUri, code: 'c'));
+      final uploaded = await upload(api(client));
+
+      expect(enrolled, isA<EnrolRefused>());
+      await expectLater(api(client).config(), throwsA(isA<DeviceApiException>()));
+      expect(uploaded, isA<UploadRetryLater>());
+    });
+  });
+
   test('a_base_address_with_a_path_keeps_the_path', () async {
     Uri? seen;
     final client = MockClient((request) async {

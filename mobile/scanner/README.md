@@ -28,15 +28,20 @@ sections 6.2, 6.9 and 6.10). It is a capture device only: scan, one PDF per pape
 5. At each start the app reads `GET /api/device/config` (device name, document types, active
    staff names) and keeps the last answer in shared preferences for a start without network.
 
-Every device call sends `Authorization: Device <key>`. A **401** from any device call means the
-device was revoked or set up again elsewhere: the app stops the upload loop, deletes the stored
-key, and shows the setup screen with "This phone was removed. Ask an admin for a new setup
-code." The queue file and the PDFs stay; after the next enrolment they upload with the same
-client document IDs.
+Every device call sends `Authorization: Device <key>` and never follows a redirect (a redirect
+would carry the key, or the setup code, to another address; a 3xx counts as a failed call). A
+**401** from any device call means the device was revoked or set up again elsewhere: the app
+holds the upload loop, deletes the stored key, and shows the setup screen with "This phone was
+removed. Ask an admin for a new setup code." The queue file and the PDFs stay; after the next
+enrolment they upload with the same client document IDs.
+
+The held queue stays open until the next enrolment opens it again (or the app ends). A scan that
+was in the camera when the key went is still saved into it, with the type and staff name it was
+taken under; the camera then does not open again.
 
 **Settings** shows the device name, the server address and the app version, and has **Reset this
 phone** ("This phone stops scanning until an admin gives a new setup code. Scans not yet sent
-stay on the phone."), which deletes the key only. Scans not yet sent go to the server of the
+stay on the phone."), which deletes the key only and holds the queue in the same way. Scans not yet sent go to the server of the
 next setup code.
 
 ## Scan flow

@@ -210,6 +210,24 @@ void main() {
     await queue.close();
   });
 
+  test('pause_stops_the_loop_and_a_paused_queue_still_takes_scans', () async {
+    final uploader = FakeUploader([const UploadRetryLater('offline')]);
+    final queue = await openQueue(uploader, onDelay: (queue) => queue.pause(QueueHold.deviceReset));
+
+    final first = await queue.enqueue(scannedPdf('a.pdf'), 'POD', 1);
+    queue.start();
+    await queue.whenIdle;
+    final second = await queue.enqueue(scannedPdf('b.pdf'), 'POD', 2, staffId: 's-1');
+    await queue.whenIdle;
+
+    expect(uploader.calls, hasLength(1));
+    expect(queue.hold.value, QueueHold.deviceReset);
+    expect(queue.current.map((item) => item.clientDocumentId), [first.clientDocumentId, second.clientDocumentId]);
+    expect(queue.current.last.staffId, 's-1');
+    expect(queue.pdfOf(second).existsSync(), isTrue);
+    await queue.close();
+  });
+
   test('the_staff_id_of_the_scan_goes_with_the_upload_also_after_a_restart', () async {
     final first = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
     final queued = await first.enqueue(scannedPdf(), 'POD', 1, staffId: 'staff-7');
