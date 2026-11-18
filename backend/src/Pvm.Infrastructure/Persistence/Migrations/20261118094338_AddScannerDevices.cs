@@ -114,12 +114,10 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                 column: "KeyHash",
                 unique: true);
 
-            migrationBuilder.CreateIndex(
-                name: "IX_scanner_devices_Name",
-                table: "scanner_devices",
-                column: "Name",
-                unique: true,
-                filter: "\"RevokedAt\" IS NULL");
+            // One active device per name, ignoring case. EF cannot model an index on an
+            // expression, so it is SQL here and not in the model snapshot.
+            migrationBuilder.Sql(
+                "CREATE UNIQUE INDEX ux_scanner_devices_active_name_lower ON scanner_devices (lower(\"Name\")) WHERE \"RevokedAt\" IS NULL;");
 
             migrationBuilder.AddForeignKey(
                 name: "FK_captured_documents_scanner_devices_ScannerDeviceId",

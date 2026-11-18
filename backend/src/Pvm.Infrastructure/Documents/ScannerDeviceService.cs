@@ -72,6 +72,7 @@ public sealed class ScannerDeviceService(PvmDbContext dbContext)
             SqlState: PostgresErrorCodes.UniqueViolation
         })
         {
+            // ux_scanner_devices_active_name_lower: a concurrent add of the same name won.
             dbContext.ChangeTracker.Clear();
             return new CreateDeviceResult(CreateDeviceOutcome.NameTaken, null);
         }
@@ -123,7 +124,16 @@ public sealed class ScannerDeviceService(PvmDbContext dbContext)
         }
 
         device.KeyHash = null;
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // A concurrent revoke won; it cleared the key as well.
+            dbContext.ChangeTracker.Clear();
+        }
+
         return RevokeOutcome.Revoked;
     }
 
@@ -161,9 +171,11 @@ public sealed class ScannerDeviceService(PvmDbContext dbContext)
         device.EnrolledAt = now;
         try
         {
-            // UsedAt is a concurrency token: the UPDATE carries "UsedAt" IS NULL, so a second
-            // request with the same code updates no row and fails here, in the same transaction
-            // as the key change.
+            // Conditional updates in one transaction (concurrency tokens): the code's UPDATE
+            // carries "UsedAt" IS NULL and the "ExpiresAt" that was read (later than now), and the
+            // device's UPDATE carries "RevokedAt" IS NULL. A second request with the same code, a
+            // code replaced meanwhile, or a device revoked meanwhile updates no row; everything
+            // rolls back, so no key is written and the code stays unused.
             await dbContext.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
@@ -197,7 +209,16 @@ public sealed class ScannerDeviceService(PvmDbContext dbContext)
         if (device.LastSeenAt is null || now - device.LastSeenAt.Value >= LastSeenInterval)
         {
             device.LastSeenAt = now;
-            await dbContext.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Revoked between the read and the write ("RevokedAt" IS NULL failed).
+                dbContext.ChangeTracker.Clear();
+                return null;
+            }
         }
 
         dbContext.Entry(device).State = EntityState.Detached;

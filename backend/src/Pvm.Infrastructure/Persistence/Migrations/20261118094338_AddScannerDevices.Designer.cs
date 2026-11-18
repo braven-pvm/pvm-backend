@@ -12,7 +12,7 @@ using Pvm.Infrastructure.Persistence;
 namespace Pvm.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(PvmDbContext))]
-    [Migration("20261118093153_AddScannerDevices")]
+    [Migration("20261118094338_AddScannerDevices")]
     partial class AddScannerDevices
     {
         /// <inheritdoc />
@@ -1325,6 +1325,7 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(100)");
 
                     b.Property<DateTimeOffset?>("RevokedAt")
+                        .IsConcurrencyToken()
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("RevokedBy")
@@ -1335,10 +1336,6 @@ namespace Pvm.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("KeyHash")
                         .IsUnique();
-
-                    b.HasIndex("Name")
-                        .IsUnique()
-                        .HasFilter("\"RevokedAt\" IS NULL");
 
                     b.ToTable("scanner_devices", (string)null);
                 });
@@ -1366,6 +1363,7 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("ExpiresAt")
+                        .IsConcurrencyToken()
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTimeOffset?>("UsedAt")

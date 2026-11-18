@@ -585,9 +585,12 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(device => device.CreatedBy).HasMaxLength(320);
             entity.Property(device => device.RevokedBy).HasMaxLength(320);
             entity.HasIndex(device => device.KeyHash).IsUnique();
-            entity.HasIndex(device => device.Name)
-                .IsUnique()
-                .HasFilter("\"RevokedAt\" IS NULL");
+
+            // Enrol writes a key only while the device is not revoked: the UPDATE carries
+            // "RevokedAt" IS NULL. The unique name among devices that are not revoked, ignoring
+            // case, is the expression index ux_scanner_devices_active_name_lower made in the
+            // AddScannerDevices migration (EF cannot model an index on lower("Name")).
+            entity.Property(device => device.RevokedAt).IsConcurrencyToken();
         });
 
         modelBuilder.Entity<ScannerDeviceSetupCodeEntity>(entity =>
@@ -596,7 +599,10 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.HasKey(code => code.Id);
             entity.Property(code => code.CodeHash).HasMaxLength(64);
             entity.Property(code => code.CreatedBy).HasMaxLength(320);
+            // Enrol updates the code only while it is unchanged since the read that found it unused
+            // and unexpired: the UPDATE carries "UsedAt" IS NULL AND "ExpiresAt" = <the value read>.
             entity.Property(code => code.UsedAt).IsConcurrencyToken();
+            entity.Property(code => code.ExpiresAt).IsConcurrencyToken();
             entity.HasIndex(code => code.CodeHash).IsUnique();
             entity.HasOne<ScannerDeviceEntity>()
                 .WithMany()

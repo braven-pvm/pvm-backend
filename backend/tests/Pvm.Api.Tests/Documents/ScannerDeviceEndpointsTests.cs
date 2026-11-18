@@ -63,6 +63,7 @@ public sealed class ScannerDeviceEndpointsTests : IAsyncLifetime
         var response = await client.SendAsync(Admin(HttpMethod.Post, "/api/scanner-devices", new { name = " Dispatch phone 1 " }));
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Null(response.Headers.Location);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
         var device = body.GetProperty("device");
         Assert.Equal("Dispatch phone 1", device.GetProperty("name").GetString());

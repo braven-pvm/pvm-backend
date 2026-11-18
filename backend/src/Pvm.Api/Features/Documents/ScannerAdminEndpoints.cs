@@ -79,9 +79,8 @@ public static class ScannerAdminEndpoints
         var result = await service.CreateAsync(name!, user, cancellationToken);
         return result.Outcome switch
         {
-            CreateDeviceOutcome.Created => Results.Created(
-                $"/api/scanner-devices/{result.Issued!.Device.Id:D}",
-                SetupCodeView(result.Issued, baseUrl)),
+            // 201 without Location: there is no GET for one device; the list holds it.
+            CreateDeviceOutcome.Created => Results.Created((string?)null, SetupCodeView(result.Issued!, baseUrl)),
             CreateDeviceOutcome.NameTaken => Results.Problem(
                 $"A device named '{name}' already exists.",
                 statusCode: StatusCodes.Status409Conflict),

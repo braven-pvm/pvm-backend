@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Npgsql;
 using Pvm.Infrastructure.Documents;
 using Pvm.Infrastructure.Persistence;
+using Pvm.Infrastructure.Persistence.Entities;
 using Testcontainers.PostgreSql;
 
 namespace Pvm.Infrastructure.Tests.Documents;
@@ -137,6 +140,102 @@ public sealed class ScannerDeviceServiceTests : IAsyncLifetime
 
         await service.RevokeAsync(issued.Device.Id, Admin, default);
         Assert.Equal(CreateDeviceOutcome.Created, (await service.CreateAsync("Dispatch phone 1", Admin, default)).Outcome);
+    }
+
+    [Fact]
+    public async Task Enrol_DeviceRevokedBetweenReadAndWrite_ReturnsNull_WritesNoKey_CodeStaysUnused()
+    {
+        var issued = await CreateAsync("Dispatch phone 1");
+
+        var enrolment = await EnrolWithRaceAsync(issued.Code, async other =>
+            await new ScannerDeviceService(other).RevokeAsync(issued.Device.Id, Admin, default));
+
+        Assert.Null(enrolment);
+        await using var db = CreateDbContext();
+        var device = await db.ScannerDevices.SingleAsync();
+        Assert.NotNull(device.RevokedAt);
+        Assert.Null(device.KeyHash);
+        Assert.Null(device.EnrolledAt);
+        Assert.Null((await db.ScannerDeviceSetupCodes.SingleAsync()).UsedAt);
+    }
+
+    [Fact]
+    public async Task Enrol_CodeReplacedBetweenReadAndWrite_ReturnsNull_WritesNoKey_CodeStaysUnused()
+    {
+        var issued = await CreateAsync("Dispatch phone 1");
+
+        var enrolment = await EnrolWithRaceAsync(issued.Code, async other =>
+            await new ScannerDeviceService(other).NewSetupCodeAsync(issued.Device.Id, Admin, default));
+
+        Assert.Null(enrolment);
+        await using var db = CreateDbContext();
+        var device = await db.ScannerDevices.SingleAsync();
+        Assert.Null(device.KeyHash);
+        Assert.Null(device.EnrolledAt);
+        var first = await db.ScannerDeviceSetupCodes.SingleAsync(code => code.CodeHash == ScannerDeviceService.Hash(issued.Code));
+        Assert.Null(first.UsedAt);
+        Assert.True(first.ExpiresAt <= DateTimeOffset.UtcNow);
+    }
+
+    [Fact]
+    public async Task Database_DeviceNameIsUniqueIgnoringCase_AmongDevicesNotRevoked()
+    {
+        await using (var db = CreateDbContext())
+        {
+            db.ScannerDevices.Add(Device("Dispatch phone 1", revoked: true));
+            db.ScannerDevices.Add(Device("Dispatch phone 1"));
+            await db.SaveChangesAsync();
+        }
+
+        await using var other = CreateDbContext();
+        other.ScannerDevices.Add(Device("DISPATCH PHONE 1"));
+        var exception = await Assert.ThrowsAsync<DbUpdateException>(() => other.SaveChangesAsync());
+        Assert.Equal(PostgresErrorCodes.UniqueViolation, Assert.IsType<PostgresException>(exception.InnerException).SqlState);
+    }
+
+    private static ScannerDeviceEntity Device(string name, bool revoked = false) => new()
+    {
+        Id = Guid.NewGuid(),
+        Name = name,
+        CreatedBy = Admin,
+        CreatedAt = DateTimeOffset.UtcNow,
+        RevokedAt = revoked ? DateTimeOffset.UtcNow : null,
+        RevokedBy = revoked ? Admin : null
+    };
+
+    /// <summary>Enrols with a context that runs <paramref name="race"/> on another connection just before it writes.</summary>
+    private async Task<DeviceEnrolment?> EnrolWithRaceAsync(string code, Func<PvmDbContext, Task> race)
+    {
+        var interceptor = new BeforeSaveInterceptor(async () =>
+        {
+            await using var other = CreateDbContext();
+            await race(other);
+        });
+        var options = new DbContextOptionsBuilder<PvmDbContext>()
+            .UseNpgsql(_postgres.GetConnectionString())
+            .AddInterceptors(interceptor)
+            .Options;
+        await using var db = new PvmDbContext(options);
+        return await new ScannerDeviceService(db).EnrolAsync(code, default);
+    }
+
+    private sealed class BeforeSaveInterceptor(Func<Task> action) : SaveChangesInterceptor
+    {
+        private bool _done;
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_done)
+            {
+                _done = true;
+                await action();
+            }
+
+            return result;
+        }
     }
 
     private async Task<IssuedSetupCode> CreateAsync(string name)
