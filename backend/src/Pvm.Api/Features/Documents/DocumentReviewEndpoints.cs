@@ -71,13 +71,12 @@ public static class DocumentReviewEndpoints
         int? page,
         CancellationToken cancellationToken)
     {
-        var query = dbContext.CapturedDocuments.AsNoTracking();
-
-        if (!string.IsNullOrWhiteSpace(invoice))
-        {
-            var reference = invoice.Trim().ToUpperInvariant();
-            query = query.Where(item => item.MatchedReference != null && item.MatchedReference.ToUpper() == reference);
-        }
+        // An invoice number finds the document filed to it, and one on the review list that has the
+        // number on its paper or among its candidates.
+        var query = (string.IsNullOrWhiteSpace(invoice)
+                ? dbContext.CapturedDocuments
+                : DocumentSearch.ByInvoice(dbContext, invoice))
+            .AsNoTracking();
 
         if (!string.IsNullOrWhiteSpace(client))
         {

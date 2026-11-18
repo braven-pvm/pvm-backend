@@ -357,4 +357,49 @@ public class PodMatcherTests
 
         Assert.Equal(invoice, Assert.IsType<Matched>(outcome).Invoice);
     }
+
+    [Fact]
+    public void DisChemMondeor_StoreNameWithWordsInBetween_Matched()
+    {
+        // Production case: one in-scope invoice, found by the invoice number on the paper.
+        var invoice = new InvoiceCandidate(
+            "INV190931",
+            new DateOnly(2026, 10, 6),
+            "C000456",
+            "DIS-CHEM PHARMACIES LTD MONDEOR S007",
+            "DIS-CHEM PHARMACIES LTD CCO3",
+            null,
+            "Open");
+        var extraction = new PodExtraction(
+            ["INV190931"],
+            [],
+            ["2297741"],
+            "Dis-Chem Mondeor S007",
+            new DateOnly(2026, 10, 7),
+            true,
+            null);
+
+        var outcome = PodMatcher.Decide(extraction, [new CandidateHit(invoice, "invoice")]);
+
+        Assert.Equal(invoice, Assert.IsType<Matched>(outcome).Invoice);
+    }
+
+    [Fact]
+    public void DisChem_OtherBranch_ReviewClientNameConflict()
+    {
+        var invoice = new InvoiceCandidate(
+            "INV190999",
+            new DateOnly(2026, 10, 6),
+            "C000789",
+            "DIS-CHEM PHARMACIES LTD SANDTON S012",
+            "DIS-CHEM PHARMACIES LTD CCO3",
+            null,
+            "Open");
+        var extraction = new PodExtraction(["INV190999"], [], [], "Dis-Chem Mondeor", new DateOnly(2026, 10, 7), true, null);
+
+        var outcome = PodMatcher.Decide(extraction, [new CandidateHit(invoice, "invoice")]);
+
+        // The branch differs, and the chain name "Dis-Chem" alone is not enough.
+        Assert.Equal(ReviewReason.ClientNameConflict, Assert.IsType<Review>(outcome).Reason);
+    }
 }

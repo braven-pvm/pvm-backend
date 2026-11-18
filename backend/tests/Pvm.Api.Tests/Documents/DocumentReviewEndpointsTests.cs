@@ -81,6 +81,28 @@ public sealed class DocumentReviewEndpointsTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Search_ByInvoice_FindsAReviewDocumentByTheInvoiceNumberReadFromThePaper()
+    {
+        var client = await StartAsync();
+        var onReview = await SeedAsync(
+            DocumentState.NeedsReview,
+            reviewReason: ReviewReason.ClientNameConflict,
+            extractionJson: """{"InvoiceNumbers":["INV190931"],"ClientName":"Dis-Chem Mondeor S007","candidates":[]}""");
+        await SeedAsync(
+            DocumentState.NeedsReview,
+            reviewReason: ReviewReason.NoSecondSignal,
+            extractionJson: """{"InvoiceNumbers":["INV190932"],"candidates":[]}""");
+
+        var response = await client.SendAsync(Get("/api/documents?invoice=inv190931", AppRoles.Viewer));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var item = Assert.Single(body.GetProperty("items").EnumerateArray());
+        Assert.Equal(onReview, item.GetProperty("id").GetGuid());
+        Assert.Equal("NeedsReview", item.GetProperty("state").GetString());
+    }
+
+    [Fact]
     public async Task Search_Filters_ClientTypeStateAndDates()
     {
         var client = await StartAsync();
