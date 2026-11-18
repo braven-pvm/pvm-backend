@@ -178,6 +178,8 @@ not configured".
    up.
    - "This setup code is not valid. Ask an admin for a new one.": the code was used or is older
      than 15 minutes. Select **New setup code** for the device in the workbench and scan again.
+   - "Too many tries. Wait one minute.": more than 10 setup tries in one minute reached the API.
+     Wait one minute, then scan again.
    - "No connection. Check the Wi-Fi and try again.": the phone cannot reach the API.
 8. If you added names in step 5, the app asks **Who is scanning?** Select your name. The app
    remembers it; **Change** on the scan screen picks another name.
@@ -197,7 +199,9 @@ not configured".
 
 A phone that is lost or replaced: select **Revoke** for the device in the workbench. The phone
 then shows "This phone was removed. Ask an admin for a new setup code." Scans that were not sent
-stay on the phone and are sent after the phone is set up again with a new setup code.
+stay on the phone. A revoked device cannot get a new setup code. To use the phone again, select
+**Add device** (a new name, or the same name), and scan the new code on the phone; the unsent
+scans then upload.
 
 ## Part H. Scanner test on hard paper shapes (owner)
 
@@ -248,9 +252,17 @@ Do Part J only after the QA shadow run shows no wrong filings.
    az containerapp show --resource-group rg-pvm-integrations-prod --name ca-pvm-api-prod --query properties.configuration.ingress.fqdn -o tsv
    ```
 
-5. Set `deviceApiBaseUrl` to `https://<the address from step 4>` for production (it is empty in
-   `infra/azure/main.parameters.prod.json`), and deploy again. Until then, **Add device** in the
+5. Set the production API address for setup codes. Until then, **Add device** in the
    production workbench fails with "Scanner setup is not configured".
+   1. In `infra/azure/main.parameters.prod.json`, add this line inside `"parameters"`, with the
+      address from step 4:
+
+      ```json
+      "deviceApiBaseUrl": { "value": "https://<the address from step 4>" },
+      ```
+
+   2. Merge the change to `main` through a PR.
+   3. Run the production deploy again, as in steps 2 and 3.
 6. Do Part E in the production workbench (`https://backoffice.pvm.co.za/admin/users`).
 7. Install the same APK as for QA on the office phones (Part G, steps 1 to 3). Set up each phone
    with a setup code from the production workbench (Part G, steps 4 to 9). A phone that was set
