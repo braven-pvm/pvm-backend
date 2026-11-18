@@ -55,8 +55,11 @@ builder.Services.AddStockSyncRunReader();
 builder.Services.AddNedbankStatementImport(builder.Configuration);
 builder.Services.AddSellOutImport();
 builder.Services.AddInvestecBankFeed(builder.Configuration);
-builder.Services.AddMemoryCache();
-builder.Services.AddSingleton<BankingStatusCache>();
+builder.Services.AddOptions<BankingStatusOptions>()
+    .Bind(builder.Configuration.GetSection(BankingStatusOptions.SectionName))
+    .Validate(o => o.RefreshInterval >= TimeSpan.FromSeconds(30), "BankingStatus RefreshInterval must be at least 30 seconds.");
+builder.Services.AddSingleton<BankingStatusRefresher>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<BankingStatusRefresher>());
 builder.Services.AddShopritePurchaseOrderClient(builder.Configuration);
 builder.Services.AddScoped<SubmitShopriteInvoiceHandler>();
 builder.Services.AddConfiguredShopriteInvoiceClient(builder.Configuration);

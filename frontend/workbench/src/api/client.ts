@@ -956,6 +956,10 @@ export type BankAccountStatus = {
   importedThrough?: string | null;
   closingBalance?: number | null;
   recentStatements: BankStatementSummary[];
+  /** True when Acumatica could not be read just now, so the figures come from an earlier read. */
+  stale?: boolean;
+  /** When the figures were read from Acumatica. */
+  readAt?: string | null;
 };
 
 export type BankingStatus = {

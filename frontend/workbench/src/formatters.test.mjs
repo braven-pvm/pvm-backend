@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  describeBankAccount,
   describeStockFigures,
   formatDayAndDate,
   formatMoney,
@@ -87,4 +88,21 @@ test("describeStockFigures uses the warehouse commitment when it is larger than 
     "40 on hand − 6 orders",
   );
   assert.equal(describeStockFigures(null), "");
+});
+
+test("describeBankAccount says how far an account is imported", () => {
+  assert.equal(
+    describeBankAccount({ mode: "Upload", available: true, importedThrough: "2026-11-16", stale: false }),
+    "You upload it · imported through 16 November 2026",
+  );
+  assert.equal(describeBankAccount({ mode: "Automatic", available: true, importedThrough: null }), "Arrives automatically · nothing imported yet");
+  assert.equal(describeBankAccount({ mode: "Upload", available: false }), "You upload it · could not read Acumatica");
+});
+
+test("describeBankAccount says when the figures come from an earlier read", () => {
+  const now = new Date("2026-11-18T09:30:00Z");
+  assert.equal(
+    describeBankAccount({ mode: "Upload", available: true, importedThrough: "2026-11-16", stale: true, readAt: "2026-11-18T09:00:00Z" }, now),
+    "You upload it · imported through 16 November 2026 · Acumatica could not be read now; this is from 18 Nov, 11:00",
+  );
 });
