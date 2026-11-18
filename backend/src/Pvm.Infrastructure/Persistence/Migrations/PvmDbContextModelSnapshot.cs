@@ -993,6 +993,10 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<string>("CurrentSalesRepId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("CustomerClassId")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
@@ -1092,6 +1096,48 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                     b.ToTable("warehouse_locations", "reporting");
                 });
 
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.SellInExcludedLine", b =>
+                {
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("CustomerId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("FinancialMonth")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("FinancialYear")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("InventoryId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("LineNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ReferenceNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.ToTable((string)null);
+
+                    b.ToView("sell_in_excluded_lines", "reporting");
+                });
+
             modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.SellInLineEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1182,6 +1228,95 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("sell_in_lines", "reporting");
+                });
+
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.SellInReportLine", b =>
+                {
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal>("BaseQuantity")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("CustomerClassId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CustomerClassName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CustomerId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("CustomerName")
+                        .HasColumnType("text");
+
+                    b.Property<DateOnly>("DocumentDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("FinancialMonth")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("FinancialYear")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("InventoryId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ItemClassId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ItemClassName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ItemDescription")
+                        .HasColumnType("text");
+
+                    b.Property<int>("LineNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("LocationId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("PostPeriod")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Province")
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("ReferenceNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SalesRepAtSaleId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SalesRepAtSaleName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SalesRepId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SalesRepName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("WarehouseId")
+                        .HasColumnType("text");
+
+                    b.ToTable((string)null);
+
+                    b.ToView("sell_in_report_lines", "reporting");
                 });
 
             modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ShopriteDeliveryLocationEntity", b =>

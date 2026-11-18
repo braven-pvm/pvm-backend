@@ -97,6 +97,25 @@ GET <base>/odata/<company>/PVM-Sales-Lines?$filter=TranPeriodID eq '012025'&$for
 - `Decimal` values come back as JSON strings. Parse them with the invariant
   culture.
 
+## Rules of the sales report
+
+The load keeps every line of the inquiry in `reporting.sell_in_lines`. The
+view `reporting.sell_in_report_lines` applies the rules of the old sales
+workbook. Refer to section 7a of `docs/design/reports-analysis.md`.
+
+1. A line counts in the month of its posting period, not in the month of its
+   document date.
+2. Only invoices and credit memos count. Debit memos are left out.
+3. Items with no item class are left out.
+4. Rep and customer group are the customer's current values. The load reads
+   the default salesperson of each customer from the contract-based API
+   entity `Customer` (detail `Salespersons`) after each run. The rep on the
+   document line stays in the view as the rep at the sale.
+5. Lines with no rep stay in.
+
+The view `reporting.sell_in_excluded_lines` shows the lines that rules 2 and 3
+leave out, with the reason `debit-memo` or `no-item-class`.
+
 ## Facts measured in QA
 
 Measured on 2026-11-12 for period `012025`. Counts only.

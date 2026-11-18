@@ -66,6 +66,10 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<SellInLineEntity> SellInLines => Set<SellInLineEntity>();
 
+    public DbSet<SellInReportLine> SellInReportLines => Set<SellInReportLine>();
+
+    public DbSet<SellInExcludedLine> SellInExcludedLines => Set<SellInExcludedLine>();
+
     public DbSet<StockSyncRunEntity> StockSyncRuns => Set<StockSyncRunEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -536,6 +540,7 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(customer => customer.CustomerClassId).HasMaxLength(64);
             entity.Property(customer => customer.CustomerClassName).HasMaxLength(256);
             entity.Property(customer => customer.Province).HasMaxLength(64);
+            entity.Property(customer => customer.CurrentSalesRepId).HasMaxLength(64);
             entity.HasIndex(customer => customer.CustomerClassId);
         });
 
@@ -597,6 +602,21 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(line => line.Quantity).HasPrecision(18, 4);
             entity.Property(line => line.BaseQuantity).HasPrecision(18, 4);
             entity.Property(line => line.Amount).HasPrecision(18, 2);
+        });
+
+        // Views, made in the migration AddSellInWorkbookRules. Their SQL is in SellInReportViews.
+        modelBuilder.Entity<SellInReportLine>(entity =>
+        {
+            entity.ToView(SellInReportViews.ReportLinesView, schema);
+            entity.HasNoKey();
+            entity.Property(line => line.DocumentType).HasConversion<string>();
+        });
+
+        modelBuilder.Entity<SellInExcludedLine>(entity =>
+        {
+            entity.ToView(SellInReportViews.ExcludedLinesView, schema);
+            entity.HasNoKey();
+            entity.Property(line => line.DocumentType).HasConversion<string>();
         });
     }
 }
