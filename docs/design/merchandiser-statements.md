@@ -156,6 +156,12 @@ The QA copy of Acumatica is from June 2025, so it has no sales for October
 1. **Engine check:** the statement engine runs on the workbook lines of
    October 2026 (extracted outside the repository), with the settings of
    section 2. Its output must equal the four hand-made files, line by line.
+   Result on 2026-11-18: the engine gave all 21 values of the CMR, Coast &
+   Country and Two Oceans statements for October 2026. The 16 group lines
+   are equal to the cent. The 5 Makro totals are within 0.5 %, the
+   difference of the Makro values (section 1.2). The settings came from the
+   statements: 1 line needs a customer list, and each of the 15 CMR Makro
+   stores belongs to one area.
 2. **Live check:** when the sell-in load reads production, the workbench
    statement for October 2026 must give the same totals. This needs the
    inquiry PVM-Sales-Lines in production, which is a decision of the owner.

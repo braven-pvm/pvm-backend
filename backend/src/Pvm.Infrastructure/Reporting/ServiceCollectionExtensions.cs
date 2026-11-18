@@ -61,6 +61,13 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>Registers the merchandiser statements.</summary>
+    public static IServiceCollection AddMerchandiserStatements(this IServiceCollection services)
+    {
+        services.AddScoped<Statements.MerchandiserStatementService>();
+        return services;
+    }
+
     /// <summary>
     /// Registers the sell-out mail intake. Assumes <c>AddSellOutImport</c>.
     /// </summary>
