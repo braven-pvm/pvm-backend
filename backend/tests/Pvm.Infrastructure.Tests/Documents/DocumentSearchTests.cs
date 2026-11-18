@@ -74,6 +74,19 @@ public sealed class DocumentSearchTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ByInvoice_AFiledPaperWithTwoInvoiceNumbers_IsFoundByBoth()
+    {
+        var filed = await SeedAsync(
+            DocumentState.Filed,
+            matchedReference: "INV001",
+            extractionJson: """{"InvoiceNumbers":["INV001","INV002"],"candidates":[]}""");
+        await SeedAsync(DocumentState.Filed, matchedReference: "INV003");
+
+        Assert.Equal([filed], await SearchAsync("INV001"));
+        Assert.Equal([filed], await SearchAsync("INV002"));
+    }
+
+    [Fact]
     public async Task ByInvoice_ComposesWithOtherFiltersAndCount()
     {
         await SeedAsync(DocumentState.Filed, matchedReference: "INV800");

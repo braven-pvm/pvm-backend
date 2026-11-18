@@ -5,9 +5,10 @@ using Pvm.Infrastructure.Persistence.Entities;
 namespace Pvm.Infrastructure.Documents;
 
 /// <summary>
-/// The documents search by invoice number (design 6.9). A document is found by the invoice it was
-/// filed to, and also, while it waits on the review list, by an invoice number read from the paper
-/// or by a candidate invoice the matcher offered. All comparisons ignore case.
+/// The documents search by invoice number (design 6.9). A document, in any state, is found by the
+/// invoice it was filed to, by any invoice number read from its paper, and by any candidate invoice
+/// the matcher offered. So a paper that shows two invoice numbers is found by both, even once it is
+/// filed to one of them. All comparisons ignore case.
 /// </summary>
 public static class DocumentSearch
 {

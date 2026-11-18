@@ -15,7 +15,11 @@ public static class CompanyNameComparer
 {
     private static readonly HashSet<string> Suffixes = ["pty", "ltd", "limited", "cc", "inc"];
 
-    /// <summary>Words that say what kind of business it is, not which one; left out unless nothing else is left.</summary>
+    /// <summary>
+    /// Words that say what kind of business it is, not which one. They are left out only when at
+    /// least <see cref="MinWordsForGaps"/> words remain: "Spar Group" keeps both words, so it cannot
+    /// shrink to "Spar" and agree with every Spar store.
+    /// </summary>
     private static readonly HashSet<string> GenericWords =
         ["pharmacies", "pharmacy", "stores", "store", "group", "holdings", "trading", "the", "and"];
 
@@ -104,6 +108,6 @@ public static class CompanyNameComparer
             .ToArray();
 
         var specific = words.Where(word => !GenericWords.Contains(word)).ToArray();
-        return specific.Length > 0 ? specific : words;
+        return specific.Length >= MinWordsForGaps ? specific : words;
     }
 }

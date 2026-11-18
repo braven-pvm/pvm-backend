@@ -71,8 +71,8 @@ public static class DocumentReviewEndpoints
         int? page,
         CancellationToken cancellationToken)
     {
-        // An invoice number finds the document filed to it, and one on the review list that has the
-        // number on its paper or among its candidates.
+        // An invoice number finds a document in any state: filed to it, read from its paper, or
+        // among its candidates. A paper with two invoice numbers is found by both.
         var query = (string.IsNullOrWhiteSpace(invoice)
                 ? dbContext.CapturedDocuments
                 : DocumentSearch.ByInvoice(dbContext, invoice))

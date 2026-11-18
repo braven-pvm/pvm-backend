@@ -126,6 +126,16 @@ public class CompanyNameComparerTests
     }
 
     [Fact]
+    public void A_generic_word_is_kept_when_dropping_it_would_leave_one_word()
+    {
+        // "Spar Group" must not shrink to "Spar" and agree with every Spar store.
+        Assert.False(CompanyNameComparer.Agrees("Spar Pinetown", Invoice("Spar Group")));
+        Assert.False(CompanyNameComparer.AgreesDirectly("Spar Pinetown", Invoice("Spar Group")));
+        Assert.False(CompanyNameComparer.Agrees("Pharmacy Mondeor", DisChemMondeor()));
+        Assert.True(CompanyNameComparer.AgreesDirectly("Dis-Chem Mondeor S007", DisChemMondeor()));
+    }
+
+    [Fact]
     public void A_name_of_only_generic_words_keeps_its_words()
     {
         Assert.True(CompanyNameComparer.AgreesDirectly("The Pharmacy", Invoice("THE PHARMACY")));
