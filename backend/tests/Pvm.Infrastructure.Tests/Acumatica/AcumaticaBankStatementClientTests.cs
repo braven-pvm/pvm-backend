@@ -102,6 +102,65 @@ public sealed class AcumaticaBankStatementClientTests
             request => request.Uri.AbsolutePath.EndsWith("/entity/auth/logout", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task ReadRecentStatementsAsync_signs_in_once_and_reports_each_account_on_its_own()
+    {
+        using var handler = new SequenceHandler(
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent),   // sign-in
+            _ => JsonResponse("""
+                [{"ReferenceNbr":{"value":"001255"},"StartBalanceDate":{"value":"2026-11-01T00:00:00"},"EndBalanceDate":{"value":"2026-11-10T00:00:00"},
+                  "BeginningBalance":{"value":5},"EndingBalance":{"value":10},"Details":[{},{}]}]
+                """),
+            _ => new HttpResponseMessage(HttpStatusCode.InternalServerError),
+            _ => JsonResponse("[]"),
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent));  // sign-out
+        var client = NewClient(handler);
+
+        var results = await client.ReadRecentStatementsAsync(
+            ["WCNEDBANK", "ECNEDBANK", "INVESTEC"], 5, CancellationToken.None);
+
+        Assert.Single(handler.Requests, request => request.Uri.AbsolutePath.EndsWith("/entity/auth/login", StringComparison.Ordinal));
+        Assert.Single(handler.Requests, request => request.Uri.AbsolutePath.EndsWith("/entity/auth/logout", StringComparison.Ordinal));
+        Assert.Equal(["WCNEDBANK", "ECNEDBANK", "INVESTEC"], results.Select(result => result.CashAccount));
+        Assert.Null(results[0].Failure);
+        Assert.Equal(new DateOnly(2026, 11, 10), Assert.Single(results[0].Statements).EndBalanceDate);
+        Assert.Contains("500", results[1].Failure, StringComparison.Ordinal);
+        Assert.Empty(results[1].Statements);
+        Assert.Null(results[2].Failure);
+        Assert.Empty(results[2].Statements);
+    }
+
+    [Fact]
+    public async Task ReadRecentStatementsAsync_reports_a_failed_sign_in_on_every_account_without_the_password()
+    {
+        using var handler = new SequenceHandler(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized));
+        var client = NewClient(handler);
+
+        var results = await client.ReadRecentStatementsAsync(["WCNEDBANK", "INVESTEC"], 5, CancellationToken.None);
+
+        Assert.Equal(2, results.Count);
+        Assert.All(results, result =>
+        {
+            Assert.Contains("sign-in", result.Failure, StringComparison.Ordinal);
+            Assert.DoesNotContain("secret", result.Failure, StringComparison.Ordinal);
+        });
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task ReadRecentStatementsAsync_keeps_its_reads_when_the_sign_out_fails()
+    {
+        using var handler = new SequenceHandler(
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent),
+            _ => JsonResponse("[]"),
+            _ => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        var client = NewClient(handler);
+
+        var results = await client.ReadRecentStatementsAsync(["INVESTEC"], 5, CancellationToken.None);
+
+        Assert.Null(Assert.Single(results).Failure);
+    }
+
     private static AcumaticaBankStatementClient NewClient(HttpMessageHandler handler)
         => new(
             new HttpClient(handler),

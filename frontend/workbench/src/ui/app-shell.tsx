@@ -5,17 +5,21 @@ import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import {
   Activity,
+  FileText,
   History,
   House,
   Inbox,
   Landmark,
   LogOut,
   Menu,
+  Package,
   Store,
   TriangleAlert,
   Users,
   X,
   Zap,
+  ShoppingBasket,
+  FileSpreadsheet,
   type LucideIcon,
 } from "lucide-react";
 import { isCurrent, type NavGroup, type NavIcon, type NavItem } from "../navigation";
@@ -26,6 +30,10 @@ const icons: Record<NavIcon, LucideIcon> = {
   exceptions: Inbox,
   shoprite: Store,
   banking: Landmark,
+  stock: Package,
+  sellout: ShoppingBasket,
+  statements: FileSpreadsheet,
+  documents: FileText,
   automations: Zap,
   runs: History,
   events: Activity,

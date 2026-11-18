@@ -29,6 +29,12 @@
     "acumaticaBaseUrl": {
       "value": "https://devtest1.aboutitgroup.co.za/PVMGroup25R101D250625"
     },
+    "workbenchAcumaticaBaseUrl": {
+      "value": "https://devtest1.aboutitgroup.co.za/PVMGroup25R101D250625"
+    },
+    "deviceApiBaseUrl": {
+      "value": "https://ca-pvm-api-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io"
+    },
     "acumaticaEndpointName": {
       "value": "Default"
     },
@@ -55,6 +61,15 @@
       "value": [
         "PVM-Shoprite-Finalized-Invoices"
       ]
+    },
+    "sellInEnabled": {
+      "value": true
+    },
+    "sellOutMailEnabled": {
+      "value": true
+    },
+    "sellOutMailClientId": {
+      "value": "c5d98939-dbc8-405d-b7b3-5ef5185b8479"
     }
   }
 }

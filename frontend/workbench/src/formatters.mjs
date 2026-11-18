@@ -103,3 +103,53 @@ export function formatDate(iso) {
 
   return `${parts.day} ${SHORT_MONTHS[parts.month]} ${parts.year}`;
 }
+
+// How the stock sync got one product's level, in the parts of the inventory lite sheet:
+// "3307 on hand − 3000 held back − 307 auto-adjusted = 0 for sale − 10 orders − 5 transfers out".
+// One line for a bank account tile: how statements arrive, and how far they are imported.
+// A stale account shows the figures of its last good read, and says when that read was.
+export function describeBankAccount(account, now = new Date()) {
+  const arrives = account.mode === "Automatic" || account.mode === "Feed" ? "Arrives automatically" : "You upload it";
+  if (!account.available) {
+    return `${arrives} · could not read Acumatica`;
+  }
+
+  const imported = account.importedThrough ? `imported through ${formatStatementDate(account.importedThrough)}` : "nothing imported yet";
+  const stale = account.stale ? ` · Acumatica could not be read now; this is from ${formatDateTime(account.readAt, now)}` : "";
+  return `${arrives} · ${imported}${stale}`;
+}
+
+export function describeStockFigures(figures) {
+  if (!figures) {
+    return "";
+  }
+
+  const n = (value) => (Number.isInteger(value) ? String(value) : value.toFixed(1));
+  const heldBack = Math.max(0, figures.heldBackAdjustments);
+  const parts = [`${n(figures.onHand)} on hand`];
+  if (heldBack > 0) {
+    parts.push(`− ${n(heldBack)} held back`);
+  }
+  if (figures.autoAdjustments !== 0) {
+    parts.push(`${figures.autoAdjustments > 0 ? "−" : "+"} ${n(Math.abs(figures.autoAdjustments))} auto-adjusted`);
+  }
+  if (heldBack > 0 || figures.autoAdjustments !== 0) {
+    parts.push(`= ${n(Math.max(0, figures.onHand - heldBack - figures.autoAdjustments))} for sale`);
+  }
+
+  const orders =
+    figures.warehouseCommitted === null || figures.warehouseCommitted === undefined
+      ? figures.openOrders
+      : Math.max(figures.warehouseCommitted, figures.openOrders);
+  for (const [value, label] of [
+    [orders, "orders"],
+    [figures.promoOrders, "promo orders"],
+    [figures.transfersOut, "transfers out"],
+  ]) {
+    if (value !== 0) {
+      parts.push(`− ${n(value)} ${label}`);
+    }
+  }
+
+  return parts.join(" ");
+}

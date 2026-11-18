@@ -3,12 +3,17 @@ using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Options;
 using Pvm.Application.Messaging;
 using Pvm.Application.Submissions;
+using Pvm.Domain.Reporting;
 using Pvm.Infrastructure.Acumatica;
+using Pvm.Infrastructure.Documents;
+using Pvm.Infrastructure.Reporting;
+using Pvm.Infrastructure.Reporting.SellOut;
 using Pvm.Infrastructure.Messaging;
 using Pvm.Infrastructure.Operations;
 using Pvm.Infrastructure.PayloadArchive;
 using Pvm.Infrastructure.Investec;
 using Pvm.Infrastructure.Persistence;
+using Pvm.Infrastructure.Stock;
 using Pvm.Infrastructure.Shoprite;
 using Pvm.Worker;
 
@@ -26,6 +31,122 @@ var enqueueAcumaticaLookback = args.Contains(
 var refreshInvestecFeed = args.Contains(
     "--refresh-investec-bank-feed",
     StringComparer.OrdinalIgnoreCase);
+var syncWooCommerceStock = args.Contains(
+    "--sync-woocommerce-stock",
+    StringComparer.OrdinalIgnoreCase);
+var syncSellIn = args.Contains(
+    "--sync-sell-in",
+    StringComparer.OrdinalIgnoreCase);
+var readSellOutMailbox = args.Contains(
+    "--read-sell-out-mailbox",
+    StringComparer.OrdinalIgnoreCase);
+
+if (readSellOutMailbox)
+{
+    // Loads the retailer files that people send to the sell-out mailbox. One pass, like the sell-in load.
+    builder.Services.AddPayloadArchive(builder.Configuration);
+    builder.Services.AddSellOutImport();
+    builder.Services.AddSellOutMailIntake(builder.Configuration);
+
+    using var mailHost = builder.Build();
+    await using var mailScope = mailHost.Services.CreateAsyncScope();
+    var mailLogger = mailScope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("SellOutMailIntake");
+    try
+    {
+        await mailScope.ServiceProvider.GetRequiredService<SellOutMailIntakeService>().RunAsync(CancellationToken.None);
+    }
+    catch (Exception exception)
+    {
+        // Rethrow so that the Container Apps job reports a failed replica.
+        mailLogger.LogError(exception, "integration.run.failed RunType=sell-out-mail");
+        throw;
+    }
+
+    return;
+}
+
+var refreshProductGtins = args.Contains(
+    "--refresh-product-gtins",
+    StringComparer.OrdinalIgnoreCase);
+
+if (refreshProductGtins)
+{
+    // Reads the GTINs of the Acumatica stock items, then maps the sell-out rows that waited for them.
+    builder.Services.AddAcumaticaInvoiceSource(builder.Configuration);
+    builder.Services.AddProductGtinRefresh();
+
+    using var gtinHost = builder.Build();
+    await using var gtinScope = gtinHost.Services.CreateAsyncScope();
+    var gtinLogger = gtinScope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("ProductGtinRefresh");
+    try
+    {
+        var result = await gtinScope.ServiceProvider.GetRequiredService<ProductGtinRefreshService>().RefreshAsync(CancellationToken.None);
+        gtinLogger.LogInformation(
+            "integration.run.completed RunType=product-gtin-refresh Gtins={Gtins} Ambiguous={Ambiguous} ProductsMapped={Mapped}",
+            result.Gtins,
+            result.Ambiguous.Count,
+            result.ProductsMapped);
+    }
+    catch (Exception exception)
+    {
+        gtinLogger.LogError(exception, "integration.run.failed RunType=product-gtin-refresh");
+        throw;
+    }
+
+    return;
+}
+
+if (syncSellIn)
+{
+    // The sell-in load runs inline, like the Investec feed: one pass, no queue or consumer.
+    // With --from and --to (posting periods such as 012024), it loads those periods once, for history.
+    builder.Services.AddAcumaticaInvoiceSource(builder.Configuration);
+    builder.Services.AddPayloadArchive(builder.Configuration);
+    builder.Services.AddSellInSync(builder.Configuration);
+
+    using var sellInHost = builder.Build();
+    await using var sellInScope = sellInHost.Services.CreateAsyncScope();
+    var sellInLogger = sellInScope.ServiceProvider
+        .GetRequiredService<ILoggerFactory>()
+        .CreateLogger("SellInSync");
+    var sellInOptions = sellInScope.ServiceProvider.GetRequiredService<IOptions<SellInSyncOptions>>().Value;
+    var sellIn = sellInScope.ServiceProvider.GetRequiredService<SellInSyncService>();
+
+    var fromArgument = ArgumentValue(args, "--from");
+    var toArgument = ArgumentValue(args, "--to");
+    var (fromPeriod, toPeriod) = fromArgument is null && toArgument is null
+        ? SellInSyncService.ResolveWindow(DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(2)).DateTime), sellInOptions)
+        : (PostingPeriod.Parse(fromArgument ?? toArgument!), PostingPeriod.Parse(toArgument ?? fromArgument!));
+    var trigger = fromArgument is null && toArgument is null ? IntegrationRunTriggers.Scheduled : IntegrationRunTriggers.Manual;
+
+    try
+    {
+        var result = await sellIn.RunAsync(fromPeriod, toPeriod, trigger, "system:scheduler", CancellationToken.None);
+        sellInLogger.LogInformation(
+            "integration.run.completed RunType={RunType} RunId={RunId} From={From} To={To} Periods={Periods} Rows={Rows} Written={Written} Skipped={Skipped}",
+            SellInSyncService.RunType,
+            result.RunId,
+            result.FromPeriod.DisplayId,
+            result.ToPeriod.DisplayId,
+            result.PeriodsRead,
+            result.RowsRead,
+            result.LinesWritten,
+            result.RowsSkipped);
+    }
+    catch (Exception exception)
+    {
+        // Rethrow so that the Container Apps job reports a failed replica. The run log has the detail.
+        sellInLogger.LogError(
+            exception,
+            "integration.run.failed RunType={RunType} From={From} To={To}",
+            SellInSyncService.RunType,
+            fromPeriod.DisplayId,
+            toPeriod.DisplayId);
+        throw;
+    }
+
+    return;
+}
 
 if (enqueueShopriteRefresh || enqueueAcumaticaReconciliation || enqueueAcumaticaLookback)
 {
@@ -96,6 +217,18 @@ if (enqueueShopriteRefresh || enqueueAcumaticaReconciliation || enqueueAcumatica
     return;
 }
 
+if (syncWooCommerceStock)
+{
+    // The stock sync runs inline, like the Investec feed: one short pass, no queue or consumer.
+    builder.Services.AddAcumaticaInvoiceSource(builder.Configuration);
+    builder.Services.AddStockSync(builder.Configuration);
+
+    using var stockHost = builder.Build();
+    await using var stockScope = stockHost.Services.CreateAsyncScope();
+    await stockScope.ServiceProvider.GetRequiredService<StockSyncJob>().RunAsync(CancellationToken.None);
+    return;
+}
+
 if (refreshInvestecFeed)
 {
     // The Investec pull runs inline. It happens once a day, so it needs no queue and no consumer.
@@ -147,6 +280,8 @@ builder.Services.AddAcumaticaInvoiceSource(builder.Configuration);
 builder.Services.AddShopritePurchaseOrderClient(builder.Configuration);
 builder.Services.AddScoped<SubmitShopriteInvoiceHandler>();
 builder.Services.AddWorkerShopriteInvoiceClient(builder.Configuration);
+builder.Services.AddDocumentCapture(builder.Configuration);
+builder.Services.AddScoped<DocumentProcessor>();
 builder.Services.AddScoped<IntegrationMessageProcessor>();
 
 builder.Services.AddOptions<ServiceBusOptions>()
@@ -166,8 +301,15 @@ builder.Services.AddSingleton(provider =>
 builder.Services.AddSingleton<IIntegrationMessagePublisher, ServiceBusMessagePublisher>();
 builder.Services.AddHostedService<OutboxDispatcherService>();
 builder.Services.AddHostedService<ServiceBusConsumerService>();
+builder.Services.AddHostedService<DocumentAttachBackfillService>();
 
 await builder.Build().RunAsync();
+
+static string? ArgumentValue(string[] arguments, string name)
+{
+    var index = Array.FindIndex(arguments, argument => string.Equals(argument, name, StringComparison.OrdinalIgnoreCase));
+    return index >= 0 && index + 1 < arguments.Length ? arguments[index + 1] : null;
+}
 
 static DateTimeOffset ScheduleWindow(DateTimeOffset now, int intervalMinutes)
 {

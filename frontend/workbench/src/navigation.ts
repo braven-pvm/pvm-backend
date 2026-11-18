@@ -9,6 +9,10 @@ export type NavIcon =
   | "exceptions"
   | "shoprite"
   | "banking"
+  | "stock"
+  | "sellout"
+  | "statements"
+  | "documents"
   | "automations"
   | "runs"
   | "events"
@@ -49,6 +53,19 @@ export const navigation: NavGroup[] = [
         // The module's sections are tabs on its pages, not sidebar children.
       },
       { label: "Banking", href: "/banking", icon: "banking", roles: write },
+      { label: "Stock", href: "/stock", icon: "stock" },
+      { label: "Sell-out", href: "/sell-out", icon: "sellout", roles: write },
+      { label: "Statements", href: "/statements", icon: "statements", roles: write },
+      {
+        label: "Documents",
+        href: "/documents",
+        icon: "documents",
+        // The search is the Documents page itself; the review list and, for Admins, the scanner devices are its sub-links.
+        children: [
+          { label: "Review list", href: "/documents/review" },
+          { label: "Scanner devices", href: "/documents/devices", roles: admin },
+        ],
+      },
     ],
   },
   {

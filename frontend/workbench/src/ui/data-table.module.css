@@ -81,6 +81,12 @@
   position: absolute;
 }
 
+/* A second link in a linked row, such as an external record link, sits above the row link. */
+.linkRow .td a:not(.rowLink) {
+  position: relative;
+  z-index: 1;
+}
+
 .rowLink:focus-visible {
   outline: none;
 }

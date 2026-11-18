@@ -52,6 +52,56 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<ExceptionTaskCommentEntity> ExceptionTaskComments => Set<ExceptionTaskCommentEntity>();
 
+    public DbSet<ReportingCustomerEntity> ReportingCustomers => Set<ReportingCustomerEntity>();
+
+    public DbSet<ReportingProductEntity> ReportingProducts => Set<ReportingProductEntity>();
+
+    public DbSet<ReportingSalesRepEntity> ReportingSalesReps => Set<ReportingSalesRepEntity>();
+
+    public DbSet<ReportingWarehouseLocationEntity> ReportingWarehouseLocations
+        => Set<ReportingWarehouseLocationEntity>();
+
+    public DbSet<ReportingCustomerClassChannelEntity> ReportingCustomerClassChannels
+        => Set<ReportingCustomerClassChannelEntity>();
+
+    public DbSet<SellInLineEntity> SellInLines => Set<SellInLineEntity>();
+
+    public DbSet<SellInReportLine> SellInReportLines => Set<SellInReportLine>();
+
+    public DbSet<SellInExcludedLine> SellInExcludedLines => Set<SellInExcludedLine>();
+
+    public DbSet<SellOutImportEntity> SellOutImports => Set<SellOutImportEntity>();
+
+    public DbSet<SellOutImportIssueEntity> SellOutImportIssues => Set<SellOutImportIssueEntity>();
+
+    public DbSet<RetailStoreEntity> RetailStores => Set<RetailStoreEntity>();
+
+    public DbSet<SellOutMonthEntity> SellOutMonths => Set<SellOutMonthEntity>();
+
+    public DbSet<StoreStockSnapshotEntity> StoreStockSnapshots => Set<StoreStockSnapshotEntity>();
+
+    public DbSet<SellOutProductMapEntity> SellOutProductMaps => Set<SellOutProductMapEntity>();
+
+    public DbSet<ProductGtinEntity> ProductGtins => Set<ProductGtinEntity>();
+
+    public DbSet<MerchandiserCompanyEntity> MerchandiserCompanies => Set<MerchandiserCompanyEntity>();
+
+    public DbSet<MerchandiserAreaEntity> MerchandiserAreas => Set<MerchandiserAreaEntity>();
+
+    public DbSet<MerchandiserLineEntity> MerchandiserLines => Set<MerchandiserLineEntity>();
+
+    public DbSet<MerchandiserMakroStoreEntity> MerchandiserMakroStores => Set<MerchandiserMakroStoreEntity>();
+
+    public DbSet<StockSyncRunEntity> StockSyncRuns => Set<StockSyncRunEntity>();
+
+    public DbSet<CapturedDocumentEntity> CapturedDocuments => Set<CapturedDocumentEntity>();
+
+    public DbSet<ScannerDeviceEntity> ScannerDevices => Set<ScannerDeviceEntity>();
+
+    public DbSet<ScannerDeviceSetupCodeEntity> ScannerDeviceSetupCodes => Set<ScannerDeviceSetupCodeEntity>();
+
+    public DbSet<ScannerStaffEntity> ScannerStaff => Set<ScannerStaffEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<InvoiceCandidateEntity>(entity =>
@@ -415,6 +465,17 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(delivery => delivery.DeadLetterReason).HasMaxLength(128);
         });
 
+        modelBuilder.Entity<StockSyncRunEntity>(entity =>
+        {
+            entity.ToTable("stock_sync_runs");
+            entity.HasKey(run => run.Id);
+            entity.HasIndex(run => run.CompletedAt);
+            entity.Property(run => run.Mode).HasMaxLength(16);
+            entity.Property(run => run.Status).HasMaxLength(16);
+            entity.Property(run => run.Detail).HasMaxLength(2000);
+            entity.Property(run => run.LinesJson).HasColumnType("jsonb");
+        });
+
         modelBuilder.Entity<IntegrationRunEntity>(entity =>
         {
             entity.ToTable("integration_runs");
@@ -492,5 +553,328 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
                 .HasForeignKey(comment => comment.ExceptionTaskId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
+
+        modelBuilder.Entity<CapturedDocumentEntity>(entity =>
+        {
+            entity.ToTable("captured_documents");
+            entity.HasKey(document => document.Id);
+            entity.HasIndex(document => document.ClientDocumentId).IsUnique();
+            entity.HasIndex(document => document.MatchedReference);
+            entity.Property(document => document.DocumentType).HasMaxLength(32);
+            entity.Property(document => document.State).HasConversion<string>().HasMaxLength(32);
+            entity.Property(document => document.ReviewReason).HasConversion<string>().HasMaxLength(64);
+            entity.Property(document => document.BlobPath).HasMaxLength(512);
+            entity.Property(document => document.Sha256).HasMaxLength(64);
+            entity.Property(document => document.ExtractionJson).HasColumnType("jsonb");
+            entity.Property(document => document.MatchedReference).HasMaxLength(64);
+            entity.Property(document => document.MatchedCustomerName).HasMaxLength(256);
+            entity.Property(document => document.MatchedBy).HasMaxLength(320);
+            entity.Property(document => document.UploadedBy).HasMaxLength(320);
+            entity.Property(document => document.ResolvedBy).HasMaxLength(320);
+            entity.Property(document => document.RejectedBy).HasMaxLength(320);
+            entity.Property(document => document.ReviewNote).HasMaxLength(2048);
+            entity.Property(document => document.ScannerStaffName).HasMaxLength(100);
+            entity.HasOne<ScannerDeviceEntity>()
+                .WithMany()
+                .HasForeignKey(document => document.ScannerDeviceId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ScannerStaffEntity>()
+                .WithMany()
+                .HasForeignKey(document => document.ScannerStaffId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ScannerDeviceEntity>(entity =>
+        {
+            entity.ToTable("scanner_devices");
+            entity.HasKey(device => device.Id);
+            entity.Property(device => device.Name).HasMaxLength(100);
+            entity.Property(device => device.KeyHash).HasMaxLength(64);
+            entity.Property(device => device.CreatedBy).HasMaxLength(320);
+            entity.Property(device => device.RevokedBy).HasMaxLength(320);
+            entity.HasIndex(device => device.KeyHash).IsUnique();
+
+            // Enrol writes a key only while the device is not revoked: the UPDATE carries
+            // "RevokedAt" IS NULL. The unique name among devices that are not revoked, ignoring
+            // case, is the expression index ux_scanner_devices_active_name_lower made in the
+            // AddDocumentCaptureAndScannerDevices migration (EF cannot model an index on lower("Name")).
+            entity.Property(device => device.RevokedAt).IsConcurrencyToken();
+        });
+
+        modelBuilder.Entity<ScannerDeviceSetupCodeEntity>(entity =>
+        {
+            entity.ToTable("scanner_device_setup_codes");
+            entity.HasKey(code => code.Id);
+            entity.Property(code => code.CodeHash).HasMaxLength(64);
+            entity.Property(code => code.CreatedBy).HasMaxLength(320);
+            // Enrol updates the code only while it is unchanged since the read that found it unused
+            // and unexpired: the UPDATE carries "UsedAt" IS NULL AND "ExpiresAt" = <the value read>.
+            entity.Property(code => code.UsedAt).IsConcurrencyToken();
+            entity.Property(code => code.ExpiresAt).IsConcurrencyToken();
+            entity.HasIndex(code => code.CodeHash).IsUnique();
+            entity.HasOne<ScannerDeviceEntity>()
+                .WithMany()
+                .HasForeignKey(code => code.DeviceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ScannerStaffEntity>(entity =>
+        {
+            entity.ToTable("scanner_staff");
+            entity.HasKey(staff => staff.Id);
+            entity.Property(staff => staff.Name).HasMaxLength(100);
+        });
+
+        ConfigureReporting(modelBuilder);
+        ConfigureSellOut(modelBuilder);
+        ConfigureMerchandisers(modelBuilder);
     }
+
+    private static void ConfigureReporting(ModelBuilder modelBuilder)
+    {
+        const string schema = "reporting";
+
+        modelBuilder.Entity<ReportingCustomerEntity>(entity =>
+        {
+            entity.ToTable("customers", schema);
+            entity.HasKey(customer => customer.CustomerId);
+            entity.Property(customer => customer.CustomerId).HasMaxLength(64);
+            entity.Property(customer => customer.Name).HasMaxLength(256);
+            entity.Property(customer => customer.CustomerClassId).HasMaxLength(64);
+            entity.Property(customer => customer.CustomerClassName).HasMaxLength(256);
+            entity.Property(customer => customer.Province).HasMaxLength(64);
+            entity.Property(customer => customer.CurrentSalesRepId).HasMaxLength(64);
+            entity.HasIndex(customer => customer.CustomerClassId);
+        });
+
+        modelBuilder.Entity<ReportingProductEntity>(entity =>
+        {
+            entity.ToTable("products", schema);
+            entity.HasKey(product => product.InventoryId);
+            entity.Property(product => product.InventoryId).HasMaxLength(64);
+            entity.Property(product => product.Description).HasMaxLength(256);
+            entity.Property(product => product.ItemClassId).HasMaxLength(64);
+            entity.Property(product => product.ItemClassName).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<ReportingSalesRepEntity>(entity =>
+        {
+            entity.ToTable("sales_reps", schema);
+            entity.HasKey(rep => rep.SalesRepId);
+            entity.Property(rep => rep.SalesRepId).HasMaxLength(64);
+            entity.Property(rep => rep.Name).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<ReportingWarehouseLocationEntity>(entity =>
+        {
+            entity.ToTable("warehouse_locations", schema);
+            entity.HasKey(location => new { location.WarehouseId, location.LocationId });
+            entity.Property(location => location.WarehouseId).HasMaxLength(64);
+            entity.Property(location => location.LocationId).HasMaxLength(64);
+            entity.Property(location => location.WarehouseName).HasMaxLength(256);
+            entity.Property(location => location.LocationName).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<ReportingCustomerClassChannelEntity>(entity =>
+        {
+            entity.ToTable("customer_class_channels", schema);
+            entity.HasKey(channel => channel.CustomerClassId);
+            entity.Property(channel => channel.CustomerClassId).HasMaxLength(64);
+            entity.Property(channel => channel.Channel).HasMaxLength(64);
+            entity.Property(channel => channel.UpdatedBy).HasMaxLength(320);
+        });
+
+        modelBuilder.Entity<SellInLineEntity>(entity =>
+        {
+            entity.ToTable("sell_in_lines", schema);
+            entity.HasKey(line => line.Id);
+            entity.HasIndex(line => new { line.DocumentType, line.ReferenceNumber, line.LineNumber }).IsUnique();
+            entity.HasIndex(line => new { line.FinancialYear, line.FinancialMonth });
+            entity.HasIndex(line => line.CustomerId);
+            entity.HasIndex(line => line.InventoryId);
+            entity.HasIndex(line => line.SalesRepId);
+            entity.Property(line => line.DocumentType).HasConversion<string>().HasMaxLength(16);
+            entity.Property(line => line.ReferenceNumber).HasMaxLength(32);
+            entity.Property(line => line.PostPeriod).HasMaxLength(8);
+            entity.Property(line => line.CustomerId).HasMaxLength(64);
+            entity.Property(line => line.SalesRepId).HasMaxLength(64);
+            entity.Property(line => line.InventoryId).HasMaxLength(64);
+            entity.Property(line => line.WarehouseId).HasMaxLength(64);
+            entity.Property(line => line.LocationId).HasMaxLength(64);
+            entity.Property(line => line.Uom).HasMaxLength(16);
+            entity.Property(line => line.Quantity).HasPrecision(18, 4);
+            entity.Property(line => line.BaseQuantity).HasPrecision(18, 4);
+            entity.Property(line => line.Amount).HasPrecision(18, 2);
+        });
+
+        // Views, made in the migration AddSellInWorkbookRules. Their SQL is in SellInReportViews.
+        modelBuilder.Entity<SellInReportLine>(entity =>
+        {
+            entity.ToView(SellInReportViews.ReportLinesView, schema);
+            entity.HasNoKey();
+            entity.Property(line => line.DocumentType).HasConversion<string>();
+        });
+
+        modelBuilder.Entity<SellInExcludedLine>(entity =>
+        {
+            entity.ToView(SellInReportViews.ExcludedLinesView, schema);
+            entity.HasNoKey();
+            entity.Property(line => line.DocumentType).HasConversion<string>();
+        });
+    }
+
+    private static void ConfigureMerchandisers(ModelBuilder modelBuilder)
+    {
+        const string schema = "reporting";
+
+        modelBuilder.Entity<MerchandiserCompanyEntity>(entity =>
+        {
+            entity.ToTable("merchandiser_companies", schema);
+            entity.HasKey(company => company.Id);
+            entity.Property(company => company.Name).HasMaxLength(128);
+            entity.Property(company => company.StatementTitle).HasMaxLength(128);
+            entity.Property(company => company.PaymentKind).HasMaxLength(16);
+            entity.Property(company => company.PaymentRatePercent).HasPrecision(7, 4);
+            entity.Property(company => company.RetainerAmount).HasPrecision(18, 2);
+            entity.Property(company => company.UpdatedBy).HasMaxLength(320);
+            entity.HasIndex(company => new { company.Name, company.ValidFrom }).IsUnique();
+        });
+
+        modelBuilder.Entity<MerchandiserAreaEntity>(entity =>
+        {
+            entity.ToTable("merchandiser_areas", schema);
+            entity.HasKey(area => area.Id);
+            entity.Property(area => area.Name).HasMaxLength(128);
+            entity.Property(area => area.CommissionRatePercent).HasPrecision(7, 4);
+            entity.HasIndex(area => new { area.CompanyId, area.Order });
+            entity.HasOne<MerchandiserCompanyEntity>().WithMany().HasForeignKey(area => area.CompanyId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<MerchandiserLineEntity>(entity =>
+        {
+            entity.ToTable("merchandiser_lines", schema);
+            entity.HasKey(line => line.Id);
+            entity.Property(line => line.Label).HasMaxLength(128);
+            entity.Property(line => line.CustomerClassId).HasMaxLength(64);
+            entity.HasIndex(line => new { line.AreaId, line.Order });
+            entity.HasOne<MerchandiserAreaEntity>().WithMany().HasForeignKey(line => line.AreaId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<MerchandiserMakroStoreEntity>(entity =>
+        {
+            entity.ToTable("merchandiser_makro_stores", schema);
+            entity.HasKey(link => new { link.AreaId, link.StoreId });
+            entity.HasOne<MerchandiserAreaEntity>().WithMany().HasForeignKey(link => link.AreaId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<RetailStoreEntity>().WithMany().HasForeignKey(link => link.StoreId).OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+
+    private static void ConfigureSellOut(ModelBuilder modelBuilder)
+    {
+        const string schema = "reporting";
+
+        modelBuilder.Entity<SellOutImportEntity>(entity =>
+        {
+            entity.ToTable("sell_out_imports", schema);
+            entity.HasKey(import => import.Id);
+            entity.Property(import => import.Source).HasMaxLength(64);
+            entity.Property(import => import.FileName).HasMaxLength(260);
+            entity.Property(import => import.FileSha256).HasMaxLength(64);
+            entity.Property(import => import.ReceivedBy).HasMaxLength(320);
+            entity.Property(import => import.Status).HasMaxLength(16);
+            entity.Property(import => import.StatusReason).HasMaxLength(1000);
+            entity.Property(import => import.ArchivePath).HasMaxLength(512);
+            // A file loads once. A preview or a refusal of the same file can repeat.
+            entity.HasIndex(import => import.FileSha256)
+                .IsUnique()
+                .HasFilter($"\"Status\" = '{SellOutImportStatuses.Loaded}'");
+            entity.HasIndex(import => new { import.Source, import.CreatedAt });
+        });
+
+        modelBuilder.Entity<SellOutImportIssueEntity>(entity =>
+        {
+            entity.ToTable("sell_out_import_issues", schema);
+            entity.HasKey(issue => issue.Id);
+            entity.Property(issue => issue.Reason).HasMaxLength(200);
+            entity.Property(issue => issue.RawKey).HasMaxLength(500);
+            entity.HasIndex(issue => issue.ImportId);
+            entity.HasOne<SellOutImportEntity>().WithMany().HasForeignKey(issue => issue.ImportId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RetailStoreEntity>(entity =>
+        {
+            entity.ToTable("retail_stores", schema);
+            entity.HasKey(store => store.Id);
+            entity.Property(store => store.Retailer).HasMaxLength(64);
+            entity.Property(store => store.StoreCode).HasMaxLength(64);
+            entity.Property(store => store.Name).HasMaxLength(256);
+            entity.Property(store => store.Brand).HasMaxLength(64);
+            entity.Property(store => store.Region).HasMaxLength(128);
+            entity.Property(store => store.Province).HasMaxLength(64);
+            entity.Property(store => store.Gln).HasMaxLength(13);
+            entity.Property(store => store.AcumaticaCustomerId).HasMaxLength(64);
+            entity.HasIndex(store => new { store.Retailer, store.StoreCode }).IsUnique();
+        });
+
+        modelBuilder.Entity<SellOutMonthEntity>(entity =>
+        {
+            entity.ToTable("sell_out_months", schema);
+            entity.HasKey(month => month.Id);
+            entity.Property(month => month.Source).HasMaxLength(64);
+            entity.Property(month => month.InventoryId).HasMaxLength(64);
+            entity.Property(month => month.SourceProductCode).HasMaxLength(64);
+            entity.Property(month => month.Gtin).HasMaxLength(14);
+            entity.Property(month => month.Units).HasPrecision(18, 4);
+            entity.Property(month => month.UnitsEach).HasPrecision(18, 4);
+            entity.Property(month => month.ValueExclVat).HasPrecision(18, 2);
+            entity.HasIndex(month => new { month.Source, month.StoreId, month.SourceProductCode, month.Year, month.Month }).IsUnique();
+            entity.HasIndex(month => new { month.Source, month.Year, month.Month });
+            entity.HasIndex(month => new { month.FinancialYear, month.FinancialMonth });
+            entity.HasIndex(month => month.InventoryId);
+            entity.HasIndex(month => month.ImportId);
+            entity.HasOne<RetailStoreEntity>().WithMany().HasForeignKey(month => month.StoreId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<StoreStockSnapshotEntity>(entity =>
+        {
+            entity.ToTable("store_stock_snapshots", schema);
+            entity.HasKey(snapshot => snapshot.Id);
+            entity.Property(snapshot => snapshot.Source).HasMaxLength(64);
+            entity.Property(snapshot => snapshot.InventoryId).HasMaxLength(64);
+            entity.Property(snapshot => snapshot.SourceProductCode).HasMaxLength(64);
+            entity.Property(snapshot => snapshot.Gtin).HasMaxLength(14);
+            entity.Property(snapshot => snapshot.StockOnHand).HasPrecision(18, 4);
+            entity.Property(snapshot => snapshot.StockOnOrder).HasPrecision(18, 4);
+            entity.Property(snapshot => snapshot.StockInTransit).HasPrecision(18, 4);
+            entity.Property(snapshot => snapshot.StockValue).HasPrecision(18, 2);
+            entity.Property(snapshot => snapshot.WeeksOfStock).HasPrecision(18, 2);
+            entity.Property(snapshot => snapshot.DcStock).HasPrecision(18, 4);
+            entity.HasIndex(snapshot => new { snapshot.Source, snapshot.StoreId, snapshot.SourceProductCode, snapshot.SnapshotDate }).IsUnique();
+            entity.HasIndex(snapshot => snapshot.ImportId);
+            entity.HasOne<RetailStoreEntity>().WithMany().HasForeignKey(snapshot => snapshot.StoreId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<SellOutProductMapEntity>(entity =>
+        {
+            entity.ToTable("sell_out_product_maps", schema);
+            entity.HasKey(map => new { map.Source, map.SourceProductCode });
+            entity.Property(map => map.Source).HasMaxLength(64);
+            entity.Property(map => map.SourceProductCode).HasMaxLength(64);
+            entity.Property(map => map.InventoryId).HasMaxLength(64);
+            entity.Property(map => map.UnitsPerEach).HasPrecision(18, 4);
+            entity.Property(map => map.Method).HasMaxLength(32);
+            entity.Property(map => map.MappedBy).HasMaxLength(320);
+        });
+
+        modelBuilder.Entity<ProductGtinEntity>(entity =>
+        {
+            entity.ToTable("product_gtins", schema);
+            entity.HasKey(gtin => gtin.Gtin);
+            entity.Property(gtin => gtin.Gtin).HasMaxLength(14);
+            entity.Property(gtin => gtin.InventoryId).HasMaxLength(64);
+            entity.Property(gtin => gtin.Uom).HasMaxLength(16);
+            entity.HasIndex(gtin => gtin.InventoryId);
+        });
+    }
+
 }

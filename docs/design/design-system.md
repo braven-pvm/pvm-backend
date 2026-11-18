@@ -38,7 +38,7 @@ Rules that apply to every screen:
 - Components:
   - Layout: [PageFrame](#pageframe), [Columns](#columns), [Stack](#stack), [Panel](#panel), [PageHeader](#pageheader), [TileGrid](#tilegrid), [AppShell](#appshell).
   - Actions: [Button](#button), [ButtonLink](#buttonlink), [SubmitButton](#submitbutton), [ConfirmDialog](#confirmdialog).
-  - Content: [CodeBlock](#codeblock).
+  - Content: [CodeBlock](#codeblock), [PdfFrame](#pdfframe), [QrCode](#qrcode).
   - Status: [StatusBadge](#statusbadge), [Notice](#notice), [Spinner](#spinner), [EmptyState](#emptystate).
   - Forms: [Fields](#fields), [FileDrop](#filedrop).
   - Lists: [DataTable](#datatable), [FilterChips](#filterchips), [FilterBar](#filterbar), [Pagination](#pagination).
@@ -89,6 +89,7 @@ icon that is not interactive never uses the brand colour.
 | `--color-sidebar-current` | `#24392c` | `#1f3326` | Current sidebar item |
 | `--color-band-production` | `#b42318` | `#7a1a12` | Production band |
 | `--color-backdrop` | 48 % dark | 64 % black | Behind a modal dialog |
+| `--color-qr-background` | `#ffffff` | `#ffffff` | Behind a `QrCode`; white in both themes so a camera reads it |
 
 Contrast, checked with the WCAG formula (minimum 4.5:1 for text, 3:1 for borders):
 
@@ -333,6 +334,8 @@ error to the user. The server logs it.
 | Go back to the list | `BackLink` |
 | Show progress through a task | `Stepper` |
 | Show facts about one record | `KeyValueList` |
+| Show a scanned PDF next to its data | `PdfFrame` |
+| Show a code for a phone to scan from the screen | `QrCode` |
 | Show what happened to a record | `Timeline` |
 | List what needs a person | `AttentionList` |
 | Show a key number | `StatTile` in a `TileGrid` |
@@ -482,6 +485,35 @@ A read-only payload: generated XML, a raw JSON response. It scrolls inside
 itself, up to 480px high. `language="json"` formats JSON with indents. `empty`
 says why there is no payload. Payloads are for Admins: put them in a Raw tab.
 
+### PdfFrame
+
+A PDF in the page, shown by the browser's own viewer, with the link "Open the
+PDF in a new tab" under it for a phone or a browser that does not show PDFs
+inline. It is 720px high (at most 80 % of the screen), 480px on a phone.
+
+| Prop | Notes |
+| --- | --- |
+| `src` | A workbench URL that serves the PDF, such as `/documents/{id}/file`. Never a backend URL: the workbench route calls the API with the user's token on the server |
+| `title` | Names the document for screen readers: "Proof of delivery uploaded 17 Nov, 09:12" |
+
+Put it in a `Panel` in a `Columns`, next to the panel with the fields read from
+it, so the user can compare them.
+
+### QrCode
+
+A QR code for a phone to scan from the screen, such as a scanner setup code.
+It is 320px wide (at least 280px), black on white with a quiet zone in both
+themes.
+
+| Prop | Notes |
+| --- | --- |
+| `svg` | The SVG markup, made on the server with the `qrcode` package (`QRCode.toString(text, { type: "svg" })`). Never markup from user input, and never a third-party QR service |
+| `label` | Names the code for screen readers: "Setup code for Dispatch phone 1" |
+
+Put it in a `Panel` that says what the code is for, how long it is valid, and
+what to do on the phone. A code that is secret is held in memory only: never in
+the URL, a cookie or browser storage.
+
 ---
 
 ## Status
@@ -493,11 +525,11 @@ example `DeadLettered` becomes "Dead lettered" in error colour.
 
 | Tone | Icon | Values |
 | --- | --- | --- |
-| success | circle with check | Succeeded, Ready, Healthy, Submitted, Accepted, Live, Processed, Resolved |
+| success | circle with check | Succeeded, Ready, Healthy, Submitted, Accepted, Live, Processed, Resolved, Filed |
 | error | circle with cross | Failed, Rejected, Blocked, Failing, Dead lettered |
-| warning | circle with mark | Needs review, Stale, Late, Open, Ambiguous |
-| info | circle with i | Shadow, Running, In progress |
-| neutral | dashed circle | Off, Disabled, Queued, and every value that is not known |
+| warning | circle with mark | Needs review, Stale, Late, Open, Ambiguous, Stuck |
+| info | circle with i | Shadow, Running, In progress, Processing |
+| neutral | dashed circle | Off, Disabled, Queued, Received, and every value that is not known |
 
 Pass `tone` or `label` only when the value itself is wrong for the reader. To
 add a status value, add it to `toneByStatus` in `src/ui/status-badge.tsx` and to
@@ -617,6 +649,15 @@ Rules:
 - The first column identifies the record. If the row has a page, the first
   column is the link.
 - At most 7 columns. Put more detail on the record page.
+- A linked row can hold one more link in another cell, such as the invoice
+  number as a link to Acumatica. It opens in a new tab and sits above the row
+  link. Never put it in the first cell.
+- Exception, Scanner devices (`/documents/devices`): the row actions ("New
+  setup code", "Revoke") sit in the first cell, under the device name, not in
+  an action column. These are the primary admin actions of the page and must
+  stay visible on a 375px phone, where the table scrolls sideways and a last
+  column would be off screen. The rows have no record page, so the first cell
+  is not a link. Use this only for a list whose row actions are its main job.
 - An action column is the last column. It holds one tertiary `ButtonLink` per
   row, such as "Map item". Use it only when the row has no record page.
 - A status column uses `StatusBadge`.

@@ -6,18 +6,24 @@ using Pvm.Api.Features.AcumaticaPushNotifications;
 using Pvm.Api.Features.Automation;
 using Pvm.Api.Features.Exceptions;
 using Pvm.Api.Features.Auth;
+using Pvm.Api.Features.Documents;
 using Pvm.Api.Features.Invoices;
 using Pvm.Api.Features.IntegrationOperations;
 using Pvm.Api.Features.Mappings;
 using Pvm.Api.Features.Operations;
+using Pvm.Api.Features.Reports;
 using Pvm.Api.Features.ShopritePurchaseOrders;
 using Pvm.Api.Features.Submissions;
 using Pvm.Application.Submissions;
 using Pvm.Infrastructure.Acumatica;
+using Pvm.Infrastructure.Documents;
 using Pvm.Infrastructure.PayloadArchive;
+using Pvm.Infrastructure.Reporting;
 using Pvm.Infrastructure.Persistence;
 using Pvm.Infrastructure.Shoprite;
 using Pvm.Api.Features.Banking;
+using Pvm.Api.Features.Stock;
+using Pvm.Infrastructure.Stock;
 using Pvm.Infrastructure.Investec;
 using Pvm.Infrastructure.Nedbank;
 
@@ -38,6 +44,7 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0,
             AutoReplenishment = true
         }));
+    options.AddDeviceEnrolRateLimit();
 });
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -45,12 +52,23 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 });
 builder.Services.AddPvmPersistence(builder.Configuration);
 builder.Services.AddPayloadArchive(builder.Configuration);
+builder.Services.AddDocumentCapture(builder.Configuration);
+builder.Services.AddScoped<DocumentProcessor>();
+builder.Services.AddScoped<DocumentReviewService>();
+builder.Services.AddScoped<DocumentIntakeService>();
+builder.Services.AddScoped<ScannerDeviceService>();
 builder.Services.AddPvmAuth(builder.Configuration, builder.Environment);
 builder.Services.AddAcumaticaInvoiceSource(builder.Configuration);
+builder.Services.AddStockSyncRunReader();
 builder.Services.AddNedbankStatementImport(builder.Configuration);
+builder.Services.AddSellOutImport();
+builder.Services.AddMerchandiserStatements();
 builder.Services.AddInvestecBankFeed(builder.Configuration);
-builder.Services.AddMemoryCache();
-builder.Services.AddSingleton<BankingStatusCache>();
+builder.Services.AddOptions<BankingStatusOptions>()
+    .Bind(builder.Configuration.GetSection(BankingStatusOptions.SectionName))
+    .Validate(o => o.RefreshInterval >= TimeSpan.FromSeconds(30), "BankingStatus RefreshInterval must be at least 30 seconds.");
+builder.Services.AddSingleton<BankingStatusRefresher>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<BankingStatusRefresher>());
 builder.Services.AddShopritePurchaseOrderClient(builder.Configuration);
 builder.Services.AddScoped<SubmitShopriteInvoiceHandler>();
 builder.Services.AddConfiguredShopriteInvoiceClient(builder.Configuration);
@@ -72,6 +90,9 @@ app.UseAuthorization();
 
 app.MapInvoiceEndpoints();
 app.MapBankImportEndpoints();
+app.MapSellOutEndpoints();
+app.MapStatementEndpoints();
+app.MapStockSyncEndpoints();
 app.MapSubmissionEndpoints();
 app.MapPurchaseOrderEndpoints();
 app.MapAdminUserEndpoints();
@@ -83,6 +104,10 @@ app.MapAcumaticaPushNotificationAdminEndpoints();
 app.MapInventoryMappingEndpoints();
 app.MapAutomationPolicyEndpoints();
 app.MapExceptionEndpoints();
+app.MapDocumentIntakeEndpoints();
+app.MapDocumentReviewEndpoints();
+app.MapScannerAdminEndpoints();
+app.MapDeviceEndpoints();
 
 app.Run();
 

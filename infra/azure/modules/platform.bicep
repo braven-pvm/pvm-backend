@@ -53,6 +53,12 @@ param shopritePoRefreshEnabled bool = false
 param shopriteUseLayer7Headers bool = false
 param acumaticaInvoiceSourceMode string = 'Fixture'
 param acumaticaBaseUrl string = ''
+
+@description('ACUMATICA_BASE_URL for the workbench: the Acumatica site its invoice links open. Empty: not set.')
+param workbenchAcumaticaBaseUrl string = ''
+
+@description('DocumentCapture__DeviceApiBaseUrl for the API: the https URL in the scanner setup QR code. Empty: not set.')
+param deviceApiBaseUrl string = ''
 param acumaticaCompany string = ''
 param acumaticaBranch string = ''
 
@@ -92,6 +98,54 @@ param investecFeedStartDate string = ''
 @description('Cron expression for the Investec feed. The default is 03:00 UTC, which is 05:00 in South Africa.')
 param investecFeedCron string = '0 3 * * *'
 
+@description('WooCommerce store root for the stock sync, for example https://www.pvm.co.za.')
+param woocommerceBaseUrl string = ''
+
+@description('WooCommerce REST API consumer key for the stock sync.')
+@secure()
+param woocommerceConsumerKey string = ''
+
+@description('WooCommerce REST API consumer secret for the stock sync.')
+@secure()
+param woocommerceConsumerSecret string = ''
+
+@description('Claude API key for document extraction in the worker.')
+@secure()
+param anthropicApiKey string = ''
+
+@description('Disabled, Shadow (read and log, write nothing) or Write. Write sets stock in the live web store.')
+@allowed([
+  'Disabled'
+  'Shadow'
+  'Write'
+])
+param stockSyncMode string = 'Shadow'
+
+@description('Cron expression for the stock sync, in UTC.')
+param stockSyncCron string = '*/30 * * * *'
+
+@description('Loads Acumatica sell-in into the reports schema each night. It only reads Acumatica.')
+param sellInEnabled bool = false
+
+@description('Cron expression for the sell-in load. The default is 02:00 UTC, which is 04:00 in South Africa.')
+param sellInCron string = '0 2 * * *'
+
+@description('Reads the sell-out mailbox and loads the attached retailer files.')
+param sellOutMailEnabled bool = false
+
+@description('The mailbox that receives the sell-out files.')
+param sellOutMailMailbox string = 'reports@pvm.co.za'
+
+@description('The application (client) id of the app registration pvm-sellout-mail.')
+param sellOutMailClientId string = ''
+
+@description('The client secret of the app registration pvm-sellout-mail.')
+@secure()
+param sellOutMailClientSecret string = ''
+
+@description('Cron expression for the sell-out mail job. Every 15 minutes.')
+param sellOutMailCron string = '*/15 * * * *'
+
 param acumaticaEndpointName string = 'Default'
 param acumaticaEndpointVersion string = '24.200.001'
 param acumaticaCustomerAccounts array = []
@@ -121,6 +175,10 @@ var purchaseOrderRefreshJobName = 'job-pvm-po-refresh-${suffix}'
 var acumaticaInvoiceReconciliationJobName = 'job-pvm-invoice-reconcile-${suffix}'
 var acumaticaInvoiceLookbackJobName = 'job-pvm-invoice-lookback-${suffix}'
 var investecBankFeedJobName = 'job-pvm-investec-feed-${suffix}'
+var stockSyncJobName = 'job-pvm-stock-sync-${suffix}'
+var sellInJobName = 'job-pvm-sell-in-${suffix}'
+var sellOutMailJobName = 'job-pvm-sell-out-mail-${suffix}'
+var hasSellOutMailCredentials = !empty(sellOutMailClientId) && !empty(sellOutMailClientSecret)
 var logName = 'log-pvm-integrations-${suffix}'
 var appInsightsName = 'appi-pvm-integrations-${suffix}'
 var containerAppsEnvironmentName = 'cae-pvm-integrations-${suffix}'
@@ -131,11 +189,54 @@ var serviceBusNamespaceName = 'sb-pvm-integrations-${suffix}'
 var shopritePurchaseOrderRefreshQueueName = 'shoprite-po-refresh'
 var acumaticaInvoiceDiscoveryQueueName = 'acumatica-invoice-discovery'
 var shopriteInvoiceSubmitQueueName = 'shoprite-invoice-submit'
+var documentProcessingQueueName = 'document-processing'
 var postgresServerName = 'psql-pvm-integrations-${suffix}'
 var postgresAdminUser = 'pvmadmin'
 var databaseName = 'pvm'
 var pvmConnectionString = 'Host=${postgres.properties.fullyQualifiedDomainName};Port=5432;Database=${databaseName};Username=${postgresAdminUser};Password=${postgresAdminPassword};Ssl Mode=Require;Trust Server Certificate=true'
 var hasAcumaticaCredentials = !empty(acumaticaUsername) && !empty(acumaticaPassword)
+var hasWooCommerceCredentials = !empty(woocommerceBaseUrl) && !empty(woocommerceConsumerKey) && !empty(woocommerceConsumerSecret)
+var woocommerceCredentialSecrets = hasWooCommerceCredentials ? [
+  {
+    name: 'woocommerce-consumerkey'
+    value: woocommerceConsumerKey
+  }
+  {
+    name: 'woocommerce-consumersecret'
+    value: woocommerceConsumerSecret
+  }
+] : []
+var hasAnthropicApiKey = !empty(anthropicApiKey)
+var anthropicSecrets = hasAnthropicApiKey ? [
+  {
+    name: 'anthropic-apikey'
+    value: anthropicApiKey
+  }
+] : []
+var anthropicEnvironment = hasAnthropicApiKey ? [
+  {
+    name: 'Anthropic__ApiKey'
+    secretRef: 'anthropic-apikey'
+  }
+] : []
+var woocommerceEnvironment = hasWooCommerceCredentials ? [
+  {
+    name: 'WooCommerce__BaseUrl'
+    value: woocommerceBaseUrl
+  }
+  {
+    name: 'WooCommerce__ConsumerKey'
+    secretRef: 'woocommerce-consumerkey'
+  }
+  {
+    name: 'WooCommerce__ConsumerSecret'
+    secretRef: 'woocommerce-consumersecret'
+  }
+  {
+    name: 'StockSync__Mode'
+    value: stockSyncMode
+  }
+] : []
 var hasInvestecCredentials = !empty(investecClientId) && !empty(investecClientSecret) && !empty(investecApiKey)
 var investecCredentialSecrets = hasInvestecCredentials ? [
   {
@@ -296,6 +397,22 @@ var apiEnvironment = concat([
     value: 'https://${storageAccountName}.blob.${environment().suffixes.storage}'
   }
   {
+    name: 'DocumentCapture__Provider'
+    value: 'AzureBlob'
+  }
+  {
+    name: 'DocumentCapture__ContainerName'
+    value: documentsContainer.name
+  }
+  {
+    name: 'DocumentCapture__ServiceUri'
+    value: 'https://${storageAccountName}.blob.${environment().suffixes.storage}'
+  }
+  {
+    name: 'DocumentCapture__AcumaticaAttachMode'
+    value: 'Shadow'
+  }
+  {
     name: 'AZURE_CLIENT_ID'
     value: identity.properties.clientId
   }
@@ -417,7 +534,12 @@ var apiRuntimeEnvironment = concat(apiEnvironment, [
     name: 'AcumaticaPushNotifications__RateLimitPerMinute'
     value: '120'
   }
-], acumaticaWebhookSecretEnvironment, acumaticaWebhookCompanyEnvironment, acumaticaWebhookQueryEnvironment)
+], acumaticaWebhookSecretEnvironment, acumaticaWebhookCompanyEnvironment, acumaticaWebhookQueryEnvironment, empty(deviceApiBaseUrl) ? [] : [
+  {
+    name: 'DocumentCapture__DeviceApiBaseUrl'
+    value: deviceApiBaseUrl
+  }
+])
 var workerEnvironment = concat(apiEnvironment, [
   {
     name: 'ServiceBus__FullyQualifiedNamespace'
@@ -551,6 +673,15 @@ resource payloadsContainer 'Microsoft.Storage/storageAccounts/blobServices/conta
   }
 }
 
+// The original PDF of each captured document (document capture design 6.6).
+resource documentsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobService
+  name: 'documents'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 resource serviceBus 'Microsoft.ServiceBus/namespaces@2024-01-01' = {
   name: serviceBusNamespaceName
   location: location
@@ -570,6 +701,7 @@ resource serviceBusQueues 'Microsoft.ServiceBus/namespaces/queues@2024-01-01' = 
   shopritePurchaseOrderRefreshQueueName
   acumaticaInvoiceDiscoveryQueueName
   shopriteInvoiceSubmitQueueName
+  documentProcessingQueueName
 ]: {
   parent: serviceBus
   name: queueName
@@ -853,7 +985,7 @@ resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: workbenchContainerAppName
           image: '${acr.properties.loginServer}/pvm-workbench:${workbenchImageTag}'
-          env: [
+          env: concat([
             {
               name: 'NODE_ENV'
               value: 'production'
@@ -898,7 +1030,12 @@ resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
               name: 'NEXT_PUBLIC_PVM_ENVIRONMENT_NAME'
               value: toUpper(environmentName)
             }
-          ]
+          ], empty(workbenchAcumaticaBaseUrl) ? [] : [
+            {
+              name: 'ACUMATICA_BASE_URL'
+              value: workbenchAcumaticaBaseUrl
+            }
+          ])
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'
@@ -933,7 +1070,7 @@ resource workerContainerApp 'Microsoft.App/containerApps@2025-01-01' = {
           identity: identity.id
         }
       ]
-      secrets: commonRuntimeSecrets
+      secrets: concat(commonRuntimeSecrets, anthropicSecrets)
     }
     template: {
       scale: {
@@ -944,6 +1081,7 @@ resource workerContainerApp 'Microsoft.App/containerApps@2025-01-01' = {
           shopritePurchaseOrderRefreshQueueName
           acumaticaInvoiceDiscoveryQueueName
           shopriteInvoiceSubmitQueueName
+          documentProcessingQueueName
         ]: {
           name: replace(queueName, '-', '')
           custom: {
@@ -962,7 +1100,7 @@ resource workerContainerApp 'Microsoft.App/containerApps@2025-01-01' = {
         {
           name: workerContainerAppName
           image: '${acr.properties.loginServer}/pvm-worker:${workerImageTag}'
-          env: workerEnvironment
+          env: concat(workerEnvironment, anthropicEnvironment)
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'
@@ -1190,6 +1328,194 @@ resource investecBankFeedJob 'Microsoft.App/jobs@2025-01-01' = if (hasInvestecCr
   ]
 }
 
+// The stock sync reads Acumatica and sets stock in the web store every half hour. It deploys only
+// when both sets of credentials exist. stockSyncMode decides whether it writes; Shadow writes nothing.
+resource stockSyncJob 'Microsoft.App/jobs@2025-01-01' = if (hasWooCommerceCredentials && hasAcumaticaCredentials) {
+  name: stockSyncJobName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identity.id}': {}
+    }
+  }
+  properties: {
+    environmentId: containerAppsEnvironment.id
+    configuration: {
+      triggerType: 'Schedule'
+      replicaTimeout: 900
+      replicaRetryLimit: 0
+      scheduleTriggerConfig: {
+        cronExpression: stockSyncCron
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      registries: [
+        {
+          server: acr.properties.loginServer
+          identity: identity.id
+        }
+      ]
+      // Only this job holds the WooCommerce key: the API and the worker app never call the web store.
+      secrets: concat(commonRuntimeSecrets, woocommerceCredentialSecrets)
+    }
+    template: {
+      containers: [
+        {
+          name: stockSyncJobName
+          image: '${acr.properties.loginServer}/pvm-worker:${workerImageTag}'
+          args: [
+            '--sync-woocommerce-stock'
+          ]
+          env: concat(workerEnvironment, woocommerceEnvironment)
+          resources: {
+            // The open-order read holds 45 days of sales orders in memory at once.
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    identityAcrPullRole
+  ]
+}
+
+// The sell-in load reads the Acumatica inquiry PVM-Sales-Lines each night into the reports schema.
+// It reads the current posting period, two before it and one after it. It writes nothing to Acumatica.
+resource sellInJob 'Microsoft.App/jobs@2025-01-01' = if (sellInEnabled && hasAcumaticaCredentials) {
+  name: sellInJobName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identity.id}': {}
+    }
+  }
+  properties: {
+    environmentId: containerAppsEnvironment.id
+    configuration: {
+      triggerType: 'Schedule'
+      replicaTimeout: 1800
+      replicaRetryLimit: 1
+      scheduleTriggerConfig: {
+        cronExpression: sellInCron
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      registries: [
+        {
+          server: acr.properties.loginServer
+          identity: identity.id
+        }
+      ]
+      secrets: commonRuntimeSecrets
+    }
+    template: {
+      containers: [
+        {
+          name: sellInJobName
+          image: '${acr.properties.loginServer}/pvm-worker:${workerImageTag}'
+          args: [
+            '--sync-sell-in'
+          ]
+          env: concat(workerEnvironment, [
+            {
+              name: 'SellIn__Enabled'
+              value: 'true'
+            }
+          ])
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    identityAcrPullRole
+  ]
+}
+
+// The sell-out mail job reads the sell-out mailbox through Microsoft Graph and loads each attached
+// retailer file. An Exchange application access policy limits the app to this one mailbox.
+resource sellOutMailJob 'Microsoft.App/jobs@2025-01-01' = if (sellOutMailEnabled && hasSellOutMailCredentials) {
+  name: sellOutMailJobName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identity.id}': {}
+    }
+  }
+  properties: {
+    environmentId: containerAppsEnvironment.id
+    configuration: {
+      triggerType: 'Schedule'
+      replicaTimeout: 600
+      replicaRetryLimit: 0
+      scheduleTriggerConfig: {
+        cronExpression: sellOutMailCron
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      registries: [
+        {
+          server: acr.properties.loginServer
+          identity: identity.id
+        }
+      ]
+      secrets: concat(commonRuntimeSecrets, [
+        {
+          name: 'selloutmail-clientsecret'
+          value: sellOutMailClientSecret
+        }
+      ])
+    }
+    template: {
+      containers: [
+        {
+          name: sellOutMailJobName
+          image: '${acr.properties.loginServer}/pvm-worker:${workerImageTag}'
+          args: [
+            '--read-sell-out-mailbox'
+          ]
+          env: concat(workerEnvironment, [
+            {
+              name: 'SellOutMail__Enabled'
+              value: 'true'
+            }
+            {
+              name: 'SellOutMail__Mailbox'
+              value: sellOutMailMailbox
+            }
+            {
+              name: 'SellOutMail__ClientId'
+              value: sellOutMailClientId
+            }
+            {
+              name: 'SellOutMail__ClientSecret'
+              secretRef: 'selloutmail-clientsecret'
+            }
+          ])
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    identityAcrPullRole
+  ]
+}
+
 resource operationsActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   name: 'ag-pvm-integrations-${suffix}'
   location: 'global'
@@ -1347,3 +1673,6 @@ output purchaseOrderRefreshJobName string = shopritePoRefreshEnabled ? purchaseO
 output invoiceReconciliationJobName string = acumaticaInvoiceReconciliationJobName
 output invoiceLookbackJobName string = acumaticaInvoiceLookbackJobName
 output investecBankFeedJobName string = investecBankFeedJobName
+output stockSyncJobName string = stockSyncJobName
+output sellInJobName string = sellInEnabled ? sellInJobName : ''
+output sellOutMailJobName string = sellOutMailEnabled && hasSellOutMailCredentials ? sellOutMailJobName : ''

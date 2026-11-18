@@ -77,6 +77,19 @@ Required environment:
 NEXT_PUBLIC_API_BASE_URL=https://<api-host>
 ```
 
+Optional environment:
+
+```text
+ACUMATICA_BASE_URL=https://<acumatica-site>
+```
+
+`ACUMATICA_BASE_URL` turns invoice numbers on the Documents pages into links to
+the invoice screen in Acumatica (`/Main?ScreenId=AR301000&DocType=INV&RefNbr=…`).
+It is read on the server only. Without it, or when it is not an `https` URL,
+the invoice numbers are plain text. In Azure it comes from the Bicep parameter
+`workbenchAcumaticaBaseUrl` (`infra/azure/main.bicep`); the empty default leaves
+it unset.
+
 Before production:
 
 - add authentication

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  describeBankAccount,
+  describeStockFigures,
   formatDayAndDate,
   formatMoney,
   formatMoneyZar,
@@ -63,4 +65,44 @@ test("formatDate shows the South African calendar day", async () => {
   const { formatDate } = await import("./formatters.mjs");
   assert.equal(formatDate("2026-11-10T23:30:00Z"), "11 Nov 2026");
   assert.equal(formatDate(undefined), "—");
+});
+
+test("describeStockFigures shows the sheet's arithmetic for one product", () => {
+  // CER07 on 17 Nov 2026, as the inventory lite sheet works it out.
+  assert.equal(
+    describeStockFigures({ onHand: 3307, heldBackAdjustments: 3000, autoAdjustments: 307, openOrders: 10, promoOrders: 0, transfersOut: 5, warehouseCommitted: null }),
+    "3307 on hand − 3000 held back − 307 auto-adjusted = 0 for sale − 10 orders − 5 transfers out",
+  );
+});
+
+test("describeStockFigures leaves out zero parts and a negative held-back total", () => {
+  assert.equal(
+    describeStockFigures({ onHand: 13780, heldBackAdjustments: -24, autoAdjustments: 0, openOrders: 1180, promoOrders: 24, transfersOut: 0, warehouseCommitted: null }),
+    "13780 on hand − 1180 orders − 24 promo orders",
+  );
+});
+
+test("describeStockFigures uses the warehouse commitment when it is larger than the orders", () => {
+  assert.equal(
+    describeStockFigures({ onHand: 40, heldBackAdjustments: 0, autoAdjustments: 0, openOrders: 2, promoOrders: 0, transfersOut: 0, warehouseCommitted: 6 }),
+    "40 on hand − 6 orders",
+  );
+  assert.equal(describeStockFigures(null), "");
+});
+
+test("describeBankAccount says how far an account is imported", () => {
+  assert.equal(
+    describeBankAccount({ mode: "Upload", available: true, importedThrough: "2026-11-16", stale: false }),
+    "You upload it · imported through 16 November 2026",
+  );
+  assert.equal(describeBankAccount({ mode: "Automatic", available: true, importedThrough: null }), "Arrives automatically · nothing imported yet");
+  assert.equal(describeBankAccount({ mode: "Upload", available: false }), "You upload it · could not read Acumatica");
+});
+
+test("describeBankAccount says when the figures come from an earlier read", () => {
+  const now = new Date("2026-11-18T09:30:00Z");
+  assert.equal(
+    describeBankAccount({ mode: "Upload", available: true, importedThrough: "2026-11-16", stale: true, readAt: "2026-11-18T09:00:00Z" }, now),
+    "You upload it · imported through 16 November 2026 · Acumatica could not be read now; this is from 18 Nov, 11:00",
+  );
 });

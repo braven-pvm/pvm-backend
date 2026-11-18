@@ -111,6 +111,12 @@ param acumaticaInvoiceSourceMode string = 'Fixture'
 @description('Acumatica QA instance base URL.')
 param acumaticaBaseUrl string = ''
 
+@description('The Acumatica site the workbench links invoice numbers to, for example https://pvm.example.com/Instance. Optional: empty leaves ACUMATICA_BASE_URL unset and invoice numbers stay plain text.')
+param workbenchAcumaticaBaseUrl string = ''
+
+@description('The API public https URL that scanner phones call; it goes into the setup QR code (DocumentCapture:DeviceApiBaseUrl). Empty: the scanner setup-code endpoints return 500 until it is set.')
+param deviceApiBaseUrl string = ''
+
 @description('Acumatica company or tenant used for API sign-in.')
 param acumaticaCompany string = ''
 
@@ -151,6 +157,45 @@ param investecRefreshLookbackDays int = 7
 
 @description('First date the Investec feed owns. It never reads earlier, so the manual import is not duplicated.')
 param investecFeedStartDate string = ''
+
+@description('WooCommerce store root for the stock sync.')
+param woocommerceBaseUrl string = ''
+
+@description('WooCommerce REST API consumer key for the stock sync.')
+@secure()
+param woocommerceConsumerKey string = ''
+
+@description('WooCommerce REST API consumer secret for the stock sync.')
+@secure()
+param woocommerceConsumerSecret string = ''
+
+@description('Claude API key for document extraction in the worker.')
+@secure()
+param anthropicApiKey string = ''
+
+@description('Disabled, Shadow or Write. Write sets stock in the live web store.')
+@allowed([
+  'Disabled'
+  'Shadow'
+  'Write'
+])
+param stockSyncMode string = 'Shadow'
+
+@description('Loads Acumatica sell-in into the reports schema each night. Off by default. It only reads Acumatica.')
+param sellInEnabled bool = false
+
+@description('Reads the sell-out mailbox and loads the attached retailer files. Off by default. Turn it on in one environment only, because the job moves each mail it reads.')
+param sellOutMailEnabled bool = false
+
+@description('The mailbox that receives the sell-out files.')
+param sellOutMailMailbox string = 'reports@pvm.co.za'
+
+@description('The application (client) id of the app registration pvm-sellout-mail. Not a secret.')
+param sellOutMailClientId string = ''
+
+@description('The client secret of the app registration pvm-sellout-mail.')
+@secure()
+param sellOutMailClientSecret string = ''
 
 @description('Acumatica contract REST endpoint name.')
 param acumaticaEndpointName string = 'Default'
@@ -258,6 +303,8 @@ module platform 'modules/platform.bicep' = {
     shopriteInvoiceSubmissionMode: shopriteInvoiceSubmissionMode
     acumaticaInvoiceSourceMode: acumaticaInvoiceSourceMode
     acumaticaBaseUrl: acumaticaBaseUrl
+    workbenchAcumaticaBaseUrl: workbenchAcumaticaBaseUrl
+    deviceApiBaseUrl: deviceApiBaseUrl
     acumaticaCompany: acumaticaCompany
     acumaticaBranch: acumaticaBranch
     acumaticaUsername: acumaticaUsername
@@ -270,6 +317,16 @@ module platform 'modules/platform.bicep' = {
     investecCashAccount: investecCashAccount
     investecRefreshLookbackDays: investecRefreshLookbackDays
     investecFeedStartDate: investecFeedStartDate
+    woocommerceBaseUrl: woocommerceBaseUrl
+    woocommerceConsumerKey: woocommerceConsumerKey
+    woocommerceConsumerSecret: woocommerceConsumerSecret
+    anthropicApiKey: anthropicApiKey
+    stockSyncMode: stockSyncMode
+    sellInEnabled: sellInEnabled
+    sellOutMailEnabled: sellOutMailEnabled
+    sellOutMailMailbox: sellOutMailMailbox
+    sellOutMailClientId: sellOutMailClientId
+    sellOutMailClientSecret: sellOutMailClientSecret
     acumaticaEndpointName: acumaticaEndpointName
     acumaticaEndpointVersion: acumaticaEndpointVersion
     acumaticaCustomerAccounts: acumaticaCustomerAccounts

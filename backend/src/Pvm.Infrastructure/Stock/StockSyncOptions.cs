@@ -1,0 +1,81 @@
+namespace Pvm.Infrastructure.Stock;
+
+/// <summary>Whether a run changes the web store.</summary>
+public enum StockSyncMode
+{
+    /// <summary>The job does nothing.</summary>
+    Disabled,
+
+    /// <summary>The job reads both systems and logs every decision, but writes nothing.</summary>
+    Shadow,
+
+    /// <summary>The job sets stock quantities in the web store.</summary>
+    Write,
+}
+
+/// <summary>
+/// Configuration for the Acumatica → WooCommerce stock sync. The defaults reproduce the "current
+/// stock" sheet of inventory lite.xlsm for warehouse HO, location FG, out of stock at a level of 5 or less.
+/// </summary>
+public sealed record StockSyncOptions
+{
+    public const string SectionName = "StockSync";
+
+    public StockSyncMode Mode { get; init; } = StockSyncMode.Shadow;
+
+    /// <summary>The Acumatica warehouse the web store sells from.</summary>
+    public string WarehouseId { get; init; } = "HO";
+
+    /// <summary>The location inside that warehouse.</summary>
+    public string LocationId { get; init; } = "FG";
+
+    /// <summary>At or below this level the store shows the product as out of stock.</summary>
+    public int OutOfStockAtOrBelow { get; init; } = 5;
+
+    /// <summary>How far back a sales order with no confirmed shipment still holds stock.</summary>
+    public int OpenOrderLookbackDays { get; init; } = 45;
+
+    public string[] OpenOrderTypes { get; init; } = ["SO", "S1"];
+
+    /// <summary>Customers whose orders do not hold stock: house and promotion accounts.</summary>
+    public string[] ExcludedCustomers { get; init; } = [];
+
+    /// <summary>Promotion accounts. Their orders of any type except quotes hold stock for longer.</summary>
+    public string[] PromoCustomers { get; init; } = [];
+
+    /// <summary>How far back a promotion order with no confirmed shipment still holds stock.</summary>
+    public int PromoOrderLookbackDays { get; init; } = 150;
+
+    /// <summary>The order type that never holds stock for a promotion account.</summary>
+    public string PromoIgnoredOrderType { get; init; } = "QT";
+
+    /// <summary>Adjustments with this reason code bring in stock that is not for sale.</summary>
+    public string HeldBackReasonCode { get; init; } = "BLADJHO";
+
+    /// <summary>The first adjustment date the held-back total counts from.</summary>
+    public DateOnly HeldBackSince { get; init; } = new(2022, 5, 1);
+
+    /// <summary>Automatic adjustments after an item's last stock count are not for sale either.</summary>
+    public string AutoAdjustmentReasonCode { get; init; } = "AUTOADJ";
+
+    /// <summary>
+    /// Items outside the sheet's main query. Their orders are the larger of the warehouse booked
+    /// or allocated quantity and the open orders, and their transfers count at every location.
+    /// </summary>
+    public string[] WarehouseRulePrefixes { get; init; } = ["PROT", "SUPL", "REPL"];
+
+    /// <summary>
+    /// Variations that take their stock from the parent product in the web store, but must hold
+    /// their own level. The sync turns on their own stock and sets it, as for any other item.
+    /// </summary>
+    public string[] OwnStockVariations { get; init; } = [];
+
+    /// <summary>The UTC offset Acumatica stores order dates in. South Africa has no daylight saving.</summary>
+    public string AcumaticaUtcOffset { get; init; } = "+02:00";
+
+    /// <summary>
+    /// A write run refuses to start when it would set more than this many in-stock items to zero.
+    /// A wide drop to zero means something was misread, not that stock ran out everywhere at once.
+    /// </summary>
+    public int MaximumItemsZeroedPerRun { get; init; } = 10;
+}

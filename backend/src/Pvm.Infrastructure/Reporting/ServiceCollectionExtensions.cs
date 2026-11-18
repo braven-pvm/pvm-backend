@@ -1,0 +1,106 @@
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Pvm.Application.Reporting;
+using Pvm.Application.Reporting.SellOut;
+using Pvm.Domain.Reporting;
+using Pvm.Infrastructure.Reporting.SellOut;
+
+namespace Pvm.Infrastructure.Reporting;
+
+public static class ServiceCollectionExtensions
+{
+    /// <summary>
+    /// Registers the Acumatica sell-in load. Assumes <c>AddAcumaticaInvoiceSource</c> has bound the
+    /// shared Acumatica options. Register the payload archive too, to keep raw responses.
+    /// </summary>
+    public static IServiceCollection AddSellInSync(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddOptions<SellInSyncOptions>()
+            .Bind(configuration.GetSection(SellInSyncOptions.SectionName))
+            .Validate(o => !string.IsNullOrWhiteSpace(o.InquiryName), "SellIn InquiryName is required.")
+            .Validate(o => o.PeriodsBack is >= 0 and <= 120, "SellIn PeriodsBack must be 0 to 120.")
+            .Validate(o => o.PeriodsAhead is >= 0 and <= 2, "SellIn PeriodsAhead must be 0 to 2.")
+            .Validate(o => string.IsNullOrWhiteSpace(o.FirstPeriod) || PostingPeriod.TryParse(o.FirstPeriod, out _),
+                "SellIn FirstPeriod must be a posting period such as 012019.")
+            .Validate(o => o.ReadTimeoutSeconds is >= 10 and <= 1800, "SellIn ReadTimeoutSeconds must be 10 to 1800.");
+
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddHttpClient<ISellInSource, AcumaticaSellInSource>(client =>
+        {
+            // The source sets its own timeout for each period read.
+            client.Timeout = Timeout.InfiniteTimeSpan;
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("PVM-SellIn/1.0");
+        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { UseCookies = false });
+
+        services.AddHttpClient<ICustomerSalesRepSource, AcumaticaCustomerSalesRepSource>(client =>
+        {
+            client.Timeout = Timeout.InfiniteTimeSpan;
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("PVM-SellIn/1.0");
+        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { UseCookies = false });
+
+        services.AddScoped<SellInSyncService>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the sell-out import and its parsers. Register the payload archive too, to keep the raw files.
+    /// </summary>
+    public static IServiceCollection AddSellOutImport(this IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<ISellOutParser, MakroDispoParser>();
+        services.AddSingleton<ISellOutParser, ShopriteVasParser>();
+        foreach (var parser in WholesalerListParser.All())
+        {
+            services.AddSingleton<ISellOutParser>(parser);
+        }
+
+        services.AddScoped<SellOutImportService>();
+        services.AddScoped<SellOutQueries>();
+        return services;
+    }
+
+    /// <summary>Registers the merchandiser statements.</summary>
+    public static IServiceCollection AddMerchandiserStatements(this IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<Statements.MerchandiserStatementService>();
+        services.AddScoped<Statements.MerchandiserSettingsService>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the sell-out mail intake. Assumes <c>AddSellOutImport</c>.
+    /// </summary>
+    public static IServiceCollection AddSellOutMailIntake(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddOptions<SellOutMailOptions>()
+            .Bind(configuration.GetSection(SellOutMailOptions.SectionName))
+            .Validate(o => !string.IsNullOrWhiteSpace(o.Mailbox) && o.Mailbox.Contains('@', StringComparison.Ordinal), "SellOutMail Mailbox must be a mail address.")
+            .Validate(o => o.AllowedSenderDomains.Length > 0, "SellOutMail AllowedSenderDomains needs at least one domain.")
+            .Validate(o => o.MaxMailsPerRun is >= 1 and <= 200, "SellOutMail MaxMailsPerRun must be 1 to 200.");
+        services.AddHttpClient<ISellOutMailbox, GraphSellOutMailbox>(client =>
+        {
+            client.Timeout = TimeSpan.FromMinutes(2);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("PVM-SellOut/1.0");
+        });
+        services.AddScoped<SellOutMailIntakeService>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the GTIN refresh. Assumes <c>AddAcumaticaInvoiceSource</c> has bound the shared Acumatica options.
+    /// </summary>
+    public static IServiceCollection AddProductGtinRefresh(this IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddHttpClient<IProductGtinSource, AcumaticaProductGtinSource>(client =>
+        {
+            client.Timeout = TimeSpan.FromMinutes(10);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("PVM-SellOut/1.0");
+        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { UseCookies = false });
+        services.AddScoped<ProductGtinRefreshService>();
+        return services;
+    }
+}
