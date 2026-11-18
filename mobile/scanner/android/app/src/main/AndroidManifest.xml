@@ -1,7 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Upload and Microsoft sign-in in the browser. -->
+    <!-- Upload, and the camera for the setup QR code (the document scanner itself runs in
+         Google Play services and needs no permission). -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
         android:label="PVM Scanner"
@@ -29,23 +32,6 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
-            </intent-filter>
-        </activity>
-
-        <!-- MSAL returns from the browser sign-in through this activity. The redirect URI is
-             msauth://za.co.pvm.scanner/<signature hash>. The path is left open so the same
-             manifest works for the debug key and the release key; MainActivity computes the
-             exact redirect URI at run time from the key that signed the APK. -->
-        <activity
-            android:name="com.microsoft.identity.client.BrowserTabActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:host="za.co.pvm.scanner"
-                    android:scheme="msauth" />
             </intent-filter>
         </activity>
 

@@ -1,35 +1,21 @@
-import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 
-import 'api/documents_api.dart';
-import 'auth/auth_service.dart';
-import 'config.dart';
-import 'queue/upload_queue.dart';
+import 'device/device_session.dart';
 import 'scanner/document_scanner.dart';
 import 'screens/batch_screen.dart';
 import 'screens/settings_screen.dart';
-import 'screens/sign_in_screen.dart';
+import 'screens/setup_screen.dart';
 import 'settings/app_settings.dart';
 
 /// The app's long-lived services.
 class AppServices {
-  const AppServices({
-    required this.config,
-    required this.auth,
-    required this.scanner,
-    required this.settings,
-    required this.api,
-  });
+  const AppServices({required this.session, required this.scanner, required this.settings});
 
-  final AppConfig config;
-  final AuthService auth;
+  final DeviceSession session;
   final DocumentScanner scanner;
   final AppSettings settings;
-
-  /// Null when the build has no backend settings.
-  final DocumentsApi? api;
 }
 
 class ScannerApp extends StatelessWidget {
@@ -40,13 +26,17 @@ class ScannerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = ColorScheme.fromSeed(seedColor: const Color(0xFF1F5FA8));
+    // Sizes (englishLike) and colours (black) together: the colour-only Typography.black has no
+    // sizes, so scaling it alone fails an assertion in debug builds and does nothing in release.
+    final typography = Typography.material2021();
+    final textTheme = typography.englishLike.merge(typography.black).apply(fontSizeFactor: 1.15);
     return MaterialApp(
       title: 'PVM Scanner',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: scheme,
         visualDensity: VisualDensity.comfortable,
-        textTheme: Typography.material2021().black.apply(fontSizeFactor: 1.15),
+        textTheme: textTheme,
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
             minimumSize: const Size.fromHeight(64),
@@ -71,9 +61,7 @@ class ScannerApp extends StatelessWidget {
   }
 }
 
-enum _Phase { starting, notConfigured, startFailed, signedOut, signedIn }
-
-/// Chooses the screen: sign-in, or the batch screen once a user is signed in.
+/// Chooses the screen: setup (no device key) or the batch screen.
 class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.services});
 
@@ -84,138 +72,57 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
-  var _phase = _Phase.starting;
-  UploadQueue? _queue;
-  String? _signInError;
-  String? _startError;
-  var _signingIn = false;
+  SessionPhase? _shownPhase = SessionPhase.starting;
 
-  AppServices get _services => widget.services;
+  DeviceSession get _session => widget.services.session;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _start();
+    _session.addListener(_onSessionChanged);
+    // After the first frame: the session's notifications rebuild this widget and its navigator.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _session.start());
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _queue?.close();
+    _session.removeListener(_onSessionChanged);
+    _session.close();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _queue?.retryNow();
+      _session.queue?.retryNow();
     }
   }
 
-  Future<void> _start() async {
-    setState(() {
-      _phase = _Phase.starting;
-      _startError = null;
-    });
-    if (_services.config.missing.isNotEmpty) {
-      setState(() => _phase = _Phase.notConfigured);
+  void _onSessionChanged() {
+    final phase = _session.phase;
+    if (phase == _shownPhase) {
+      setState(() {});
       return;
     }
-
-    try {
-      SignedInUser? user;
-      try {
-        user = await _services.auth.restore();
-      } on SignInException catch (error) {
-        _signInError = error.message;
-      }
-
-      if (user == null) {
-        setState(() => _phase = _Phase.signedOut);
-        return;
-      }
-
-      await _openQueue();
-      if (mounted) {
-        setState(() => _phase = _Phase.signedIn);
-      }
-    } on Object catch (error) {
-      _showStartFailure(error);
-    }
-  }
-
-  void _showStartFailure(Object error) {
+    _shownPhase = phase;
+    // A screen opened on top (settings, the QR camera) belongs to the old phase.
     if (mounted) {
-      setState(() {
-        _phase = _Phase.startFailed;
-        _startError = '$error';
-      });
+      Navigator.of(context).popUntil((route) => route.isFirst);
     }
+    if (phase == SessionPhase.ready) {
+      unawaited(_session.refreshConfig());
+    }
+    setState(() {});
   }
 
-  Future<void> _openQueue() async {
-    var queue = _queue;
-    if (queue == null) {
-      final documents = await getApplicationDocumentsDirectory();
-      queue = await UploadQueue.open(
-        directory: Directory('${documents.path}/upload_queue'),
-        uploader: _services.api!,
-      );
-      _queue = queue;
-    }
-    queue.start();
-    queue.resume();
-  }
-
-  /// Interactive sign-in; returns true when it worked.
-  Future<bool> _signIn() async {
-    setState(() {
-      _signingIn = true;
-      _signInError = null;
-    });
-    try {
-      await _services.auth.signIn();
-      await _openQueue();
-      if (mounted) {
-        setState(() => _phase = _Phase.signedIn);
-      }
-      return true;
-    } on SignInException catch (error) {
-      if (mounted && !error.cancelled) {
-        setState(() => _signInError = error.message);
-      }
-      return false;
-    } on Object catch (error) {
-      _showStartFailure(error);
-      return false;
-    } finally {
-      if (mounted) {
-        setState(() => _signingIn = false);
-      }
-    }
-  }
-
-  Future<void> _signOut() async {
-    await _queue?.close();
-    _queue = null;
-    await _services.auth.signOut();
-    if (mounted) {
-      setState(() => _phase = _Phase.signedOut);
-    }
-  }
-
-  void _openSettings(BuildContext context) {
+  void _openSettings() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => SettingsScreen(
-          config: _services.config,
-          auth: _services.auth,
-          queue: _queue!,
-          onSignOut: () async {
-            Navigator.of(context).pop();
-            await _signOut();
-          },
+          session: _session,
+          onReset: _session.reset,
         ),
       ),
     );
@@ -223,51 +130,24 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    switch (_phase) {
-      case _Phase.starting:
+    switch (_session.phase) {
+      case SessionPhase.starting:
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
-      case _Phase.notConfigured:
-        return _NotConfiguredScreen(missing: _services.config.missing);
-      case _Phase.startFailed:
-        return _StartFailedScreen(error: _startError ?? '', onTryAgain: _start);
-      case _Phase.signedOut:
-        return SignInScreen(
-          busy: _signingIn,
-          error: _signInError,
-          redirectUri: _services.auth.redirectUri,
-          onSignIn: _signIn,
-        );
-      case _Phase.signedIn:
+      case SessionPhase.startFailed:
+        return _StartFailedScreen(error: _session.startError ?? '', onTryAgain: _session.start);
+      case SessionPhase.needsSetup:
+        return SetupScreen(session: _session, message: _session.setupMessage);
+      case SessionPhase.ready:
         return BatchScreen(
-          queue: _queue!,
-          scanner: _services.scanner,
-          api: _services.api!,
-          settings: _services.settings,
-          onSignInAgain: _signIn,
-          onOpenSettings: () => _openSettings(context),
+          // A new enrolment opens a new queue: start the screen afresh.
+          key: ObjectKey(_session.queue),
+          session: _session,
+          queue: _session.queue!,
+          scanner: widget.services.scanner,
+          settings: widget.services.settings,
+          onOpenSettings: _openSettings,
         );
     }
-  }
-}
-
-class _NotConfiguredScreen extends StatelessWidget {
-  const _NotConfiguredScreen({required this.missing});
-
-  final List<String> missing;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('PVM Scanner')),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          'This copy of the app was built without its server settings. '
-          'Ask IT for a new copy.\n\nMissing: ${missing.join(', ')}',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-      ),
-    );
   }
 }
 

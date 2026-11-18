@@ -3,30 +3,32 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import '../api/documents_api.dart';
+import '../api/device_api.dart';
+import '../device/device_session.dart';
+import '../device/staff.dart';
 import '../queue/upload_queue.dart';
 import '../scanner/document_scanner.dart';
 import '../settings/app_settings.dart';
+import 'staff_picker_screen.dart';
 
 /// The scan flow. The camera opens as soon as this screen shows, and again after each
 /// document, until the user closes the scanner. The list shows the documents of this batch
-/// with their upload state.
+/// with their upload state. When the server has staff names, the app first asks who is
+/// scanning, unless the remembered name is still on the list.
 class BatchScreen extends StatefulWidget {
   const BatchScreen({
     super.key,
+    required this.session,
     required this.queue,
     required this.scanner,
-    required this.api,
     required this.settings,
-    required this.onSignInAgain,
     required this.onOpenSettings,
   });
 
+  final DeviceSession session;
   final UploadQueue queue;
   final DocumentScanner scanner;
-  final DocumentsApi api;
   final AppSettings settings;
-  final Future<bool> Function() onSignInAgain;
   final VoidCallback onOpenSettings;
 
   @override
@@ -38,48 +40,97 @@ class _BatchScreenState extends State<BatchScreen> {
   List<QueuedDocument> _items = const [];
   List<DocumentType> _types = const [];
   String _typeCode = AppSettings.defaultDocumentType;
+  StaffMember? _staff;
   var _scanning = false;
 
   @override
   void initState() {
     super.initState();
     _subscription = widget.queue.items.listen((items) => setState(() => _items = items));
+    widget.session.addListener(_onConfigChanged);
     _loadTypes();
     WidgetsBinding.instance.addPostFrameCallback((_) => _scanLoop());
   }
 
   @override
   void dispose() {
+    widget.session.removeListener(_onConfigChanged);
     _subscription?.cancel();
     super.dispose();
   }
 
+  void _onConfigChanged() {
+    if (mounted) {
+      _loadTypes();
+    }
+  }
+
+  /// The document types from the device config; the remembered type when it is still offered.
   Future<void> _loadTypes() async {
     final remembered = await widget.settings.documentType();
+    final types = widget.session.config?.documentTypes ?? const <DocumentType>[];
+    var code = remembered;
+    if (types.isNotEmpty && !types.any((type) => type.code == code)) {
+      code = types.any((type) => type.code == AppSettings.defaultDocumentType)
+          ? AppSettings.defaultDocumentType
+          : types.first.code;
+      await widget.settings.setDocumentType(code);
+    }
+    final staffId = await widget.settings.staffId();
+    final staff = StaffChoice.of(widget.session.config?.staff ?? const [], staffId).staff;
     if (mounted) {
-      setState(() => _typeCode = remembered);
+      setState(() {
+        _types = types;
+        _typeCode = code;
+        _staff = staff;
+      });
+    }
+  }
+
+  /// The device config for the staff question: the one in hand, or a short wait for the server
+  /// on the very first start. Offline without any config, nobody is asked.
+  Future<DeviceConfig?> _configForScan() async {
+    final config = widget.session.config;
+    if (config != null) {
+      return config;
+    }
+    try {
+      return await widget.session.refreshConfig().timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      return null;
+    }
+  }
+
+  /// Makes sure a staff name is chosen when the server has names. [ask] shows the names even
+  /// when one is remembered ("Change"). Returns false when the user went back without a name.
+  Future<bool> _ensureStaff({bool ask = false}) async {
+    final staffList = (await _configForScan())?.staff ?? const <StaffMember>[];
+    final remembered = await widget.settings.staffId();
+    final choice = StaffChoice.of(staffList, remembered);
+    if (!mounted) {
+      return false;
+    }
+    if (staffList.isEmpty || (!ask && !choice.mustAsk)) {
+      setState(() => _staff = choice.staff);
+      return true;
     }
 
-    try {
-      final types = await widget.api.documentTypes();
-      if (!mounted || types.isEmpty) {
-        return;
-      }
-      var code = remembered;
-      if (!types.any((type) => type.code == code)) {
-        code = types.any((type) => type.code == AppSettings.defaultDocumentType)
-            ? AppSettings.defaultDocumentType
-            : types.first.code;
-        await widget.settings.setDocumentType(code);
-      }
-      if (mounted) {
-        setState(() {
-          _types = types;
-          _typeCode = code;
-        });
-      }
-    } on DocumentsApiException {
-      // Offline or not signed in: keep the remembered type. Scans still queue.
+    final chosen = await Navigator.of(context).push<StaffMember>(
+      MaterialPageRoute(builder: (context) => StaffPickerScreen(staff: staffList, currentId: remembered)),
+    );
+    if (chosen == null) {
+      return !choice.mustAsk;
+    }
+    await widget.settings.setStaffId(chosen.id);
+    if (mounted) {
+      setState(() => _staff = chosen);
+    }
+    return true;
+  }
+
+  Future<void> _changeStaff() async {
+    if (!_scanning) {
+      await _ensureStaff(ask: true);
     }
   }
 
@@ -100,12 +151,15 @@ class _BatchScreenState extends State<BatchScreen> {
     }
     setState(() => _scanning = true);
     try {
+      if (!await _ensureStaff()) {
+        return;
+      }
       while (mounted) {
         final document = await widget.scanner.scan();
         if (document == null) {
           break;
         }
-        await widget.queue.enqueue(document.pdf, _typeCode, document.pageCount);
+        await widget.queue.enqueue(document.pdf, _typeCode, document.pageCount, staffId: _staff?.id);
       }
     } on ScannerException catch (error) {
       await _showMessage('The scanner did not work', error.message);
@@ -196,18 +250,17 @@ class _BatchScreenState extends State<BatchScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ValueListenableBuilder<QueueHold?>(
-              valueListenable: widget.queue.hold,
-              builder: (context, hold, _) => hold == null ? const SizedBox.shrink() : _HoldBanner(
-                hold: hold,
-                onSignInAgain: widget.onSignInAgain,
-                onTryAgain: widget.queue.resume,
-              ),
-            ),
-            _DocumentTypeHeader(
-              name: _typeName(_typeCode),
+            _HeaderRow(
+              label: 'Document type',
+              value: _typeName(_typeCode),
               onChange: _types.length > 1 && !_scanning ? _chooseType : null,
             ),
+            if ((widget.session.config?.staff ?? const <StaffMember>[]).isNotEmpty)
+              _HeaderRow(
+                label: 'Scanning',
+                value: _staff?.name ?? 'Not chosen',
+                onChange: _scanning ? null : _changeStaff,
+              ),
             const Divider(height: 1),
             Expanded(
               child: _items.isEmpty
@@ -247,69 +300,31 @@ class _BatchScreenState extends State<BatchScreen> {
   }
 }
 
-class _DocumentTypeHeader extends StatelessWidget {
-  const _DocumentTypeHeader({required this.name, required this.onChange});
+class _HeaderRow extends StatelessWidget {
+  const _HeaderRow({required this.label, required this.value, required this.onChange});
 
-  final String name;
+  final String label;
+  final String value;
   final VoidCallback? onChange;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
       child: Row(
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Document type', style: theme.textTheme.labelLarge),
-                Text(name, style: theme.textTheme.titleLarge),
+                Text(label, style: theme.textTheme.labelLarge),
+                Text(value, style: theme.textTheme.titleLarge),
               ],
             ),
           ),
           if (onChange != null) TextButton(onPressed: onChange, child: const Text('Change')),
         ],
-      ),
-    );
-  }
-}
-
-class _HoldBanner extends StatelessWidget {
-  const _HoldBanner({required this.hold, required this.onSignInAgain, required this.onTryAgain});
-
-  final QueueHold hold;
-  final Future<bool> Function() onSignInAgain;
-  final VoidCallback onTryAgain;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final (message, action, onPressed) = switch (hold) {
-      QueueHold.signInRequired => (
-          'Sign in again to send the documents. They are safe on this phone.',
-          'Sign in',
-          () => onSignInAgain(),
-        ),
-      QueueHold.accessDenied => (
-          'Your account may not send documents. Ask an administrator for the Operator role, then try again.',
-          'Try again',
-          onTryAgain,
-        ),
-    };
-    return Material(
-      color: theme.colorScheme.errorContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(message, style: theme.textTheme.titleMedium?.copyWith(color: theme.colorScheme.onErrorContainer)),
-            const SizedBox(height: 12),
-            OutlinedButton(onPressed: onPressed, child: Text(action)),
-          ],
-        ),
       ),
     );
   }

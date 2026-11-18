@@ -6,7 +6,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
-import '../api/documents_api.dart';
+import '../api/device_api.dart';
 
 /// One scanned document on its way to the backend.
 @immutable
@@ -21,6 +21,7 @@ class QueuedDocument {
     this.lastError,
     this.documentId,
     this.note,
+    this.staffId,
   });
 
   static const waiting = 'waiting';
@@ -47,6 +48,9 @@ class QueuedDocument {
   /// A short remark for the user, for example "Sent earlier".
   final String? note;
 
+  /// The staff name chosen when this document was scanned; sent with every upload attempt.
+  final String? staffId;
+
   QueuedDocument copyWith({String? state, int? attempts, String? lastError, String? documentId, String? note}) =>
       QueuedDocument(
         clientDocumentId: clientDocumentId,
@@ -58,6 +62,7 @@ class QueuedDocument {
         lastError: lastError ?? this.lastError,
         documentId: documentId ?? this.documentId,
         note: note ?? this.note,
+        staffId: staffId,
       );
 
   Map<String, Object?> toJson() => {
@@ -70,6 +75,7 @@ class QueuedDocument {
         'lastError': lastError,
         'documentId': documentId,
         'note': note,
+        if (staffId != null) 'staffId': staffId,
       };
 
   factory QueuedDocument.fromJson(Map<String, dynamic> json) => QueuedDocument(
@@ -82,16 +88,15 @@ class QueuedDocument {
         lastError: json['lastError'] as String?,
         documentId: json['documentId'] as String?,
         note: json['note'] as String?,
+        staffId: json['staffId'] as String?,
       );
 }
 
 /// Why the queue stopped uploading until the user acts.
 enum QueueHold {
-  /// The token could not be renewed silently: the user must sign in again.
-  signInRequired,
-
-  /// The backend answered 403: the user may not upload documents.
-  accessDenied,
+  /// The backend answered 401: the device was removed or set up again. The items wait for a
+  /// new enrolment.
+  deviceRevoked,
 }
 
 /// Default retry delay: 5 s, 10 s, 20 s, ... up to 5 minutes.
@@ -107,7 +112,8 @@ Duration defaultBackoff(int attempt) {
 /// the app stops. Saves run one at a time. Items upload one at a time; an item that failed and
 /// may succeed later goes behind the other waiting items and is retried with backoff and the
 /// same client document ID. The local PDF is deleted only after the receipt is saved. A rejected
-/// upload (400 or 413) is marked [QueuedDocument.failed] and keeps its PDF.
+/// upload (400 or 413) is marked [QueuedDocument.failed] and keeps its PDF. A 401 holds the queue
+/// ([QueueHold.deviceRevoked]); the items and PDFs stay for the next enrolment.
 class UploadQueue {
   UploadQueue._(this._directory, this._uploader, this._backoff, this._delay, this._items);
 
@@ -272,7 +278,7 @@ class UploadQueue {
   /// The items in the order they upload.
   List<QueuedDocument> get current => List.unmodifiable(_items);
 
-  /// Set while the queue waits for the user (sign in again, or no upload permission).
+  /// Set while the queue waits for a new enrolment.
   ValueListenable<QueueHold?> get hold => _hold;
 
   /// Completes when the queue has nothing it can upload now (empty, held, or closed).
@@ -283,7 +289,7 @@ class UploadQueue {
 
   /// Adds a scanned PDF: copies it into the queue folder, saves the item, and only then deletes
   /// the scanner's original. Throws [FileSystemException] when the scan cannot be kept.
-  Future<QueuedDocument> enqueue(File pdf, String documentType, int pageCount) async {
+  Future<QueuedDocument> enqueue(File pdf, String documentType, int pageCount, {String? staffId}) async {
     if (_closed) {
       throw StateError('The upload queue is closed.');
     }
@@ -294,6 +300,7 @@ class UploadQueue {
       pageCount: pageCount,
       state: QueuedDocument.waiting,
       createdAt: DateTime.now(),
+      staffId: staffId,
     );
     final copy = pdfOf(item);
 
@@ -338,13 +345,13 @@ class UploadQueue {
     }
   }
 
-  /// Starts uploading. Call once, after sign-in.
+  /// Starts uploading. Call once, when the phone has a device key.
   void start() {
     _started = true;
     _kick();
   }
 
-  /// Clears a hold (after the user signed in again) and uploads again.
+  /// Clears a hold and uploads again.
   void resume() {
     _hold.value = null;
     _kick();
@@ -403,6 +410,7 @@ class UploadQueue {
           clientDocumentId: item.clientDocumentId,
           documentType: item.documentType,
           pageCount: item.pageCount,
+          staffId: item.staffId,
         );
       } on Object catch (error) {
         // Never lose an item to an unexpected error: try it again later.
@@ -421,12 +429,10 @@ class UploadQueue {
           }
         case UploadRejected(:final reason):
           await _replace(item.copyWith(state: QueuedDocument.failed, attempts: item.attempts + 1, lastError: reason));
-        case UploadSignInRequired():
+        case UploadDeviceRevoked():
+          // Set the hold first, so the loop stops before anything else starts; then save.
+          _hold.value = QueueHold.deviceRevoked;
           await _replace(item.copyWith(state: QueuedDocument.waiting));
-          _hold.value = QueueHold.signInRequired;
-        case UploadAccessDenied():
-          await _replace(item.copyWith(state: QueuedDocument.waiting));
-          _hold.value = QueueHold.accessDenied;
         case UploadRetryLater(:final reason):
           final attempts = item.attempts + 1;
           // Behind the other waiting items, so one bad item does not block the rest.

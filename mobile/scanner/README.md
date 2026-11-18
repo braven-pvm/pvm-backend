@@ -1,25 +1,60 @@
 # PVM Scanner (Android)
 
 The phone app for document capture (design `docs/superpowers/specs/2026-11-17-document-capture-design.md`,
-sections 6.2 and 6.9). It is a capture device only: scan, one PDF per paper document, queue, upload.
+sections 6.2, 6.9 and 6.10). It is a capture device only: scan, one PDF per paper document, queue, upload.
 
 - Package name `za.co.pvm.scanner`, app label "PVM Scanner". Android only; side-loaded.
 - The phone needs Google Play services (the ML Kit document scanner runs in it) and Android 7.0
   (API 24) or later.
+- No user sign-in: the **device** signs in with a device key it gets by scanning a setup QR code
+  (design 6.10). One APK serves QA and production; the server address comes from the QR code.
+
+## Setup (enrolment)
+
+1. An Admin opens **Documents > Scanner devices** in the workbench, selects **Add device**, and
+   types a name, for example "Dispatch phone 1". The page shows a setup QR code (one use, 15
+   minutes).
+2. On the first start (or after the phone was removed or reset) the app shows one button,
+   **Scan setup code**. The camera reads the QR code.
+3. The QR content must be `{"v":1,"api":"<https URL>","code":"<code>"}`: version 1, an `https`
+   API address without user info, query or fragment, and a code. Anything else shows "This is
+   not a PVM Scanner setup code."
+4. The app calls `POST {api}/api/device/enrol` with `{"code": "..."}`:
+   - 200 `{deviceKey, deviceName}`: the key, the API address and the device name go into
+     Android encrypted storage (`flutter_secure_storage`), and the scan screen opens.
+   - 400: "This setup code is not valid. Ask an admin for a new one."
+   - 429: "Too many tries. Wait one minute."
+   - No network or a timeout: "No connection. Check the Wi-Fi and try again."
+5. At each start the app reads `GET /api/device/config` (device name, document types, active
+   staff names) and keeps the last answer in shared preferences for a start without network.
+
+Every device call sends `Authorization: Device <key>`. A **401** from any device call means the
+device was revoked or set up again elsewhere: the app stops the upload loop, deletes the stored
+key, and shows the setup screen with "This phone was removed. Ask an admin for a new setup
+code." The queue file and the PDFs stay; after the next enrolment they upload with the same
+client document IDs.
+
+**Settings** shows the device name, the server address and the app version, and has **Reset this
+phone** ("This phone stops scanning until an admin gives a new setup code. Scans not yet sent
+stay on the phone."), which deletes the key only. Scans not yet sent go to the server of the
+next setup code.
 
 ## Scan flow
 
-1. The user opens the app. The app remembers the sign-in and the last document type and opens
-   the camera at once.
-2. The ML Kit scanner finds the paper edges and captures the page; the user can adjust the
-   corners, add pages (up to 20), and taps Done.
-3. The app moves the PDF into its upload queue and opens the camera again for the next document.
+1. The user opens the app. If the config has staff names, the app asks **Who is scanning?** with
+   the names as large buttons, unless the remembered name is still on the list. The choice is
+   remembered across restarts; **Change** on the scan screen picks another name. With no staff
+   names the question is skipped.
+2. The camera opens. The ML Kit scanner finds the paper edges and captures the page; the user
+   can adjust the corners, add pages (up to 20), and taps Done.
+3. The app moves the PDF into its upload queue, with the staff ID chosen at that moment, and
+   opens the camera again for the next document.
 4. When the user closes the scanner, the batch screen shows the documents of this session,
    newest first, with their state: Waiting, Uploading, Received, or Failed. A large
    "Scan next document" button opens the camera again.
 
 There is no text field in the scan flow. The document type is shown at the top; it is POD by
-default and remembered. A chooser appears only when the backend returns more than one type.
+default and remembered. A chooser appears only when the config has more than one type.
 
 ## Upload queue
 
@@ -33,44 +68,32 @@ default and remembered. A chooser appears only when the backend returns more tha
   count read from the PDF, its GUID file name kept as the client document ID). A waiting item
   whose PDF is gone after an upload attempt shows as Received, "Sent earlier". If the start
   still fails, the app shows "The app could not start" with "Try again".
-- One upload at a time, oldest first, to `POST /api/documents` with `file`, `clientDocumentId`
-  (a GUID made on the phone), `documentType` and `pageCount`.
+- One upload at a time, oldest first, to `POST /api/device/documents` with `file`,
+  `clientDocumentId` (a GUID made on the phone), `documentType`, `pageCount`, and `staffId` when
+  a name was chosen for that scan.
 - 200 or 201 (the status alone counts): the item is saved as Received, then the local PDF is
   deleted.
-- Network error, timeout or 5xx: the item waits and is retried after 5 s, 10 s, 20 s, ... up to
-  5 minutes, always with the same `clientDocumentId`, so the backend ignores a second copy. The
-  item goes behind the other waiting items, so one bad item does not block the rest. The queue
-  also retries when the app comes back to the foreground.
+- Network error, timeout, 403 or 5xx: the item waits and is retried after 5 s, 10 s, 20 s, ...
+  up to 5 minutes, always with the same `clientDocumentId`, so the backend ignores a second copy.
+  The item goes behind the other waiting items, so one bad item does not block the rest. The
+  queue also retries when the app comes back to the foreground.
 - 400 or 413: the item is Failed with a plain-language reason and keeps its PDF. The user can
   remove a failed item, after a confirmation. The backend accepts PDFs up to 15 MB
   (`DocumentCapture:MaxUploadBytes`, 15728640 bytes); a larger scan answers 413, so scan a long
   delivery note as more than one document.
-- 401: the app gets a token silently once more and repeats the upload. A second 401 (or no
-  token) holds the queue and shows "Sign in again"; nothing is lost.
-- 403: the queue holds and tells the user to ask for the Operator role.
+- A 400 about `staffId` (the name was turned off while the scan waited) is sent once more
+  without the name, so the document is not lost.
+- 401: see Setup above. The item stays Waiting with its attempt count unchanged.
 
-## Build settings (`--dart-define`)
+## Build
 
-Nothing environment-specific is in the code. Every build passes these four values:
-
-| Value | What | Where it comes from |
-| --- | --- | --- |
-| `API_BASE_URL` | The PVM API address, for example `https://ca-pvm-api-qa.<env>.southafricanorth.azurecontainerapps.io` | The API container app URL (`docs/runbooks/azure-qa-provisioning-playbook.md` for QA). |
-| `ENTRA_TENANT_ID` | The Entra tenant (directory) ID; the same tenant as the workbench | Key Vault secret `auth--tenantid` (backend `Auth:TenantId`, workbench `AUTH_ENTRA_TENANT_ID`). |
-| `ENTRA_CLIENT_ID` | The client ID of the **existing API app registration** (the app is a public client of it) | Key Vault secret `auth--api-clientid` (backend `Auth:Audience`). For QA: the `pvm-backend-qa-api` app in `docs/runbooks/workbench-auth-qa.md`. |
-| `ENTRA_API_SCOPE` | The API scope the workbench requests, `api://<API client ID>/access_as_user` | Key Vault secret `auth--apiscope` (workbench `AUTH_API_SCOPE`). |
-
-A build without these values starts with a "built without its server settings" screen.
+Nothing environment-specific is in the app, and the build takes no `--dart-define` values:
 
 ```powershell
 cd mobile/scanner
 flutter test
 flutter analyze
-flutter build apk --release `
-  --dart-define=API_BASE_URL=https://<api host> `
-  --dart-define=ENTRA_TENANT_ID=<tenant id> `
-  --dart-define=ENTRA_CLIENT_ID=<API app client id> `
-  --dart-define=ENTRA_API_SCOPE=api://<API app client id>/access_as_user
+flutter build apk --release
 # APK: build/app/outputs/flutter-apk/app-release.apk
 ```
 
@@ -78,52 +101,19 @@ The first Gradle build takes about 25 minutes. `android/gradle.properties` sets
 `kotlin.incremental=false`, because the incremental Kotlin compile fails when the pub cache (C:)
 and the project (F:) are on different drives.
 
-## Sign-in
+The backend must know its own public address (`DocumentCapture:DeviceApiBaseUrl`, infrastructure
+parameter `deviceApiBaseUrl`) before the workbench can make setup codes. QA sets it; production
+does not yet (`infra/azure/main.parameters.prod.json`).
 
-- Package: [`msal_auth`](https://pub.dev/packages/msal_auth) 3.5.x (MSAL for Android 8.x). It
-  works with Flutter 3.47 / Dart 3.13. The app uses single account mode, the browser as the
-  sign-in user agent, and no broker app (`assets/msal_config.json`:
-  `"broker_redirect_uri_registered": false`, `"authorization_user_agent": "BROWSER"`).
-- Authority: `https://login.microsoftonline.com/<ENTRA_TENANT_ID>`, given with each interactive
-  sign-in; silent renewals use the account's own authority.
-- Scope: `ENTRA_API_SCOPE`, the same scope as the workbench. The backend accepts the token
-  because its audience is the API client ID (`Auth:Audience`, as the GUID or `api://<GUID>`).
-- Access: PVM roles, not Entra app roles. `POST /api/documents` needs the `Documents.Capture`
-  policy (Operator or Admin); `GET /api/documents/types` needs a read role (Viewer, Operator or
-  Admin). An administrator pre-authorizes the user in the workbench at `/admin/users`.
-- The redirect URI is `msauth://za.co.pvm.scanner/<URL-encoded signature hash>`. The app
-  computes it at run time from the key that signed the APK and shows it in Settings
-  ("Sign-in redirect URI (for IT)") and under a failed sign-in. The manifest's
-  `BrowserTabActivity` filter matches any path for host `za.co.pvm.scanner`, so the same build
-  setup works with the debug key and the release key.
+## Packages
 
-### Owner action: Entra Android platform entry
-
-An Entra administrator does this once per signing key, for each environment's API app
-registration (QA: `pvm-backend-qa-api`; production: its API app):
-
-1. Get the signature hash of the key that signs the APK (Base64 of the SHA-1 of the certificate):
-
-   ```bash
-   # Release key (the keystore named in android/key.properties):
-   keytool -exportcert -alias <keyAlias> -keystore <storeFile> | openssl sha1 -binary | openssl base64
-   # Debug key (used when android/key.properties is missing):
-   keytool -exportcert -alias androiddebugkey -keystore ~/.android/debug.keystore -storepass android -keypass android | openssl sha1 -binary | openssl base64
-   ```
-
-   Or install the APK and read the redirect URI in the app (Settings, or the text under a failed
-   sign-in).
-2. Azure portal > App registrations > the API app > Authentication > Add a platform > Android.
-   Package name `za.co.pvm.scanner`, signature hash from step 1. Save. The portal shows the
-   redirect URI `msauth://za.co.pvm.scanner/<URL-encoded hash>`; it must equal the value the app
-   shows.
-3. Keep "Allow public client flows" as it is; the Android platform entry is enough for the
-   authorization code flow with PKCE that MSAL uses.
-4. If the tenant does not allow user consent, grant admin consent for the API's own
-   `access_as_user` scope (API permissions > add the API's own scope > Grant admin consent).
-
-A different signing key (for example a test build signed with the debug key) has a different
-hash and needs its own entry.
+| Package | Version | Use |
+| --- | --- | --- |
+| `google_mlkit_document_scanner` | 0.7.x | The document scanner (Google Play services). |
+| `mobile_scanner` | 7.5.x | The camera for the setup QR code. Uses the bundled ML Kit barcode model on Android (about 3 to 10 MB more APK, works without a download). |
+| `flutter_secure_storage` | 11.2.x | The device key, API address and device name in Android encrypted storage (AES-GCM, key wrapped by the Android Keystore). |
+| `shared_preferences` | 2.5.x | Document type, staff choice, last device config. Nothing secret. |
+| `http` | 1.6.x | The API client. |
 
 ## Release signing
 
@@ -138,8 +128,8 @@ storeFile=../pvm-scanner-upload.jks
 ```
 
 Without `android/key.properties` the release APK is signed with the debug key (a warning shows
-in the build). That is fine for a test install only: the debug key differs per machine, so the
-redirect URI differs too.
+in the build). That is fine for a test install only: the debug key differs per machine, and
+Android installs an update only when it is signed with the same key as the installed app.
 
 Create a keystore once, from `mobile/scanner`, so that it lands under `android/` (git-ignored),
 and keep it, with its passwords, in the company password store (not in Git):
@@ -149,19 +139,19 @@ keytool -genkey -v -keystore android/pvm-scanner-upload.jks -keyalg RSA -keysize
 ```
 
 Never commit a keystore or `key.properties`; `*.jks`, `*.keystore` and `key.properties` are
-git-ignored (`mobile/scanner/.gitignore` and `android/.gitignore`). An
-update of an installed app must be signed with the same key.
+git-ignored (`mobile/scanner/.gitignore` and `android/.gitignore`).
 
 ## Code map
 
 | Path | What |
 | --- | --- |
-| `lib/main.dart`, `lib/app.dart` | Start, settings check, sign-in or batch screen. |
-| `lib/config.dart` | The `--dart-define` values. |
-| `lib/auth/auth_service.dart` | `AuthService` and the `msal_auth` implementation. |
-| `lib/api/documents_api.dart` | API client: upload and document types; upload outcomes. |
+| `lib/main.dart`, `lib/app.dart` | Start; setup screen or batch screen by the session phase. |
+| `lib/device/setup_code.dart` | Parses and checks the setup QR content. |
+| `lib/device/device_store.dart` | The device key, API address and name in encrypted storage. |
+| `lib/device/device_session.dart` | Enrolment, the queue with the device key, config, revoke (401) and reset. |
+| `lib/device/staff.dart` | Whether to ask "Who is scanning?". |
+| `lib/api/device_api.dart` | Enrol client and device API client (config, upload); outcomes. |
 | `lib/queue/upload_queue.dart` | The persistent upload queue. |
 | `lib/scanner/` | `DocumentScanner` interface and the ML Kit implementation. A different edge detector for some paper shapes goes behind the same interface. |
-| `lib/screens/` | Sign-in, batch and settings screens. |
-| `android/app/src/main/kotlin/.../MainActivity.kt` | Computes the MSAL redirect URI from the APK signature. |
-| `test/` | Queue and API client tests (fakes; no device needed). |
+| `lib/screens/` | Setup, QR camera, staff picker, batch and settings screens. |
+| `test/` | Setup code, API client, session, staff, queue and screen tests (fakes; no device needed). |

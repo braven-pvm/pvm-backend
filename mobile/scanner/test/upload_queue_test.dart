@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:scanner/api/documents_api.dart';
+import 'package:scanner/api/device_api.dart';
 import 'package:scanner/queue/upload_queue.dart';
 
 /// Records every upload and answers with the next scripted outcome.
@@ -11,7 +11,8 @@ class FakeUploader implements DocumentUploader {
   FakeUploader(this.outcomes);
 
   final List<UploadOutcome> outcomes;
-  final List<({String clientDocumentId, String documentType, int pageCount, bool fileExisted})> calls = [];
+  final List<({String clientDocumentId, String documentType, int pageCount, String? staffId, bool fileExisted})> calls =
+      [];
 
   @override
   Future<UploadOutcome> upload({
@@ -19,11 +20,13 @@ class FakeUploader implements DocumentUploader {
     required String clientDocumentId,
     required String documentType,
     required int pageCount,
+    String? staffId,
   }) async {
     calls.add((
       clientDocumentId: clientDocumentId,
       documentType: documentType,
       pageCount: pageCount,
+      staffId: staffId,
       fileExisted: pdf.existsSync(),
     ));
     final index = calls.length - 1;
@@ -180,25 +183,74 @@ void main() {
     await queue.close();
   });
 
-  test('sign_in_required_holds_the_queue_and_resume_uploads_again', () async {
+  test('device_revoked_holds_the_queue_keeps_the_item_and_pdf_and_resume_uploads_again', () async {
     final uploader = FakeUploader([
-      const UploadSignInRequired(),
+      const UploadDeviceRevoked(),
       const UploadAccepted(documentId: 'doc-3', state: 'Received'),
     ]);
     final queue = await openQueue(uploader);
 
-    await queue.enqueue(scannedPdf(), 'POD', 1);
+    final queued = await queue.enqueue(scannedPdf(), 'POD', 1);
+    await queue.enqueue(scannedPdf('second.pdf'), 'POD', 1);
     queue.start();
     await queue.whenIdle;
 
-    expect(queue.hold.value, QueueHold.signInRequired);
-    expect(queue.current.single.state, QueuedDocument.waiting);
+    // The loop stops at the first 401: the second item is not tried.
+    expect(uploader.calls, hasLength(1));
+    expect(queue.hold.value, QueueHold.deviceRevoked);
+    expect(queue.current.map((item) => item.state), everyElement(QueuedDocument.waiting));
+    expect(queue.current.first.attempts, 0);
+    expect(queue.pdfOf(queued).existsSync(), isTrue);
 
     queue.resume();
     await queue.whenIdle;
 
     expect(queue.hold.value, isNull);
-    expect(queue.current.single.state, QueuedDocument.received);
+    expect(queue.current.map((item) => item.state), everyElement(QueuedDocument.received));
+    await queue.close();
+  });
+
+  test('the_staff_id_of_the_scan_goes_with_the_upload_also_after_a_restart', () async {
+    final first = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
+    final queued = await first.enqueue(scannedPdf(), 'POD', 1, staffId: 'staff-7');
+    final unnamed = await first.enqueue(scannedPdf('b.pdf'), 'POD', 1);
+    await first.close();
+
+    expect(queued.staffId, 'staff-7');
+    expect(unnamed.staffId, isNull);
+
+    final uploader = FakeUploader([const UploadAccepted(documentId: 'doc', state: 'Received')]);
+    final second = await openQueue(uploader);
+    second.start();
+    await second.whenIdle;
+
+    expect(uploader.calls, hasLength(2));
+    final byId = {for (final call in uploader.calls) call.clientDocumentId: call.staffId};
+    expect(byId[queued.clientDocumentId], 'staff-7');
+    expect(byId[unnamed.clientDocumentId], isNull);
+    await second.close();
+  });
+
+  test('a_queue_file_from_before_staff_names_still_reads', () async {
+    queueDirectory.createSync(recursive: true);
+    Directory('${queueDirectory.path}/pdfs').createSync();
+    const id = '3f2b1c4d-0000-4000-8000-000000000001';
+    File('${queueDirectory.path}/pdfs/$id.pdf').writeAsStringSync('%PDF-1.7');
+    File('${queueDirectory.path}/queue.json').writeAsStringSync(jsonEncode([
+      {
+        'clientDocumentId': id,
+        'documentType': 'POD',
+        'pageCount': 1,
+        'state': 'waiting',
+        'createdAt': '2026-11-17T08:00:00.000Z',
+        'attempts': 0,
+      },
+    ]));
+
+    final queue = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
+
+    expect(queue.current.single.clientDocumentId, id);
+    expect(queue.current.single.staffId, isNull);
     await queue.close();
   });
 
@@ -408,6 +460,7 @@ class _GatedUploader implements DocumentUploader {
     required String clientDocumentId,
     required String documentType,
     required int pageCount,
+    String? staffId,
   }) =>
       onUpload(clientDocumentId);
 }
