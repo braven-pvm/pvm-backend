@@ -1,6 +1,6 @@
 /* The code stays black on white in both themes, so a phone camera reads it from a screen. The SVG carries its own 4-module quiet zone. */
 .frame {
-  background: #ffffff;
+  background: var(--color-qr-background);
   border: 1px solid var(--color-stroke-weak);
   border-radius: var(--radius-m);
   box-sizing: border-box;

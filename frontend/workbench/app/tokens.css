@@ -44,6 +44,10 @@
   /* Overlay behind a modal dialog */
   --color-backdrop: rgba(16, 22, 18, 0.48);
 
+  /* Behind a QR code. White in both themes on purpose (not redefined for dark):
+     a phone camera reads a black-on-white code from a screen. */
+  --color-qr-background: #ffffff;
+
   /* Mono type for identifiers: invoice numbers, GLNs, cash accounts. */
   --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
 

@@ -89,6 +89,7 @@ icon that is not interactive never uses the brand colour.
 | `--color-sidebar-current` | `#24392c` | `#1f3326` | Current sidebar item |
 | `--color-band-production` | `#b42318` | `#7a1a12` | Production band |
 | `--color-backdrop` | 48 % dark | 64 % black | Behind a modal dialog |
+| `--color-qr-background` | `#ffffff` | `#ffffff` | Behind a `QrCode`; white in both themes so a camera reads it |
 
 Contrast, checked with the WCAG formula (minimum 4.5:1 for text, 3:1 for borders):
 
@@ -651,6 +652,12 @@ Rules:
 - A linked row can hold one more link in another cell, such as the invoice
   number as a link to Acumatica. It opens in a new tab and sits above the row
   link. Never put it in the first cell.
+- Exception, Scanner devices (`/documents/devices`): the row actions ("New
+  setup code", "Revoke") sit in the first cell, under the device name, not in
+  an action column. These are the primary admin actions of the page and must
+  stay visible on a 375px phone, where the table scrolls sideways and a last
+  column would be off screen. The rows have no record page, so the first cell
+  is not a link. Use this only for a list whose row actions are its main job.
 - An action column is the last column. It holds one tertiary `ButtonLink` per
   row, such as "Map item". Use it only when the row has no record page.
 - A status column uses `StatusBadge`.
