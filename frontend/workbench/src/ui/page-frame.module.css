@@ -12,8 +12,19 @@
   max-width: 864px;
 }
 
+.page[data-width="full"] {
+  max-width: none;
+  padding: var(--space-m) var(--space-l);
+}
+
 @media (max-width: 900px) {
   .page {
     padding: var(--space-m) var(--space-s) var(--space-xl);
+  }
+}
+
+@media (max-width: 900px) {
+  .page[data-width="full"] {
+    padding: var(--space-s) var(--space-s) var(--space-xl);
   }
 }

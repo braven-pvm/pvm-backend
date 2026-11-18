@@ -5,8 +5,9 @@ type PageFrameProps = {
   /**
    * wide (1280px): Dashboard, List and Record pages.
    * narrow (800px): Task and Settings pages, which are one column of steps or forms.
+   * full: the whole width, with less padding. The ViewerPage template, built around a file.
    */
-  width?: "wide" | "narrow";
+  width?: "wide" | "narrow" | "full";
   children: ReactNode;
 };
 
