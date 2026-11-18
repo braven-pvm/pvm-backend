@@ -101,7 +101,7 @@ it does not fit a platform.
 Android app (Flutter)
   | 1. scan pages, make one PDF, upload with a client document ID
   v
-Pvm.Api  POST /api/documents
+Pvm.Api  POST /api/device/documents (device key, refer to 6.10)
   | 2. save the PDF to blob storage, insert a CapturedDocument row (Received)
   | 3. write a DocumentReceived message to the outbox
   v
@@ -118,7 +118,8 @@ Workbench (Next.js)
 
 The backend parts follow the patterns that the repository already uses:
 
-- The API, the auth policies, and the Entra sign-in in `Pvm.Api`.
+- The API, the auth policies, the Entra sign-in for the workbench, and the
+  device key scheme (refer to 6.10) in `Pvm.Api`.
 - The outbox and the Service Bus consumer in `Pvm.Worker`.
 - Blob storage, with the same approach as the payload archive in
   `Pvm.Infrastructure/PayloadArchive`.
@@ -133,8 +134,8 @@ find the borders of each paper quickly.
 
 - Flutter, Android only, in a new `mobile/` folder in this repository.
 - The scan flow has the minimum number of taps:
-  1. The user opens the app. The app remembers the sign-in and the last
-     document type, and opens the camera immediately.
+  1. The user opens the app. The app remembers its device enrolment, the staff
+     name and the last document type, and opens the camera immediately.
   2. The scanner finds the paper borders and captures the page automatically.
      The user can adjust the corners if necessary.
   3. The user taps "Add page" for a multi-page document, or "Done".
@@ -155,15 +156,16 @@ find the borders of each paper quickly.
   `google_mlkit_document_scanner` Flutter package. The scanner finds the page
   edges, corrects the perspective, crops each page, and lets the user add pages
   or scan again. It returns one PDF for the document.
-- The user signs in with Microsoft Entra, with the same tenant as the workbench.
+- The user does not sign in. The phone is enrolled once as a device by a
+  one-time setup QR code from the workbench (refer to 6.10).
 - Screens:
-  1. Sign-in.
+  1. Setup, on the first start only: Scan setup code (refer to 6.10).
   2. Batch screen. The user selects the document type (only "POD" in the first
      release), then scans documents one after the other. A list shows each
      document in the batch with its upload state: waiting, uploading, received,
      or failed.
-  3. Settings. This screen shows the signed-in user, the app version, and the
-     backend address.
+  3. Settings. This screen shows the device name, the backend address, and the
+     app version.
 - The app gets the list of document types from the backend. A new type then
   needs no app release.
 - Upload queue. The app keeps each PDF on the phone until the backend confirms
@@ -350,8 +352,8 @@ policy stays for other clients.
   approach A.
 - The Acumatica integration user needs permission to add files to sales
   invoices.
-- The phone app sign-in needs an Entra app registration with a mobile platform
-  entry.
+- Each phone is enrolled by a one-time setup QR code from the workbench
+  (section 6.10). Production needs DocumentCapture:DeviceApiBaseUrl set.
 - No secret goes into the app or the repository. The Anthropic API key goes into
   Key Vault, the same as the other secrets.
 
@@ -371,13 +373,14 @@ change them:
 7. A second POD for one invoice is kept, not rejected.
 8. Documents stay in blob storage with no delete date.
 9. Distribution: a signed release APK from a build pipeline, installed by hand.
-10. The Operator and Admin roles can upload.
+10. The Operator and Admin roles can upload through `POST /api/documents`. A
+    phone uploads with its device key (refer to 6.10).
 11. A safe match needs one invoice and a second signal (refer to 6.5).
 12. Split shipments are narrowed by the delivery date, else they go to review.
 13. In shadow mode, documents are Filed for recall, and a backfill job attaches
     them in Acumatica later (refer to 6.6).
-14. The phone app uses the existing API app registration and roles (refer to
-    6.9).
+14. The phone app uses no app registration and no user roles. It is an
+    enrolled device with its own key (refer to 6.10).
 
 ## 9. Left to the builder
 

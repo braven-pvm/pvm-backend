@@ -81,7 +81,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
     <ListPage
       header={{
         title: "Documents",
-        description: "Delivery documents scanned by drivers. Search by invoice number when a client asks about a delivery.",
+        description: "Delivery documents scanned at the office. Search by invoice number when a client asks about a delivery.",
         actions: <ButtonLink href="/documents/review">Open the review list</ButtonLink>,
       }}
       filters={
