@@ -17,8 +17,20 @@ const movedPaths = [
   { source: "/admin/messages", destination: "/events?source=delivery" },
 ];
 
+/**
+ * Uploads go through server actions, which accept 1 MB by default. A Makro Dispo
+ * report is about 1.6 MB, and the API accepts sell-out files up to 25 MB. The
+ * limit adds room for the multipart encoding.
+ */
+export const serverActionBodySizeLimit = "26mb";
+
 const nextConfig: NextConfig = {
   devIndicators: false,
+  experimental: {
+    serverActions: {
+      bodySizeLimit: serverActionBodySizeLimit,
+    },
+  },
   async redirects() {
     return movedPaths.map((path) => ({ ...path, permanent: true }));
   },
