@@ -162,6 +162,15 @@ The QA copy of Acumatica is from June 2025, so it has no sales for October
    difference of the Makro values (section 1.2). The settings came from the
    statements: 1 line needs a customer list, and each of the 15 CMR Makro
    stores belongs to one area.
+   Alchemy Agency, May to September 2026: the 5 months and the total of the
+   period are equal to the hand-made statement, to the cent.
+
+   Two Oceans, Dis-Chem sheet: the totals of August to October 2025 and of
+   August to October 2026 are equal to the hand-made sheet.
+
+   The settings of the 4 companies are settings files with names. They stay
+   outside the repository, because they hold the names of PVM's reps. An
+   Admin uploads them on the settings page.
 2. **Live check:** when the sell-in load reads production, the workbench
    statement for October 2026 must give the same totals. This needs the
    inquiry PVM-Sales-Lines in production, which is a decision of the owner.
