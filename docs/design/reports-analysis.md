@@ -629,6 +629,33 @@ master in production can confirm this.
 - The load must leave out debit memos and items without an item class, or
   report them apart, as the owner decides.
 
+### Result, signed off on 2026-11-18
+
+The owner chose the workbook rules, plus a view of the rep at the sale. PR #73
+applies them:
+
+- The month comes from the posting period.
+- The load reads the default salesperson of each customer from the contract
+  API (the entity `Customer`, detail `Salespersons`). The GI does not change.
+- The view `reporting.sell_in_report_lines` applies the rules. The view
+  `reporting.sell_in_excluded_lines` lists the debit memos and the items with
+  no item class apart.
+
+A read-only read of the production customer list confirmed rule 4: 2 826 of
+the 2 827 workbook customers have the same rep in production as in the
+workbook. With the production reps, the parity over 24 months is as follows:
+
+| Check | Result |
+| --- | --- |
+| Monthly totals | 24 of 24 within 0.5 %, 21 to the cent |
+| Totals for each month and rep | 515 of 524 to the cent |
+| Difference over 24 months | 0.010 % of the amount |
+
+Two customers explain the 9 groups that differ. The rep of one customer
+changed after the last refresh of the workbook. The other customer is not in
+the workbook and has no rep. The owner accepted this parity table on
+2026-11-18.
+
 ## 8. Open questions for the owner
 
 ### Data source
