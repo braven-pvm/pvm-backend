@@ -154,6 +154,31 @@ public sealed class AcumaticaStockReaderTests
     }
 
     [Fact]
+    public async Task A_cancelled_order_holds_no_stock()
+    {
+        var acumatica = new FakeAcumatica
+        {
+            PromoOrders = """
+                [{"OrderNbr":{"value":"P1"},"CustomerID":{"value":"DEB1"},"Status":{"value":"Canceled"},"Date":{"value":"2026-11-10T00:00:00+02:00"},"Details":[
+                    {"InventoryID":{"value":"SION10"},"OrderQty":{"value":24},"WarehouseID":{"value":"HO"}}]}]
+                """,
+        };
+        acumatica.OnHand["SION10"] = 50;
+        acumatica.SalesOrdersByType["SO"] = """
+            [{"OrderNbr":{"value":"SO1"},"CustomerID":{"value":"DEB500"},"Status":{"value":"Canceled"},"Date":{"value":"2026-11-10T00:00:00+02:00"},"Details":[
+                {"InventoryID":{"value":"SION10"},"OrderQty":{"value":6},"WarehouseID":{"value":"HO"}}]},
+             {"OrderNbr":{"value":"SO2"},"CustomerID":{"value":"DEB500"},"Status":{"value":"Open"},"Date":{"value":"2026-11-10T00:00:00+02:00"},"Details":[
+                {"InventoryID":{"value":"SION10"},"OrderQty":{"value":2},"WarehouseID":{"value":"HO"}}]}]
+            """;
+
+        var snapshot = await Reader(acumatica, promo: ["DEB1"]).ReadAsync(["SION10"], [], CancellationToken.None);
+
+        Assert.Equal(2m, snapshot.Figures["SION10"].OpenOrderQuantity);
+        Assert.Equal(0m, snapshot.Figures["SION10"].PromoOrderQuantity);
+        Assert.Contains("Status", acumatica.OrderQueries[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void An_order_counts_once_for_each_unconfirmed_shipment_as_in_the_sheet()
         => Assert.Equal(2, AcumaticaStockReader.TimesCounted(
             new Dictionary<string, (int All, int Unconfirmed)> { ["SO9"] = (3, 2) }, "SO9"));
