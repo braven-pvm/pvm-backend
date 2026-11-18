@@ -88,6 +88,9 @@ class FakeDeviceClient implements DeviceClient {
     required String documentType,
     required int pageCount,
     String? staffId,
+    String? title,
+    String? note,
+    File? thumbnail,
   }) async {
     uploads.add((clientDocumentId: clientDocumentId, staffId: staffId));
     final index = uploads.length - 1;
