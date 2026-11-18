@@ -1,6 +1,6 @@
 # Reports: analysis and architecture proposal
 
-Status: proposal approved by the owner on 2026-11-12 · Lane: Reports
+Status: proposal approved by the owner on 2026-11-12 · goals R1 to R4 built by 2026-11-18 · Lane: Reports
 
 ## Decisions
 
@@ -12,13 +12,31 @@ The owner approved this proposal on 2026-11-12, with these answers:
 | 2. Read Acumatica through a Generic Inquiry | Yes | The sell-in source is a GI over OData. The backend does not use SQL Server |
 | 18. First surface after the sales report | Merchandiser statements | Slice R4 comes before the sell-out dashboard (R5) |
 
-The other open questions in [section 8](#8-open-questions-for-the-owner) are
-still open.
+Later decisions, from the board (2026-11-18):
+
+| Decision | Answer | Effect on the build |
+| --- | --- | --- |
+| Rules of the sales report | The rules of the old workbook, plus a view of the rep at the sale | Section 7a. The view `reporting.sell_in_report_lines` applies them |
+| Sell-in parity with the workbook | Accepted: 515 of 524 totals per month and rep to the cent | Section 7a, "Result" |
+| Retailer files with no API | One import, files by upload or by mail | `docs/design/sell-out-import.md` |
+| Mailbox for the files | A shared Microsoft 365 mailbox, `reports@pvm.co.za`, mail from `pvm.co.za` only | The mail job in QA |
+| Merchandiser statements | Accepted, with no change to the layout | `docs/design/merchandiser-statements.md` |
+| Sales from production | Yes, read production each night | The inquiry is in production. The nightly job runs there |
+| Next report | The sales report pages | Goal R5 |
+
+Answers that the data gave, for questions of [section 8](#8-open-questions-for-the-owner):
+
+- **Question 11:** the Makro "Rand value" is Σ (units × `Net Cost`) over all units of measure. It matches 22 stores within 0.5 %.
+- **Question 12:** the Dis-Chem figures of Two Oceans are Acumatica sell-in, not a Dis-Chem file.
+- **Question 13:** a person downloads the files by hand, or the sales manager gets them by mail.
+- **Question 14:** yes. In QA, all 10 articles of the Shoprite portal report map through the Shoprite item mapping.
+- **Question 17:** the import reads the lists of TopMed, CJ, Alpha Pharm and Arrie Nel.
+
+The other open questions in section 8 are still open.
 
 This document examines the sales report and seven related files that PVM uses
 today. It then proposes a reports module for the workbench, which later reports
-can join. Nothing is built yet. The owner reviews this proposal before the build
-starts.
+can join. [Section 7b](#7b-what-goals-r1-to-r4-built) lists what is built.
 
 Data rules for this document:
 
@@ -581,6 +599,10 @@ No chart library: the redesign document forbids one. `ColumnChart` and
 
 Production use starts after R2, in parallel with the workbook for one month.
 
+The board goals followed another order than the slices: the merchandiser
+statements came before the sales report pages. Section 7b links the goals to
+the slices.
+
 ---
 
 ## 7a. Rules of the old SQL views, found from the data
@@ -655,6 +677,17 @@ Two customers explain the 9 groups that differ. The rep of one customer
 changed after the last refresh of the workbook. The other customer is not in
 the workbook and has no rep. The owner accepted this parity table on
 2026-11-18.
+
+## 7b. What goals R1 to R4 built
+
+| Goal | Slices | What it built | Pull requests | Check |
+| --- | --- | --- | --- | --- |
+| R1: Acumatica sell-in in QA | R1 | The reporting schema, the inquiry `PVM-Sales-Lines`, the nightly sell-in job with a raw store and a run log, the rules of the old views, the current rep of each customer | #65, #67, #69, #73 | 515 of 524 totals per month and rep equal the workbook. The owner accepted the parity |
+| R2: Sell-out import | R3, part of R5 | One import for the Makro Dispo report, the Shoprite group portal report and 4 wholesaler lists, by upload or by mail to `reports@pvm.co.za`. Product mapping by GTIN, by the Shoprite item mapping, or by hand | #74, #78 | Each real file gives its own totals. The mail job loaded the owner's files in QA |
+| R3: Merchandiser statements | R4 | Company settings, the statement engine, the statements page, the Excel export, the Dis-Chem sheet | #79 | The engine gives the 4 hand-made statements from the same data. The owner accepted them |
+| R4: Live statements | — | The inquiry in production, the nightly production load (history from March 2024), the settings of the 4 companies in production, uploads above 1 MB | #81, #83 | The 4 live statements equal the hand-made files: 22 of 22 values |
+
+Slice R2 of section 7 (the sales report pages) is goal R5.
 
 ## 8. Open questions for the owner
 
