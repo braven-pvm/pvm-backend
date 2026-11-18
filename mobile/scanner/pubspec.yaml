@@ -3,7 +3,7 @@ description: "PVM Scanner: scans proof-of-delivery papers and uploads one PDF pe
 publish_to: 'none'
 
 # versionName+versionCode of the APK. Raise both for each release.
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ^3.13.5
