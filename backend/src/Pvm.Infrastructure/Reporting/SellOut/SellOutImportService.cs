@@ -350,6 +350,7 @@ public sealed class SellOutImportService(
                 StoreId = plan.Stores[row.StoreCode].Id,
                 InventoryId = map?.InventoryId,
                 SourceProductCode = row.ProductCode,
+                Gtin = Gtin(row.Gtin),
                 Year = row.Year,
                 Month = row.Month,
                 FinancialYear = financial.FinancialYear,
@@ -372,6 +373,7 @@ public sealed class SellOutImportService(
                 StoreId = plan.Stores[row.StoreCode].Id,
                 InventoryId = map?.InventoryId,
                 SourceProductCode = row.ProductCode,
+                Gtin = Gtin(row.Gtin),
                 SnapshotDate = parsed.FileDate,
                 StockOnHand = row.StockOnHand,
                 StockOnOrder = row.StockOnOrder,
@@ -491,7 +493,11 @@ public sealed class SellOutImportService(
     private static SellOutImportResult Refusal(Guid importId, string? source, string reason) =>
         new(importId, SellOutImportStatuses.Refused, source, reason, [], 0, 0, 0, 0, 0, [], []);
 
-    private static string Hash(byte[] content) => Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
+    // A GTIN has 8 to 14 digits. Any other value is not a GTIN and is not kept as one.
+    private static string? Gtin(string? value) =>
+        value is { Length: >= 8 and <= 14 } && value.All(char.IsAsciiDigit) ? value : null;
+
+        private static string Hash(byte[] content) => Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
 
     private static string Truncate(string value, int length) => value.Length <= length ? value : value[..length];
 

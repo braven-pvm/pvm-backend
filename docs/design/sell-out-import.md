@@ -332,3 +332,20 @@ only.
 | CJ list | 691 | 0 | 146 | Units and value match the total row of the list |
 | Alpha Pharm list | 130 | 0 | 49 | Units and value match the total row of the list |
 | Arrie Nel list | 541 | 0 | 133 | Units and value match the total row of the list |
+
+### 9.1 Product mapping in QA
+
+The GTIN refresh (`--refresh-product-gtins`) read 224 GTINs from the cross
+references of the QA stock items. 6 GTINs sit on more than one item, so the
+refresh keeps none of these 6.
+
+Only 1 of the 16 Makro articles has a barcode (on any unit of measure) that
+matches a QA cross reference. Most QA cross references have the units `OUTER`,
+`GRAM`, `BOX` or `KG`, not the single bar. Thus:
+
+- A person maps the 16 Makro articles and the 10 Shoprite articles once, in
+  the "Needs mapping" list of the workbench. Each map stays for later files.
+- Shoprite articles also map through the Shoprite item mapping of the backend,
+  where it holds the article.
+- When the barcodes of the bars are in Acumatica, the GTIN refresh maps the
+  waiting rows by itself.

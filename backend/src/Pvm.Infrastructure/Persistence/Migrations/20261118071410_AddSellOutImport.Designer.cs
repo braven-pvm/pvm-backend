@@ -12,7 +12,7 @@ using Pvm.Infrastructure.Persistence;
 namespace Pvm.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(PvmDbContext))]
-    [Migration("20261118065652_AddSellOutImport")]
+    [Migration("20261118071410_AddSellOutImport")]
     partial class AddSellOutImport
     {
         /// <inheritdoc />
@@ -1387,6 +1387,10 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                     b.Property<int>("FinancialYear")
                         .HasColumnType("integer");
 
+                    b.Property<string>("Gtin")
+                        .HasMaxLength(14)
+                        .HasColumnType("character varying(14)");
+
                     b.Property<Guid>("ImportId")
                         .HasColumnType("uuid");
 
@@ -1911,6 +1915,10 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                     b.Property<decimal?>("DcStock")
                         .HasPrecision(18, 4)
                         .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("Gtin")
+                        .HasMaxLength(14)
+                        .HasColumnType("character varying(14)");
 
                     b.Property<Guid>("ImportId")
                         .HasColumnType("uuid");

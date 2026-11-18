@@ -125,6 +125,9 @@ public sealed class SellOutMonthEntity
     /// <summary>The product code in the file: a GTIN, a retailer article number or a wholesaler code.</summary>
     public required string SourceProductCode { get; set; }
 
+    /// <summary>The barcode that the file gives for the product, if any. A later GTIN load maps the row by it.</summary>
+    public string? Gtin { get; set; }
+
     public int Year { get; set; }
     public int Month { get; set; }
     public int FinancialYear { get; set; }
@@ -152,6 +155,7 @@ public sealed class StoreStockSnapshotEntity
     public Guid StoreId { get; set; }
     public string? InventoryId { get; set; }
     public required string SourceProductCode { get; set; }
+    public string? Gtin { get; set; }
     public DateOnly SnapshotDate { get; set; }
     public decimal? StockOnHand { get; set; }
     public decimal? StockOnOrder { get; set; }

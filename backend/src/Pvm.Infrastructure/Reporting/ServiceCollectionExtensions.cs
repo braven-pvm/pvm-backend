@@ -53,4 +53,19 @@ public static class ServiceCollectionExtensions
         services.AddScoped<SellOutImportService>();
         return services;
     }
+
+    /// <summary>
+    /// Registers the GTIN refresh. Assumes <c>AddAcumaticaInvoiceSource</c> has bound the shared Acumatica options.
+    /// </summary>
+    public static IServiceCollection AddProductGtinRefresh(this IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddHttpClient<IProductGtinSource, AcumaticaProductGtinSource>(client =>
+        {
+            client.Timeout = TimeSpan.FromMinutes(10);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("PVM-SellOut/1.0");
+        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { UseCookies = false });
+        services.AddScoped<ProductGtinRefreshService>();
+        return services;
+    }
 }

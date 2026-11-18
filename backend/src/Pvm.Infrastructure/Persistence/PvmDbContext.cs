@@ -669,6 +669,7 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(month => month.Source).HasMaxLength(64);
             entity.Property(month => month.InventoryId).HasMaxLength(64);
             entity.Property(month => month.SourceProductCode).HasMaxLength(64);
+            entity.Property(month => month.Gtin).HasMaxLength(14);
             entity.Property(month => month.Units).HasPrecision(18, 4);
             entity.Property(month => month.UnitsEach).HasPrecision(18, 4);
             entity.Property(month => month.ValueExclVat).HasPrecision(18, 2);
@@ -687,6 +688,7 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(snapshot => snapshot.Source).HasMaxLength(64);
             entity.Property(snapshot => snapshot.InventoryId).HasMaxLength(64);
             entity.Property(snapshot => snapshot.SourceProductCode).HasMaxLength(64);
+            entity.Property(snapshot => snapshot.Gtin).HasMaxLength(14);
             entity.Property(snapshot => snapshot.StockOnHand).HasPrecision(18, 4);
             entity.Property(snapshot => snapshot.StockOnOrder).HasPrecision(18, 4);
             entity.Property(snapshot => snapshot.StockInTransit).HasPrecision(18, 4);
