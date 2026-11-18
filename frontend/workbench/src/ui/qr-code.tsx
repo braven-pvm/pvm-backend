@@ -11,8 +11,8 @@ type QrCodeProps = {
 };
 
 /**
- * A QR code for a phone to scan from the screen. It is 320px wide, at least
- * 280px with its frame, black on white in both themes.
+ * A QR code for a phone to scan from the screen. It is 320px wide, the code itself at least
+ * 280px (no frame padding on a phone), black on white in both themes.
  * Spec: docs/design/design-system.md#qrcode
  */
 export function QrCode({ label, svg }: QrCodeProps) {

@@ -104,7 +104,18 @@ export async function issueSetupCodeAction(_previous: SetupCodeState, formData: 
   }
 
   revalidatePath(pagePath);
-  return toCodeState(result.value);
+  try {
+    return await toCodeState(result.value);
+  } catch {
+    // The backend made the device and the code; only the QR failed. A new setup code replaces this one.
+    return {
+      kind: "error",
+      message:
+        intent === "add"
+          ? "The device was added, but the setup code could not be shown. Make a new setup code in the list."
+          : "The setup code was made, but it could not be shown. Make a new setup code in the list.",
+    };
+  }
 }
 
 /** Back to the page with the result. Only names and messages go in the URL, never a code. */

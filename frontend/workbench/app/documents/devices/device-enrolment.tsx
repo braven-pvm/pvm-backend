@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import type { ScannerDevice } from "../../../src/api/scanner-devices";
 import { formatDateTime } from "../../../src/formatters.mjs";
@@ -18,16 +18,31 @@ import { StatusBadge } from "../../../src/ui/status-badge";
 import { SubmitButton } from "../../../src/ui/submit-button";
 import { issueSetupCodeAction, revokeDeviceAction, type SetupCodeState } from "./actions";
 
+const idle: SetupCodeState = { kind: "idle" };
+
+/** Server actions for the codes, plus "clear", which drops the QR from memory without a server call. */
+async function setupCodeReducer(previous: SetupCodeState, formData: FormData): Promise<SetupCodeState> {
+  return formData.get("intent") === "clear" ? idle : issueSetupCodeAction(previous, formData);
+}
+
+function clearForm() {
+  const formData = new FormData();
+  formData.set("intent", "clear");
+  return formData;
+}
+
 /**
  * The device list, Add device and the setup code panel. The setup code comes
  * back from the server action into this component's state and lives only in
- * memory: leaving or reloading the page drops it.
+ * memory: leaving or reloading the page drops it, and so do Hide setup code
+ * and the expiry.
  */
 export function DeviceEnrolment({ devices }: { devices: ScannerDevice[] }) {
-  const [state, formAction] = useActionState(issueSetupCodeAction, { kind: "idle" } as SetupCodeState);
-  const [hiddenKey, setHiddenKey] = useState<string | null>(null);
-  const [expiredKey, setExpiredKey] = useState<string | null>(null);
+  const [state, formAction] = useActionState(setupCodeReducer, idle);
+  // The device whose code expired, for the notice once the QR is gone.
+  const [expiredDevice, setExpiredDevice] = useState<string | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
+  const clearCode = () => startTransition(() => formAction(clearForm()));
 
   const codeKey = state.kind === "code" ? state.key : null;
   const codeExpiresAt = state.kind === "code" ? state.expiresAt : null;
@@ -41,54 +56,44 @@ export function DeviceEnrolment({ devices }: { devices: ScannerDevice[] }) {
 
   // The code works for 15 minutes. After that the QR is taken off the screen.
   useEffect(() => {
-    if (!codeKey || !codeExpiresAt) {
+    if (!codeKey || !codeExpiresAt || state.kind !== "code") {
       return;
     }
+    const deviceName = state.deviceName;
     const left = Date.parse(codeExpiresAt) - Date.now();
-    const timer = window.setTimeout(() => setExpiredKey(codeKey), Math.max(0, Number.isNaN(left) ? 15 * 60_000 : left));
+    const timer = window.setTimeout(
+      () => {
+        setExpiredDevice(deviceName);
+        startTransition(() => formAction(clearForm()));
+      },
+      Math.max(0, Number.isNaN(left) ? 15 * 60_000 : left),
+    );
     return () => window.clearTimeout(timer);
-  }, [codeKey, codeExpiresAt]);
+  }, [codeKey, codeExpiresAt, state, formAction]);
 
   // A device revoked since the code was made cannot use it.
   const codeDevice = state.kind === "code" ? devices.find((device) => device.id === state.deviceId) : undefined;
-  const showCode = state.kind === "code" && hiddenKey !== state.key && codeDevice?.state !== "Revoked";
+  const showCode = state.kind === "code" && codeDevice?.state !== "Revoked";
 
+  // The actions sit under the device name, so a phone shows them without scrolling the table sideways.
   const columns: Column<ScannerDevice>[] = [
-    { key: "name", header: "Name", render: (device) => device.name },
-    { key: "state", header: "State", render: (device) => <StatusBadge status={device.state} label={deviceStateLabel(device.state)} /> },
-    { key: "created", header: "Created", render: (device) => formatDateTime(device.createdAt), weak: true },
-    { key: "enrolled", header: "Set up", render: (device) => (device.enrolledAt ? formatDateTime(device.enrolledAt) : "Not yet"), weak: true },
-    { key: "seen", header: "Last seen", render: (device) => (device.lastSeenAt ? formatDateTime(device.lastSeenAt) : "Never"), weak: true },
     {
-      key: "actions",
-      header: "Actions",
+      key: "name",
+      header: "Device",
       render: (device) =>
         canIssueSetupCode(device.state) ? (
-          <Stack direction="row" gap="xs" wrap>
-            <form action={formAction}>
-              <input type="hidden" name="intent" value="renew" />
-              <input type="hidden" name="deviceId" value={device.id} />
-              <SubmitButton variant="secondary" pendingLabel="Making code…">
-                New setup code
-              </SubmitButton>
-            </form>
-            <ConfirmDialog
-              triggerLabel="Revoke"
-              triggerVariant="tertiary"
-              title={`Revoke ${device.name}?`}
-              confirmLabel="Revoke device"
-              pendingLabel="Revoking…"
-              tone="danger"
-              action={revokeDeviceAction}
-              fields={{ deviceId: device.id, deviceName: device.name }}
-            >
-              <p>This phone stops working at once. To use it again, add it as a new device.</p>
-            </ConfirmDialog>
+          <Stack gap="xs" align="start">
+            <span>{device.name}</span>
+            <DeviceActions device={device} formAction={formAction} />
           </Stack>
         ) : (
-          <span>—</span>
+          device.name
         ),
     },
+    { key: "state", header: "State", render: (device) => <StatusBadge status={device.state} label={deviceStateLabel(device.state)} /> },
+    { key: "seen", header: "Last seen", render: (device) => (device.lastSeenAt ? formatDateTime(device.lastSeenAt) : "Never"), weak: true },
+    { key: "enrolled", header: "Set up", render: (device) => (device.enrolledAt ? formatDateTime(device.enrolledAt) : "Not yet"), weak: true },
+    { key: "created", header: "Created", render: (device) => formatDateTime(device.createdAt), weak: true },
   ];
 
   return (
@@ -97,24 +102,29 @@ export function DeviceEnrolment({ devices }: { devices: ScannerDevice[] }) {
         {showCode && state.kind === "code" ? (
           <Panel
             title={`Set up ${state.deviceName}`}
-            description={expiredKey === state.key ? "This setup code has expired." : state.expiryText}
+            description={state.expiryText}
             actions={
-              <Button variant="tertiary" onClick={() => setHiddenKey(state.key)}>
+              <Button
+                variant="tertiary"
+                onClick={() => {
+                  setExpiredDevice(null);
+                  clearCode();
+                }}
+              >
                 Hide setup code
               </Button>
             }
           >
-            {expiredKey === state.key ? (
-              <Notice tone="warning" title="The setup code has expired">
-                Make a new setup code for {state.deviceName} in the list below.
-              </Notice>
-            ) : (
-              <Stack gap="s">
-                <QrCode label={`Setup code for ${state.deviceName}`} svg={state.qrSvg} />
-                <p>Open PVM Scanner on the phone and select Scan setup code.</p>
-              </Stack>
-            )}
+            <Stack gap="s">
+              <QrCode label={`Setup code for ${state.deviceName}`} svg={state.qrSvg} />
+              <p>Open PVM Scanner on the phone and select Scan setup code.</p>
+            </Stack>
           </Panel>
+        ) : null}
+        {state.kind === "idle" && expiredDevice ? (
+          <Notice tone="warning" title="The setup code has expired">
+            Make a new setup code for {expiredDevice} in the list below.
+          </Notice>
         ) : null}
         {state.kind === "notConfigured" ? (
           <Notice tone="error" title="No setup code was made" live>
@@ -122,7 +132,7 @@ export function DeviceEnrolment({ devices }: { devices: ScannerDevice[] }) {
           </Notice>
         ) : null}
         {state.kind === "error" ? (
-          <Notice tone="error" title="No setup code was made" live>
+          <Notice tone="error" title="No setup code to show" live>
             {state.message}
           </Notice>
         ) : null}
@@ -160,5 +170,31 @@ export function DeviceEnrolment({ devices }: { devices: ScannerDevice[] }) {
         </form>
       </Panel>
     </>
+  );
+}
+
+function DeviceActions({ device, formAction }: { device: ScannerDevice; formAction: (formData: FormData) => void }) {
+  return (
+    <Stack direction="row" gap="xs" wrap align="center">
+      <form action={formAction}>
+        <input type="hidden" name="intent" value="renew" />
+        <input type="hidden" name="deviceId" value={device.id} />
+        <SubmitButton variant="secondary" pendingLabel="Making code…">
+          New setup code
+        </SubmitButton>
+      </form>
+      <ConfirmDialog
+        triggerLabel="Revoke"
+        triggerVariant="tertiary"
+        title={`Revoke ${device.name}?`}
+        confirmLabel="Revoke device"
+        pendingLabel="Revoking…"
+        tone="danger"
+        action={revokeDeviceAction}
+        fields={{ deviceId: device.id, deviceName: device.name }}
+      >
+        <p>This phone stops working at once. To use it again, add it as a new device.</p>
+      </ConfirmDialog>
+    </Stack>
   );
 }

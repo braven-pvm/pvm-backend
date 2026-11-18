@@ -1,4 +1,4 @@
-/* The code stays black on white in both themes, with its own quiet zone, so a phone camera reads it from a screen. */
+/* The code stays black on white in both themes, so a phone camera reads it from a screen. The SVG carries its own 4-module quiet zone. */
 .frame {
   background: #ffffff;
   border: 1px solid var(--color-stroke-weak);
@@ -13,6 +13,14 @@
 .frame svg {
   display: block;
   height: auto;
-  min-width: 264px;
+  min-width: 280px;
   width: 100%;
+}
+
+/* On a phone-width screen the frame gives its padding and border to the code, so the code stays at least 280px. */
+@media (max-width: 600px) {
+  .frame {
+    border: 0;
+    padding: 0;
+  }
 }
