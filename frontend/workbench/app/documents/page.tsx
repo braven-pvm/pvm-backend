@@ -1,6 +1,6 @@
 import { acumaticaBaseUrl, getDocumentTypes, searchDocuments, type DocumentSearchItem } from "../../src/api/documents";
 import { requireWorkbenchUser } from "../../src/auth/session";
-import { buildDocumentSearchQuery, documentStates, documentTypeLabel, formatReviewReason, type DocumentSearchFilters } from "../../src/documents";
+import { buildDocumentSearchQuery, documentStates, documentTypeLabel, formatReviewReason, uploaderText, type DocumentSearchFilters } from "../../src/documents";
 import { formatDateTime } from "../../src/formatters.mjs";
 import {
   ButtonLink,
@@ -45,7 +45,7 @@ function columnsFor(acumaticaUrl: string | undefined): Column<DocumentSearchItem
     },
     { key: "uploaded", header: "Uploaded", render: (row) => formatDateTime(row.uploadedAt), weak: true },
     { key: "type", header: "Document", render: (row) => documentTypeLabel(row.documentType), weak: true },
-    { key: "by", header: "Uploaded by", render: (row) => row.uploadedBy, weak: true },
+    { key: "by", header: "Uploaded by", render: (row) => uploaderText(row), weak: true },
   ];
 }
 

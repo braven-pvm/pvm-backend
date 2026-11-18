@@ -17,6 +17,7 @@ import {
   rejectErrorMessage,
   returnToReviewErrorMessage,
   unconfirmedMessage,
+  uploaderText,
 } from "./documents.ts";
 
 test("each document state has a plain label", () => {
@@ -211,4 +212,21 @@ test("send-back and process-again errors tell the user what happened", () => {
     unconfirmedMessage("sent back to review"),
     "We could not confirm whether the document was sent back to review. Reload the page to see its state.",
   );
+});
+
+test("a phone upload shows the device and the staff name", () => {
+  assert.equal(
+    uploaderText({ uploadedBy: "device:Dispatch phone 1", scannerDeviceName: "Dispatch phone 1", scannerStaffName: "Thabo" }),
+    "Dispatch phone 1 · Thabo",
+  );
+});
+
+test("a phone upload without a staff name shows the device only", () => {
+  assert.equal(uploaderText({ uploadedBy: "device:Dispatch phone 1", scannerDeviceName: "Dispatch phone 1", scannerStaffName: null }), "Dispatch phone 1");
+  assert.equal(uploaderText({ uploadedBy: "device:Dispatch phone 1", scannerDeviceName: "Dispatch phone 1", scannerStaffName: "  " }), "Dispatch phone 1");
+});
+
+test("a workbench upload shows the uploader as before", () => {
+  assert.equal(uploaderText({ uploadedBy: "driver.thabo@pvm.co.za", scannerDeviceName: null, scannerStaffName: null }), "driver.thabo@pvm.co.za");
+  assert.equal(uploaderText({ uploadedBy: "driver.thabo@pvm.co.za" }), "driver.thabo@pvm.co.za");
 });

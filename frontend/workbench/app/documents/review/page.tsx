@@ -1,6 +1,6 @@
 import { getReviewList, type ReviewListItem } from "../../../src/api/documents";
 import { hasAnyRole, requireWorkbenchUser } from "../../../src/auth/session";
-import { documentTypeLabel, formatReviewReason } from "../../../src/documents";
+import { documentTypeLabel, formatReviewReason, uploaderText } from "../../../src/documents";
 import { formatDateTime } from "../../../src/formatters.mjs";
 import { ButtonLink, DataTable, EmptyState, ListPage, Notice, Pagination, type Column } from "../../../src/ui";
 import { DocumentStateBadge } from "../document-parts";
@@ -20,7 +20,7 @@ const columns: Column<ReviewListItem>[] = [
         ? "Information only. Nothing to file yet."
         : (formatReviewReason(row.reviewReason, row.state) ?? (row.state === "Failed" ? "Processing failed after every retry" : "—")),
   },
-  { key: "by", header: "Uploaded by", render: (row) => row.uploadedBy, weak: true },
+  { key: "by", header: "Uploaded by", render: (row) => uploaderText(row), weak: true },
   {
     key: "document",
     header: "Document",

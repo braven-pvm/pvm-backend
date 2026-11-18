@@ -74,3 +74,14 @@ test("the review list, not the search, is current on the review page", () => {
   assert.equal(isCurrent(documents.children[0], "/documents"), false);
   assert.equal(isCurrent(documents, "/documents/6f1d0c2a-0001-4a7e-9a10-000000000001"), true);
 });
+
+test("only an admin sees the scanner devices link under Documents", () => {
+  const documentsFor = (roles) =>
+    navigationFor(roles)
+      .flatMap((group) => group.items)
+      .find((item) => item.label === "Documents");
+  const childLabels = (roles) => (documentsFor(roles)?.children ?? []).map((child) => child.label);
+  assert.deepEqual(childLabels(["Admin"]), ["Review list", "Scanner devices"]);
+  assert.deepEqual(childLabels(["Operator"]), ["Review list"]);
+  assert.deepEqual(childLabels(["Viewer"]), ["Review list"]);
+});

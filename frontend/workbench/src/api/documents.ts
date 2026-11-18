@@ -21,6 +21,9 @@ export type DocumentSearchItem = {
   acumaticaAttachedAt: string | null;
   pageCount: number;
   uploadedBy: string;
+  /** Set for a phone upload: the device's current name, and the staff name picked at upload. */
+  scannerDeviceName?: string | null;
+  scannerStaffName?: string | null;
   uploadedAt: string;
   resolvedBy: string | null;
   resolvedAt: string | null;
@@ -35,6 +38,9 @@ export type ReviewListItem = {
   stuck: boolean;
   pageCount: number;
   uploadedBy: string;
+  /** Set for a phone upload: the device's current name, and the staff name picked at upload. */
+  scannerDeviceName?: string | null;
+  scannerStaffName?: string | null;
   uploadedAt: string;
   updatedAt: string;
 };
@@ -71,6 +77,9 @@ export type DocumentDetail = {
   acumaticaAttachPending: boolean;
   acumaticaAttachedAt: string | null;
   uploadedBy: string;
+  /** Set for a phone upload: the device's current name, and the staff name picked at upload. */
+  scannerDeviceName?: string | null;
+  scannerStaffName?: string | null;
   uploadedAt: string;
   resolvedBy: string | null;
   resolvedAt: string | null;

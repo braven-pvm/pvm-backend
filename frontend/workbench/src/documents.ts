@@ -264,3 +264,21 @@ export function acumaticaInvoiceUrl(baseUrl: string | null | undefined, referenc
 export function unconfirmedMessage(outcome: "filed" | "rejected" | "sent back to review" | "queued for processing"): string {
   return `We could not confirm whether the document was ${outcome}. Reload the page to see its state.`;
 }
+
+/**
+ * Who uploaded the document. A phone upload names the scanner device and,
+ * when the person picked one, the staff name: "Dispatch phone 1 · Thabo".
+ * A workbench upload shows the uploader as the API gives it.
+ */
+export function uploaderText(document: {
+  uploadedBy: string;
+  scannerDeviceName?: string | null;
+  scannerStaffName?: string | null;
+}): string {
+  const device = document.scannerDeviceName?.trim();
+  if (!device) {
+    return document.uploadedBy;
+  }
+  const staff = document.scannerStaffName?.trim();
+  return staff ? `${device} · ${staff}` : device;
+}

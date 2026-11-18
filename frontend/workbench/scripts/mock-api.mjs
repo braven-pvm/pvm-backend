@@ -6,12 +6,16 @@
 // and AUTH_MODE=DevelopmentBypass. Every response is example data in the shape
 // of src/api/client.ts. Writes answer with success and change nothing.
 // set MOCK_EMPTY=1 in the environment of this script.
+// For the "scanner setup is not configured" answer of the setup-code
+// endpoints, set MOCK_SCANNER_SETUP=unconfigured.
 
+import { randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 
 const portIndex = process.argv.indexOf("--port");
 const port = portIndex > 0 ? Number(process.argv[portIndex + 1]) : 5000;
 const empty = process.env.MOCK_EMPTY === "1";
+const scannerSetupConfigured = process.env.MOCK_SCANNER_SETUP !== "unconfigured";
 
 const now = Date.now();
 const minutesAgo = (minutes) => new Date(now - minutes * 60_000).toISOString();
@@ -265,8 +269,8 @@ const invoiceByNumber = (number) => invoicePool.find((invoice) => invoice.refere
 const documents = [
   documentRecord("d0c00000-0000-4000-8000-000000000001", "Filed", null, { uploaded: 2 * 24 * 60, matchedReference: "INV001234", matchedBy: "auto", attachedMinutesAgo: 2 * 24 * 60 - 3, extraction: { invoiceNumbers: ["INV001234"], salesOrderNumbers: ["SO004410"], customerOrderNumbers: ["PO77812"], clientName: "Acme Stores", deliveryDate: daysAgo(2).slice(0, 10), signaturePresent: true, note: null } }),
   documentRecord("d0c00000-0000-4000-8000-000000000002", "Filed", null, { uploaded: 26 * 60, matchedReference: "INV001198", matchedBy: "user:izelle@example.test", resolvedBy: "izelle@example.test", resolvedMinutesAgo: 25 * 60, attachPending: true, extraction: { InvoiceNumbers: ["INV001198", "INV001199"], ClientName: "Saveway", DeliveryDate: daysAgo(1).slice(0, 10), SignaturePresent: true } }),
-  documentRecord("d0c00000-0000-4000-8000-000000000003", "NeedsReview", "MultipleCandidates", { uploaded: 6 * 60, extraction: { invoiceNumbers: ["INV00123"], salesOrderNumbers: [], customerOrderNumbers: [], clientName: "Acme", deliveryDate: daysAgo(0).slice(0, 10), signaturePresent: true, note: "Last digit of the invoice number is torn off" }, candidates: [invoiceByNumber("INV001234"), invoiceByNumber("INV001235")] }),
-  documentRecord("d0c00000-0000-4000-8000-000000000004", "NeedsReview", "NoSecondSignal", { uploaded: 4 * 60, extraction: { invoiceNumbers: ["INV001240"], salesOrderNumbers: [], customerOrderNumbers: [], clientName: null, deliveryDate: null, signaturePresent: false, note: null }, candidates: [invoiceByNumber("INV001240")] }),
+  documentRecord("d0c00000-0000-4000-8000-000000000003", "NeedsReview", "MultipleCandidates", { uploaded: 6 * 60, device: "Dispatch phone 1", staff: "Thabo", extraction: { invoiceNumbers: ["INV00123"], salesOrderNumbers: [], customerOrderNumbers: [], clientName: "Acme", deliveryDate: daysAgo(0).slice(0, 10), signaturePresent: true, note: "Last digit of the invoice number is torn off" }, candidates: [invoiceByNumber("INV001234"), invoiceByNumber("INV001235")] }),
+  documentRecord("d0c00000-0000-4000-8000-000000000004", "NeedsReview", "NoSecondSignal", { uploaded: 4 * 60, device: "Dispatch phone 1", extraction: { invoiceNumbers: ["INV001240"], salesOrderNumbers: [], customerOrderNumbers: [], clientName: null, deliveryDate: null, signaturePresent: false, note: null }, candidates: [invoiceByNumber("INV001240")] }),
   documentRecord("d0c00000-0000-4000-8000-000000000005", "NeedsReview", "ReadFailure", { uploaded: 3 * 60, unreadableReason: "The page is too blurred to read any number." }),
   documentRecord("d0c00000-0000-4000-8000-000000000006", "Failed", null, { uploaded: 2 * 60 }),
   documentRecord("d0c00000-0000-4000-8000-000000000007", "Processing", null, { uploaded: 95, stuck: true }),
@@ -290,7 +294,10 @@ function documentRecord(id, state, reviewReason, options) {
     matchedBy: options.matchedBy ?? null,
     acumaticaAttachPending: options.attachPending ?? false,
     acumaticaAttachedAt: options.attachedMinutesAgo !== undefined ? minutesAgo(options.attachedMinutesAgo) : null,
-    uploadedBy: "driver.thabo@pvm.co.za",
+    // A phone upload names the device; the staff name is optional. A workbench upload has neither.
+    uploadedBy: options.device ? `device:${options.device}` : "driver.thabo@pvm.co.za",
+    scannerDeviceName: options.device ?? null,
+    scannerStaffName: options.staff ?? null,
     uploadedAt: minutesAgo(options.uploaded),
     resolvedBy: options.resolvedBy ?? options.rejectedBy ?? null,
     resolvedAt,
@@ -305,7 +312,7 @@ function documentRecord(id, state, reviewReason, options) {
   };
 }
 
-const searchFields = ["id", "documentType", "state", "reviewReason", "matchedReference", "matchedCustomerName", "matchedBy", "acumaticaAttachPending", "acumaticaAttachedAt", "pageCount", "uploadedBy", "uploadedAt", "resolvedBy", "resolvedAt", "rejectedAt"];
+const searchFields = ["id", "documentType", "state", "reviewReason", "matchedReference", "matchedCustomerName", "matchedBy", "acumaticaAttachPending", "acumaticaAttachedAt", "pageCount", "uploadedBy", "scannerDeviceName", "scannerStaffName", "uploadedAt", "resolvedBy", "resolvedAt", "rejectedAt"];
 const searchItem = (item) => Object.fromEntries(searchFields.map((field) => [field, item[field]]));
 
 function searchDocuments(url) {
@@ -331,7 +338,7 @@ function reviewList() {
   const items = (empty ? [] : documents)
     .filter((item) => item.stuck || ((item.state === "NeedsReview" || item.state === "Failed") && !item.rejectedAt))
     .sort((a, b) => Date.parse(a.uploadedAt) - Date.parse(b.uploadedAt))
-    .map(({ id, documentType, state, reviewReason, stuck, pageCount, uploadedBy, uploadedAt, updatedAt }) => ({ id, documentType, state, reviewReason, stuck, pageCount, uploadedBy, uploadedAt, updatedAt }));
+    .map(({ id, documentType, state, reviewReason, stuck, pageCount, uploadedBy, scannerDeviceName, scannerStaffName, uploadedAt, updatedAt }) => ({ id, documentType, state, reviewReason, stuck, pageCount, uploadedBy, scannerDeviceName, scannerStaffName, uploadedAt, updatedAt }));
   return { items, page: 1, pageSize: 50, total: items.length };
 }
 
@@ -367,6 +374,34 @@ function documentPdf(id) {
 
 // Problem responses, like the API's RFC 7807 answers.
 const problem = (status, detail) => ({ __status: status, __body: { status, detail } });
+
+// Scanner devices and staff names (src/api/scanner-devices.ts). One device in
+// each state, and a setup-code answer with a realistic qrPayload.
+const scannerApiBaseUrl = "https://ca-pvm-api-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io";
+const scannerDevices = [
+  { id: "5ca11e70-0000-4000-8000-000000000001", name: "Dispatch phone 1", state: "Active", createdAt: daysAgo(12), enrolledAt: daysAgo(12), lastSeenAt: minutesAgo(4), revokedAt: null },
+  { id: "5ca11e70-0000-4000-8000-000000000002", name: "Driver phone Bongani", state: "Active", createdAt: daysAgo(9), enrolledAt: daysAgo(9), lastSeenAt: daysAgo(2), revokedAt: null },
+  { id: "5ca11e70-0000-4000-8000-000000000003", name: "Dispatch phone 2", state: "Pending", createdAt: minutesAgo(20), enrolledAt: null, lastSeenAt: null, revokedAt: null },
+  { id: "5ca11e70-0000-4000-8000-000000000004", name: "Old Samsung", state: "Revoked", createdAt: daysAgo(60), enrolledAt: daysAgo(60), lastSeenAt: daysAgo(15), revokedAt: daysAgo(14) },
+];
+const scannerStaff = [
+  { id: "57aff000-0000-4000-8000-000000000001", name: "Anna", active: true, createdAt: daysAgo(12), updatedAt: daysAgo(12) },
+  { id: "57aff000-0000-4000-8000-000000000002", name: "Thabo", active: true, createdAt: daysAgo(12), updatedAt: daysAgo(3) },
+  { id: "57aff000-0000-4000-8000-000000000003", name: "Sipho", active: false, createdAt: daysAgo(30), updatedAt: daysAgo(7) },
+];
+const scannerNotConfigured = () => problem(500, "Scanner setup is not configured: set DocumentCapture:DeviceApiBaseUrl");
+const validScannerName = (value) => typeof value === "string" && value.trim().length > 0 && value.trim().length <= 100;
+
+// A new setup code: 32 random bytes in base64url (43 characters), valid for 15 minutes.
+function issuedSetupCode(device) {
+  const setupCode = randomBytes(32).toString("base64url");
+  return {
+    device,
+    setupCode,
+    expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+    qrPayload: JSON.stringify({ v: 1, api: scannerApiBaseUrl, code: setupCode }),
+  };
+}
 const isOpen = (item) => !item.stuck && (item.state === "NeedsReview" || item.state === "Failed");
 
 const routes = {
@@ -532,6 +567,44 @@ const routes = {
     if (!isOpen(item) || item.rejectedAt) return problem(409, "The document is not open on the review list.");
     return { documentId: id, rejected: true };
   },
+  "GET /api/scanner-devices": () => (empty ? [] : scannerDevices),
+  "POST /api/scanner-devices": (context) => {
+    if (!scannerSetupConfigured) return scannerNotConfigured();
+    const name = context.json?.name;
+    if (!validScannerName(name)) return problem(400, "'name' is required, at most 100 characters.");
+    const trimmed = name.trim();
+    if (scannerDevices.some((device) => device.state !== "Revoked" && device.name.toLowerCase() === trimmed.toLowerCase())) {
+      return problem(409, `A device named '${trimmed}' already exists.`);
+    }
+    const device = { id: randomUUID(), name: trimmed, state: "Pending", createdAt: new Date().toISOString(), enrolledAt: null, lastSeenAt: null, revokedAt: null };
+    return { __status: 201, __body: issuedSetupCode(device) };
+  },
+  "POST /api/scanner-devices/:id/setup-code": (id) => {
+    if (!scannerSetupConfigured) return scannerNotConfigured();
+    const device = scannerDevices.find((item) => item.id === id);
+    if (!device) return problem(404, "The scanner device was not found.");
+    if (device.state === "Revoked") return problem(409, "The device is revoked; add it again as a new device.");
+    return issuedSetupCode(device);
+  },
+  "POST /api/scanner-devices/:id/revoke": (id) => {
+    const device = scannerDevices.find((item) => item.id === id);
+    if (!device) return problem(404, "The scanner device was not found.");
+    return { ...device, state: "Revoked", revokedAt: device.revokedAt ?? new Date().toISOString() };
+  },
+  "GET /api/scanner-staff": () => (empty ? [] : scannerStaff),
+  "POST /api/scanner-staff": (context) => {
+    if (!validScannerName(context.json?.name)) return problem(400, "'name' is required, at most 100 characters.");
+    const now = new Date().toISOString();
+    return { __status: 201, __body: { id: randomUUID(), name: context.json.name.trim(), active: true, createdAt: now, updatedAt: now } };
+  },
+  "PUT /api/scanner-staff/:id": (id, context) => {
+    const staff = scannerStaff.find((item) => item.id === id);
+    if (!validScannerName(context.json?.name) || typeof context.json?.active !== "boolean") {
+      return problem(400, "'name' (at most 100 characters) and 'active' are required.");
+    }
+    if (!staff) return problem(404, "The staff name was not found.");
+    return { ...staff, name: context.json.name.trim(), active: context.json.active, updatedAt: new Date().toISOString() };
+  },
   "GET /api/stock/sync/latest": () => ({
     id: "run-1",
     mode: "Shadow",
@@ -638,10 +711,10 @@ createServer((request, response) => {
       return;
     }
     const status = body && body.__status ? body.__status : 200;
-    response.writeHead(status, { "Content-Type": status === 200 ? "application/json" : "application/problem+json" });
+    response.writeHead(status, { "Content-Type": status < 400 ? "application/json" : "application/problem+json" });
     response.end(JSON.stringify(body && body.__status ? body.__body : body));
     console.log(`${status} ${request.method} ${url.pathname}`);
   });
 }).listen(port, "127.0.0.1", () => {
-  console.log(`Mock backoffice API on http://127.0.0.1:${port}${empty ? " (empty lists)" : ""}`);
+  console.log(`Mock backoffice API on http://127.0.0.1:${port}${empty ? " (empty lists)" : ""}${scannerSetupConfigured ? "" : " (scanner setup not configured)"}`);
 });

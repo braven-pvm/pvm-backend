@@ -1,0 +1,18 @@
+/* The code stays black on white in both themes, with its own quiet zone, so a phone camera reads it from a screen. */
+.frame {
+  background: #ffffff;
+  border: 1px solid var(--color-stroke-weak);
+  border-radius: var(--radius-m);
+  box-sizing: border-box;
+  line-height: 0;
+  max-width: 100%;
+  padding: var(--space-xs);
+  width: 320px;
+}
+
+.frame svg {
+  display: block;
+  height: auto;
+  min-width: 264px;
+  width: 100%;
+}

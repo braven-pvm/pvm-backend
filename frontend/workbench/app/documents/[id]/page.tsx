@@ -12,6 +12,7 @@ import {
   formatReviewReason,
   isDocumentId,
   readExtraction,
+  uploaderText,
 } from "../../../src/documents";
 import { formatDate, formatDateTime } from "../../../src/formatters.mjs";
 import {
@@ -69,7 +70,7 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
       header={{
         eyebrow: typeLabel,
         title: document.matchedReference ?? (document.stuck ? "Document being processed" : onReviewList ? "Document to review" : "Unfiled document"),
-        description: `Uploaded ${formatDateTime(document.uploadedAt)} by ${document.uploadedBy} · ${pages(document.pageCount)}`,
+        description: `Uploaded ${formatDateTime(document.uploadedAt)} by ${uploaderText(document)} · ${pages(document.pageCount)}`,
         actions: <DocumentStateBadge state={document.state} stuck={document.stuck} />,
       }}
       notice={
@@ -108,7 +109,7 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
                   { label: "Acumatica", value: acumaticaLabel(document) },
                 ]
               : []),
-            { label: "Uploaded by", value: document.uploadedBy },
+            { label: "Uploaded by", value: uploaderText(document) },
           ]}
         />
       }
@@ -396,7 +397,7 @@ function history(document: DocumentDetail): TimelineEntry[] {
       time: formatDateTime(document.uploadedAt),
       dateTime: document.uploadedAt,
       title: "Uploaded",
-      detail: document.uploadedBy,
+      detail: uploaderText(document),
     },
   ];
   if (document.state === "Filed") {

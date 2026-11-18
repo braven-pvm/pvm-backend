@@ -38,7 +38,7 @@ Rules that apply to every screen:
 - Components:
   - Layout: [PageFrame](#pageframe), [Columns](#columns), [Stack](#stack), [Panel](#panel), [PageHeader](#pageheader), [TileGrid](#tilegrid), [AppShell](#appshell).
   - Actions: [Button](#button), [ButtonLink](#buttonlink), [SubmitButton](#submitbutton), [ConfirmDialog](#confirmdialog).
-  - Content: [CodeBlock](#codeblock), [PdfFrame](#pdfframe).
+  - Content: [CodeBlock](#codeblock), [PdfFrame](#pdfframe), [QrCode](#qrcode).
   - Status: [StatusBadge](#statusbadge), [Notice](#notice), [Spinner](#spinner), [EmptyState](#emptystate).
   - Forms: [Fields](#fields), [FileDrop](#filedrop).
   - Lists: [DataTable](#datatable), [FilterChips](#filterchips), [FilterBar](#filterbar), [Pagination](#pagination).
@@ -334,6 +334,7 @@ error to the user. The server logs it.
 | Show progress through a task | `Stepper` |
 | Show facts about one record | `KeyValueList` |
 | Show a scanned PDF next to its data | `PdfFrame` |
+| Show a code for a phone to scan from the screen | `QrCode` |
 | Show what happened to a record | `Timeline` |
 | List what needs a person | `AttentionList` |
 | Show a key number | `StatTile` in a `TileGrid` |
@@ -496,6 +497,21 @@ inline. It is 720px high (at most 80 % of the screen), 480px on a phone.
 
 Put it in a `Panel` in a `Columns`, next to the panel with the fields read from
 it, so the user can compare them.
+
+### QrCode
+
+A QR code for a phone to scan from the screen, such as a scanner setup code.
+It is 320px wide (at least 280px), black on white with a quiet zone in both
+themes.
+
+| Prop | Notes |
+| --- | --- |
+| `svg` | The SVG markup, made on the server with the `qrcode` package (`QRCode.toString(text, { type: "svg" })`). Never markup from user input, and never a third-party QR service |
+| `label` | Names the code for screen readers: "Setup code for Dispatch phone 1" |
+
+Put it in a `Panel` that says what the code is for, how long it is valid, and
+what to do on the phone. A code that is secret is held in memory only: never in
+the URL, a cookie or browser storage.
 
 ---
 
