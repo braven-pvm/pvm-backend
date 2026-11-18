@@ -283,9 +283,9 @@ person confirms.
 | Workbench | `frontend/workbench/app/reports/sell-out` | The upload page and the "Needs mapping" list |
 | Infra | `infra/azure` | The mail job, off by default |
 
-The backend has no Excel library today. The parsers read `.xlsx` files with
-`DocumentFormat.OpenXml`, the Microsoft package. This is a new dependency, so
-step 3 asks for its review first. The Makro file is text and needs no Excel
+The backend has no Excel library. An `.xlsx` file is a zip of XML parts, so a
+small reader (`XlsxReader`) reads the cell values with `System.IO.Compression`
+and `System.Xml`. No new package is necessary. The Makro file is text and needs no Excel
 library.
 
 ---
