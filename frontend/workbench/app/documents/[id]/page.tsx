@@ -1,7 +1,25 @@
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { acumaticaBaseUrl, getDocument, searchReviewInvoices, type DocumentDetail, type InvoiceCandidate } from "../../../src/api/documents";
+import {
+  acumaticaBaseUrl,
+  getDocument,
+  getReviewList,
+  searchDocuments,
+  searchReviewInvoices,
+  type DocumentDetail,
+  type InvoiceCandidate,
+} from "../../../src/api/documents";
 import { hasAnyRole, requireWorkbenchUser } from "../../../src/auth/session";
+import {
+  documentHref,
+  findNeighbours,
+  listContextFields,
+  listHref,
+  parseListContext,
+  positionText,
+  type ListContext,
+  type Neighbours,
+} from "../../../src/document-list";
 import {
   canActOnDocument,
   canProcessAgain,
@@ -19,7 +37,6 @@ import {
 import { formatDate, formatDateTime } from "../../../src/formatters.mjs";
 import {
   Button,
-  Columns,
   ConfirmDialog,
   DataTable,
   EmptyState,
@@ -27,11 +44,12 @@ import {
   Notice,
   Panel,
   PdfFrame,
-  RecordPage,
+  RecordNav,
   Stack,
   TextareaField,
   TextField,
   Timeline,
+  ViewerPage,
   type Column,
   type TimelineEntry,
 } from "../../../src/ui";
@@ -43,8 +61,35 @@ export const metadata = { title: "Document" };
 
 type DocumentPageProps = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ q?: string; documentError?: string; documentStatus?: string }>;
+  /**
+   * q: the invoice search. documentError, documentStatus, documentWarning: the result of an action.
+   * list and the list's filters and page: the list the page was opened from (src/document-list.ts).
+   */
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
+
+/** Hidden form fields: the document, and the list context so an action can keep it. */
+type Fields = Record<string, string>;
+
+function param(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+/** The documents before and after this one in the list it was opened from. Null when it is not on it. */
+async function neighboursIn(context: ListContext | null, id: string): Promise<Neighbours | null> {
+  if (!context) {
+    return null;
+  }
+  try {
+    return await findNeighbours(id, context.page, (page) =>
+      context.kind === "review" ? getReviewList(page) : searchDocuments({ ...context.filters, page }),
+    );
+  } catch (error) {
+    // The page still works without Previous and Next.
+    console.warn("documents.neighbours.unavailable", { error: String(error) });
+    return null;
+  }
+}
 
 export default async function DocumentPage({ params, searchParams }: DocumentPageProps) {
   const { id } = await params;
@@ -52,8 +97,9 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
     notFound();
   }
   const query = await searchParams;
-  const user = await requireWorkbenchUser(`/documents/${id}`);
-  const document = await getDocument(id);
+  const context = parseListContext(query);
+  const user = await requireWorkbenchUser(documentHref(id, context));
+  const [document, neighbours] = await Promise.all([getDocument(id), neighboursIn(context, id)]);
   if (!document) {
     notFound();
   }
@@ -63,35 +109,104 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
   const onReviewList = (open && !document.rejectedAt) || document.stuck;
   const typeLabel = documentTypeLabel(document.documentType);
   const reason = formatReviewReason(document.reviewReason, document.state);
-  const q = query.q?.trim() ?? "";
+  const q = param(query.q)?.trim() ?? "";
+  const documentError = param(query.documentError);
+  const documentStatus = param(query.documentStatus);
+  // After a delete from the review list, the next document opens with the notice.
+  const documentWarning = param(query.documentWarning);
   const search = open && canWrite && q ? await searchReviewInvoices(q) : null;
+  const contextFields = listContextFields(context);
+  const fields: Fields = { documentId: document.id, ...contextFields };
+  const step = (neighbour: { id: string; page: number } | null) =>
+    neighbour && context ? documentHref(neighbour.id, { ...context, page: neighbour.page }) : undefined;
+
+  const canReject = open && canWrite && !document.rejectedAt;
+  const canSendBack = canWrite && canReturnToReview(document);
+  const canProcess = canWrite && canProcessAgain(document);
+  const canDelete = showDeleteAction(document, canWrite);
 
   return (
-    <RecordPage
-      back={onReviewList ? { href: "/documents/review", label: "Review list" } : { href: "/documents", label: "Documents" }}
+    <ViewerPage
+      back={{ href: listHref(context), label: context?.kind === "review" ? "Back to the review list" : "Back to Documents" }}
+      nav={
+        neighbours ? (
+          <RecordNav
+            noun="document"
+            position={positionText(neighbours.position, neighbours.total)}
+            previousHref={step(neighbours.previous)}
+            nextHref={step(neighbours.next)}
+          />
+        ) : null
+      }
       header={{
         eyebrow: typeLabel,
         title: document.matchedReference ?? (document.stuck ? "Document being processed" : onReviewList ? "Document to review" : "Unfiled document"),
+        status: <DocumentStateBadge state={document.state} stuck={document.stuck} />,
         description: `Uploaded ${formatDateTime(document.uploadedAt)} by ${uploaderText(document)} · ${pages(document.pageCount)}`,
-        actions: <DocumentStateBadge state={document.state} stuck={document.stuck} />,
       }}
-      notice={
-        <>
-          {query.documentError ? (
-            <Notice tone="error" title="Nothing changed" live>
-              {query.documentError}
-            </Notice>
-          ) : null}
-          {query.documentStatus ? <Notice tone="success" title={query.documentStatus} live /> : null}
-          <StateNotice document={document} reason={reason} />
-          {(open || document.stuck) && !canWrite ? (
-            <Notice tone="info" title="Only an Admin or Operator can file, reject or process documents">
-              You can see the document and what was read.
-            </Notice>
-          ) : null}
-        </>
+      viewer={
+        <PdfFrame size="fill" src={`/documents/${document.id}/file`} title={`${typeLabel} uploaded ${formatDateTime(document.uploadedAt)}`} />
       }
-      summary={
+    >
+      {documentError ? (
+        <Notice tone="error" title="Nothing changed" live>
+          {documentError}
+        </Notice>
+      ) : null}
+      {documentStatus ? <Notice tone="success" title={documentStatus} live /> : null}
+      {documentWarning ? (
+        <Notice tone="warning" title="The PDF is still in storage">
+          {documentWarning}
+        </Notice>
+      ) : null}
+      <StateNotice document={document} reason={reason} />
+      {(open || document.stuck) && !canWrite ? (
+        <Notice tone="info" title="Only an Admin or Operator can file, reject or process documents">
+          You can see the document and what was read.
+        </Notice>
+      ) : null}
+      {canReject || canSendBack || canProcess || canDelete ? (
+        <Panel
+          title="Actions"
+          description={open && canWrite ? "To file it, use File to this invoice on one of the invoices below." : undefined}
+        >
+          <Stack direction="row" gap="s" wrap>
+            {canReject ? <RejectDocument fields={fields} /> : null}
+            {canSendBack ? <SendBackToReview document={document} fields={fields} /> : null}
+            {canProcess ? <ProcessAgain document={document} fields={fields} /> : null}
+            {canDelete ? <DeleteDocument fields={fields} /> : null}
+          </Stack>
+        </Panel>
+      ) : null}
+      {open && canWrite ? (
+        <>
+          <Panel flush title="Possible invoices" description="The invoices the backend found for the numbers on the document.">
+            <DataTable
+              caption="Possible invoices"
+              columns={withFileAction(document, fields)}
+              rows={document.candidates}
+              rowKey={(row) => row.referenceNumber}
+              empty={<EmptyState title="No possible invoices" description="Search for the invoice below." />}
+            />
+          </Panel>
+          <Panel title="Find an invoice" description="Search Acumatica by invoice number or customer name.">
+            <form method="get" action={`/documents/${document.id}`} role="search" aria-label="Find an invoice">
+              {Object.entries(contextFields).map(([name, value]) => (
+                <input key={name} type="hidden" name={name} value={value} />
+              ))}
+              <Stack direction="row" gap="s" align="end" wrap>
+                <TextField name="q" label="Invoice or customer" type="search" width="m" showOptional={false} defaultValue={q} required />
+                <Button type="submit">Search invoices</Button>
+              </Stack>
+            </form>
+          </Panel>
+          {search ? <SearchResults document={document} fields={fields} q={q} search={search} /> : null}
+        </>
+      ) : null}
+      <Panel title="What was read" description="The fields read from the PDF.">
+        <ExtractedFields document={document} />
+      </Panel>
+      <Panel title="Summary">
         <KeyValueList
           items={[
             { label: "State", value: formatDocumentState(document.state, document.stuck) },
@@ -114,101 +229,11 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
             { label: "Uploaded by", value: uploaderText(document) },
           ]}
         />
-      }
-      activity={<Timeline label="Document history" entries={history(document)} />}
-    >
-      <Columns>
-        <Panel title="Document">
-          <PdfFrame src={`/documents/${document.id}/file`} title={`${typeLabel} uploaded ${formatDateTime(document.uploadedAt)}`} />
-        </Panel>
-        <Stack gap="m">
-          <Panel title="What was read" description="The fields read from the PDF.">
-            <ExtractedFields document={document} />
-          </Panel>
-          {open && canWrite ? (
-            <>
-              <Panel
-                flush
-                title="Possible invoices"
-                description="The invoices the backend found for the numbers on the document."
-              >
-                <DataTable
-                  caption="Possible invoices"
-                  columns={withFileAction(document)}
-                  rows={document.candidates}
-                  rowKey={(row) => row.referenceNumber}
-                  empty={<EmptyState title="No possible invoices" description="Search for the invoice below." />}
-                />
-              </Panel>
-              <Panel title="Find an invoice" description="Search Acumatica by invoice number or customer name.">
-                <form method="get" action={`/documents/${document.id}`} role="search" aria-label="Find an invoice">
-                  <Stack direction="row" gap="s" align="end" wrap>
-                    <TextField name="q" label="Invoice or customer" type="search" width="m" showOptional={false} defaultValue={q} required />
-                    <Button type="submit">Search invoices</Button>
-                  </Stack>
-                </form>
-              </Panel>
-              {search ? <SearchResults document={document} q={q} search={search} /> : null}
-              {canProcessAgain(document) ? <ProcessAgain document={document} /> : null}
-              {document.rejectedAt ? null : (
-              <Panel title="Reject the document" description="For a bad scan or a document that is not a delivery note. It leaves the review list.">
-                <ConfirmDialog
-                  triggerLabel="Reject"
-                  triggerVariant="tertiary"
-                  title="Reject this document?"
-                  confirmLabel="Reject document"
-                  pendingLabel="Rejecting…"
-                  action={rejectDocumentAction}
-                  fields={{ documentId: document.id }}
-                >
-                  <p>The document leaves the review list and is not filed. You can still find it on the Documents page.</p>
-                  <TextareaField
-                    name="note"
-                    label="Note"
-                    hint="Why it is rejected, such as “Bad scan, driver asked to scan again”. At most 1000 characters."
-                    width="full"
-                    maxLength={1000}
-                    required
-                  />
-                </ConfirmDialog>
-              </Panel>
-              )}
-            </>
-          ) : null}
-          {canWrite && document.stuck ? <ProcessAgain document={document} /> : null}
-          {canWrite && canReturnToReview(document) ? (
-            <Panel
-              title="Send back to review"
-              description="For a document filed to the wrong invoice. Its PDF is not in Acumatica yet."
-            >
-              <ConfirmDialog
-                triggerLabel="Send back to review"
-                triggerVariant="tertiary"
-                title="Send this document back to review?"
-                confirmLabel="Send back to review"
-                pendingLabel="Sending back…"
-                action={returnToReviewAction}
-                fields={{ documentId: document.id }}
-              >
-                <p>
-                  The document is no longer filed to {document.matchedReference ?? "the invoice"} and its PDF will not be
-                  attached. It goes back on the review list, where it can be filed to the right invoice.
-                </p>
-                <TextareaField
-                  name="note"
-                  label="Note"
-                  hint="Why it goes back, such as “Filed to the wrong invoice of a split delivery”. At most 1000 characters."
-                  width="full"
-                  maxLength={1000}
-                  required
-                />
-              </ConfirmDialog>
-            </Panel>
-          ) : null}
-          {showDeleteAction(document, canWrite) ? <DeleteDocument document={document} /> : null}
-        </Stack>
-      </Columns>
-    </RecordPage>
+      </Panel>
+      <Panel title="Activity">
+        <Timeline label="Document history" entries={history(document)} />
+      </Panel>
+    </ViewerPage>
   );
 }
 
@@ -266,18 +291,18 @@ function StateNotice({ document, reason }: { document: DocumentDetail; reason: s
 }
 
 /** The candidate columns with the file action last. */
-function withFileAction(document: DocumentDetail): Column<InvoiceCandidate>[] {
+function withFileAction(document: DocumentDetail, fields: Fields): Column<InvoiceCandidate>[] {
   return [
     ...invoiceColumns,
     {
       key: "action",
       header: "Action",
-      render: (row) => <FileToInvoice document={document} invoice={row} />,
+      render: (row) => <FileToInvoice document={document} invoice={row} fields={fields} />,
     },
   ];
 }
 
-function FileToInvoice({ document, invoice }: { document: DocumentDetail; invoice: InvoiceCandidate }) {
+function FileToInvoice({ document, invoice, fields }: { document: DocumentDetail; invoice: InvoiceCandidate; fields: Fields }) {
   return (
     <ConfirmDialog
       triggerLabel="File to this invoice"
@@ -286,7 +311,7 @@ function FileToInvoice({ document, invoice }: { document: DocumentDetail; invoic
       confirmLabel="File to this invoice"
       pendingLabel="Filing…"
       action={fileDocumentToAction}
-      fields={{ documentId: document.id, invoiceReference: invoice.referenceNumber }}
+      fields={{ ...fields, invoiceReference: invoice.referenceNumber }}
     >
       <KeyValueList
         layout="stacked"
@@ -301,63 +326,113 @@ function FileToInvoice({ document, invoice }: { document: DocumentDetail; invoic
   );
 }
 
-function ProcessAgain({ document }: { document: DocumentDetail }) {
+function RejectDocument({ fields }: { fields: Fields }) {
   return (
-    <Panel
-      title="Process again"
-      description={document.stuck ? "Processing did not finish. Send the document through it again." : "Processing failed. Send the document through it again."}
+    <ConfirmDialog
+      triggerLabel="Reject"
+      triggerVariant="tertiary"
+      title="Reject this document?"
+      confirmLabel="Reject document"
+      pendingLabel="Rejecting…"
+      action={rejectDocumentAction}
+      fields={fields}
     >
-      <ConfirmDialog
-        triggerLabel="Process again"
-        triggerVariant="secondary"
-        title="Process this document again?"
-        confirmLabel="Process again"
-        pendingLabel="Queuing…"
-        action={processAgainAction}
-        fields={{ documentId: document.id }}
-      >
-        <p>The PDF is read and matched again. It is filed if the match is safe; otherwise it comes back to the review list.</p>
-      </ConfirmDialog>
-    </Panel>
+      <p>For a bad scan or a document that is not a delivery note.</p>
+      <p>The document leaves the review list and is not filed. You can still find it on the Documents page.</p>
+      <TextareaField
+        name="note"
+        label="Note"
+        hint="Why it is rejected, such as “Bad scan, driver asked to scan again”. At most 1000 characters."
+        width="full"
+        maxLength={1000}
+        required
+      />
+    </ConfirmDialog>
   );
 }
 
-function DeleteDocument({ document }: { document: DocumentDetail }) {
+function SendBackToReview({ document, fields }: { document: DocumentDetail; fields: Fields }) {
   return (
-    <Panel
-      title="Delete document"
-      description="For a duplicate, a test upload or a scan that is not a delivery document. The document is not filed, so nothing in Acumatica changes."
+    <ConfirmDialog
+      triggerLabel="Send back to review"
+      triggerVariant="tertiary"
+      title="Send this document back to review?"
+      confirmLabel="Send back to review"
+      pendingLabel="Sending back…"
+      action={returnToReviewAction}
+      fields={fields}
     >
-      <ConfirmDialog
-        triggerLabel="Delete document"
-        triggerVariant="tertiary"
-        tone="danger"
-        title="Delete this document permanently?"
-        confirmLabel="Delete permanently"
-        pendingLabel="Deleting…"
-        action={deleteDocumentAction}
-        fields={{ documentId: document.id }}
-      >
-        <p>The PDF and its record are removed for good. This cannot be undone.</p>
-        <TextareaField
-          name="reason"
-          label="Reason"
-          hint={`Why it is deleted, such as “Duplicate scan of the same delivery note”. At most ${maxDeleteReasonLength} characters.`}
-          width="full"
-          maxLength={maxDeleteReasonLength}
-          required
-        />
-      </ConfirmDialog>
-    </Panel>
+      <p>For a document filed to the wrong invoice. Its PDF is not in Acumatica yet.</p>
+      <p>
+        The document is no longer filed to {document.matchedReference ?? "the invoice"} and its PDF will not be attached. It
+        goes back on the review list, where it can be filed to the right invoice.
+      </p>
+      <TextareaField
+        name="note"
+        label="Note"
+        hint="Why it goes back, such as “Filed to the wrong invoice of a split delivery”. At most 1000 characters."
+        width="full"
+        maxLength={1000}
+        required
+      />
+    </ConfirmDialog>
+  );
+}
+
+function ProcessAgain({ document, fields }: { document: DocumentDetail; fields: Fields }) {
+  return (
+    <ConfirmDialog
+      triggerLabel="Process again"
+      triggerVariant="secondary"
+      title="Process this document again?"
+      confirmLabel="Process again"
+      pendingLabel="Queuing…"
+      action={processAgainAction}
+      fields={fields}
+    >
+      <p>{document.stuck ? "Processing did not finish. Send the document through it again." : "Processing failed. Send the document through it again."}</p>
+      <p>The PDF is read and matched again. It is filed if the match is safe; otherwise it comes back to the review list.</p>
+    </ConfirmDialog>
+  );
+}
+
+function DeleteDocument({ fields }: { fields: Fields }) {
+  return (
+    <ConfirmDialog
+      triggerLabel="Delete document"
+      triggerVariant="tertiary"
+      tone="danger"
+      title="Delete this document permanently?"
+      confirmLabel="Delete permanently"
+      pendingLabel="Deleting…"
+      action={deleteDocumentAction}
+      fields={fields}
+    >
+      <p>
+        For a duplicate, a test upload or a scan that is not a delivery document. The document is not filed, so nothing in
+        Acumatica changes.
+      </p>
+      <p>The PDF and its record are removed for good. This cannot be undone.</p>
+      <TextareaField
+        name="reason"
+        label="Reason"
+        hint={`Why it is deleted, such as “Duplicate scan of the same delivery note”. At most ${maxDeleteReasonLength} characters.`}
+        width="full"
+        maxLength={maxDeleteReasonLength}
+        required
+      />
+    </ConfirmDialog>
   );
 }
 
 function SearchResults({
   document,
+  fields,
   q,
   search,
 }: {
   document: DocumentDetail;
+  fields: Fields;
   q: string;
   search: Awaited<ReturnType<typeof searchReviewInvoices>>;
 }) {
@@ -374,7 +449,7 @@ function SearchResults({
     <Panel flush title={`Invoices for “${q}”`} description="At most 20, newest first. Voided and cancelled invoices are left out.">
       <DataTable
         caption={`Invoices for ${q}`}
-        columns={withFileAction(document)}
+        columns={withFileAction(document, fields)}
         rows={search.value}
         rowKey={(row) => row.referenceNumber}
         empty={<EmptyState title="No invoices match this search" description="Check the number, or search by customer name." />}

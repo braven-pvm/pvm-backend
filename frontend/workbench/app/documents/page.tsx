@@ -1,5 +1,6 @@
 import { acumaticaBaseUrl, getDocumentTypes, searchDocuments, type DocumentSearchItem } from "../../src/api/documents";
 import { requireWorkbenchUser } from "../../src/auth/session";
+import { documentHref } from "../../src/document-list";
 import { buildDocumentSearchQuery, documentStates, documentTypeLabel, formatReviewReason, uploaderText, type DocumentSearchFilters } from "../../src/documents";
 import { formatDateTime } from "../../src/formatters.mjs";
 import {
@@ -159,7 +160,8 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
           columns={columnsFor(acumaticaBaseUrl())}
           rows={result.items}
           rowKey={(row) => row.id}
-          rowHref={(row) => `/documents/${row.id}`}
+          // The link carries the search, so the document page can go back to it and step through it.
+          rowHref={(row) => documentHref(row.id, { kind: "search", filters, page: result.page })}
           empty={
             anyFilter ? (
               <EmptyState
