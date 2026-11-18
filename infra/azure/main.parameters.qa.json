@@ -29,6 +29,9 @@
     "acumaticaBaseUrl": {
       "value": "https://devtest1.aboutitgroup.co.za/PVMGroup25R101D250625"
     },
+    "workbenchAcumaticaBaseUrl": {
+      "value": "https://devtest1.aboutitgroup.co.za/PVMGroup25R101D250625"
+    },
     "acumaticaEndpointName": {
       "value": "Default"
     },
