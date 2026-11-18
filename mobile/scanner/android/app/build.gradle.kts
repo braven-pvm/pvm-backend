@@ -53,6 +53,12 @@ android {
                 logger.warn("android/key.properties not found: the release APK is signed with the debug key.")
                 signingConfigs.getByName("debug")
             }
+            // R8 code shrinking breaks the ML Kit document scanner: on a real phone the
+            // release build failed with a NullPointerException inside the scanner start-up,
+            // while the debug build (no shrinking) opened the scanner. The app is side-loaded,
+            // so the larger APK is acceptable.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

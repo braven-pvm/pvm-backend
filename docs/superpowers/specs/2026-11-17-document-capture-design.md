@@ -145,6 +145,12 @@ find the borders of each paper quickly.
   papers and phones: long thin slips, A3 papers, and poor light. If the ML Kit
   scanner fails on a paper shape, the builder selects a different edge
   detection, for example OpenCV, for that case.
+- Result of the test (2026-11-18, Honor BVL-N49, Android 17): the owner scanned
+  real papers. For most papers the scanner found the edges without a corner
+  change, and the PDF quality was good. ML Kit stays the scanner.
+- The same test found that R8 code shrinking breaks the ML Kit scanner in a
+  release build (a NullPointerException when the scanner starts). The release
+  build of the app therefore has code shrinking off.
 - The scanner is Google's ML Kit document scanner, through the
   `google_mlkit_document_scanner` Flutter package. The scanner finds the page
   edges, corrects the perspective, crops each page, and lets the user add pages
