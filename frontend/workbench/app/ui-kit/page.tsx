@@ -7,6 +7,7 @@ import {
   Button,
   ButtonLink,
   CheckboxField,
+  ColumnChart,
   ConfirmDialog,
   DataTable,
   EmptyState,
@@ -22,6 +23,7 @@ import {
   Pagination,
   Panel,
   PdfFrame,
+  PivotGrid,
   RadioGroup,
   SelectField,
   Spinner,
@@ -413,6 +415,35 @@ export default function UiKitPage() {
                 { label: "Nedbank KZN", value: 26, display: "26 / 30" },
                 { label: "Nedbank Western Cape", value: 21, display: "21 / 30", low: true },
               ]}
+            />
+          </Panel>
+          <Panel title="ColumnChart" description="Columns by month, this year against last year. A hidden table gives every value to screen readers.">
+            <ColumnChart
+              label="Sales by financial month"
+              categories={["Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb"]}
+              series={[
+                { name: "FY2027", values: [820, 910, 760, 1040, 990, 870, 1120, 1210, 400, 0, 0, 0] },
+                { name: "FY2026", values: [700, 850, 800, 900, 940, 820, 1000, 1100, 1050, 980, 760, 880] },
+              ]}
+              format={(value) => `R ${Math.round(value)} k`}
+            />
+          </Panel>
+          <Panel flush title="PivotGrid" description="Report rows in levels that open with a link. The first column and the headers stay in view.">
+            <PivotGrid
+              caption="Example sales by rep"
+              rowHeader="Rep, customer group, customer"
+              groups={[{ label: "FY2027", span: 4 }]}
+              headers={["Mar 2026", "Apr 2026", "May 2026", "FY2027"]}
+              subtotalColumns={[3]}
+              rows={[
+                { key: "R1", level: 0, label: "Example Rep One", values: ["1 200", "950", "1 100", "3 250"], total: "3 250", open: true, toggleHref: "/ui-kit#dashboard" },
+                { key: "R1|RET", level: 1, label: "Retail", values: ["800", "700", "900", "2 400"], total: "2 400", open: false, toggleHref: "/ui-kit#dashboard" },
+                { key: "R1|PHA", level: 1, label: "Pharmacy", values: ["400", "250", "200", "850"], total: "850", open: true, toggleHref: "/ui-kit#dashboard" },
+                { key: "R1|PHA|C1", level: 2, label: "Example Pharmacy", values: ["400", "250", "200", "850"], total: "850" },
+                { key: "R2", level: 0, label: "Example Rep Two", values: ["600", "640", "0", "1 240"], total: "1 240", open: false, toggleHref: "/ui-kit#dashboard" },
+              ]}
+              totals={{ values: ["1 800", "1 590", "1 100", "4 490"], total: "4 490" }}
+              empty={<EmptyState title="No sales" />}
             />
           </Panel>
         </Section>
