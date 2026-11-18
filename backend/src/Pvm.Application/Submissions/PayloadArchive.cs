@@ -5,7 +5,10 @@ public enum PayloadArchiveKind
     AcumaticaSource,
     CanonicalInvoice,
     ShopriteRequest,
-    ShopriteResponse
+    ShopriteResponse,
+
+    /// <summary>A retailer or wholesaler sell-out file, as Base64 text.</summary>
+    SellOutFile
 }
 
 public sealed record PayloadArchiveWrite(

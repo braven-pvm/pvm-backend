@@ -2,7 +2,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Pvm.Application.Reporting;
+using Pvm.Application.Reporting.SellOut;
 using Pvm.Domain.Reporting;
+using Pvm.Infrastructure.Reporting.SellOut;
 
 namespace Pvm.Infrastructure.Reporting;
 
@@ -32,6 +34,23 @@ public static class ServiceCollectionExtensions
         }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { UseCookies = false });
 
         services.AddScoped<SellInSyncService>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the sell-out import and its parsers. Register the payload archive too, to keep the raw files.
+    /// </summary>
+    public static IServiceCollection AddSellOutImport(this IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<ISellOutParser, MakroDispoParser>();
+        services.AddSingleton<ISellOutParser, ShopriteVasParser>();
+        foreach (var parser in WholesalerListParser.All())
+        {
+            services.AddSingleton<ISellOutParser>(parser);
+        }
+
+        services.AddScoped<SellOutImportService>();
         return services;
     }
 }
