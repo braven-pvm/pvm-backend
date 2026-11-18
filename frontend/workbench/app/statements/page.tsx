@@ -5,6 +5,7 @@ import { formatMoneyZar } from "../../src/formatters.mjs";
 import { describeMonths } from "../../src/sell-out.mjs";
 import {
   Button,
+  ButtonLink,
   DataTable,
   EmptyState,
   FormActions,
@@ -103,6 +104,13 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
           <Notice tone="warning" title="No statement">
             {message}
           </Notice>
+        ) : null}
+        {statement ? (
+          <FormActions>
+            <ButtonLink href={`/statements/export?${new URLSearchParams({ company: company!, from, ...(to ? { to } : {}) })}`} variant="primary">
+              Download as Excel
+            </ButtonLink>
+          </FormActions>
         ) : null}
         {statement ? <Statement statement={statement} /> : null}
       </Stack>

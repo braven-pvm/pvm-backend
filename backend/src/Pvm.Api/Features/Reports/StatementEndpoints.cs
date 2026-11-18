@@ -8,6 +8,7 @@ namespace Pvm.Api.Features.Reports;
 /// <list type="bullet">
 ///   <item><c>GET /api/reports/statements/companies</c>: the companies with settings.</item>
 ///   <item><c>GET /api/reports/statements?company=…&amp;from=2026-10&amp;to=2026-10</c>: one statement.</item>
+///   <item><c>GET /api/reports/statements/export?…</c>: the same statement as an Excel file.</item>
 /// </list>
 /// </summary>
 public static class StatementEndpoints
@@ -20,6 +21,7 @@ public static class StatementEndpoints
         var group = app.MapGroup("/api/reports/statements");
         group.MapGet("/companies", ListCompaniesAsync).RequireAuthorization("Invoices.Write");
         group.MapGet(string.Empty, GetStatementAsync).RequireAuthorization("Invoices.Write");
+        group.MapGet("/export", ExportStatementAsync).RequireAuthorization("Invoices.Write");
         return app;
     }
 
@@ -43,6 +45,28 @@ public static class StatementEndpoints
         return statement is null
             ? Results.NotFound(new { message = $"There are no settings for {company} in {period.Last:MMM yyyy}." })
             : Results.Ok(statement);
+    }
+
+    private static async Task<IResult> ExportStatementAsync(
+        string? company,
+        string? from,
+        string? to,
+        MerchandiserStatementService service,
+        CancellationToken cancellationToken)
+    {
+        var (period, problem) = ReadPeriod(company, from, to);
+        if (problem is not null)
+        {
+            return Results.BadRequest(new { message = problem });
+        }
+
+        var statement = await service.BuildAsync(company!.Trim(), period.First, period.Last, cancellationToken);
+        return statement is null
+            ? Results.NotFound(new { message = $"There are no settings for {company} in {period.Last:MMM yyyy}." })
+            : Results.File(
+                StatementWorkbook.Write(statement),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                StatementWorkbook.FileName(statement));
     }
 
     /// <summary>Reads "2026-10" months. An empty "to" is the same month as "from".</summary>
