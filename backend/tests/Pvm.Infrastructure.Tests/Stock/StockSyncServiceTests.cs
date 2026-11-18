@@ -67,6 +67,22 @@ public sealed class StockSyncServiceTests
     }
 
     [Fact]
+    public async Task A_parent_variation_in_the_own_stock_list_is_written()
+    {
+        var store = new FakeStore([new WebStockItem("ENER7", 1, 2, WebStockManagement.Parent, 454)]);
+        var service = new StockSyncService(
+            store,
+            new FakeAcumatica(("ENER7", 4449m)),
+            Options.Create(new StockSyncOptions { Mode = StockSyncMode.Write, OwnStockVariations = ["ENER7"] }),
+            NullLogger<StockSyncService>.Instance);
+
+        var result = await service.RunAsync(CancellationToken.None);
+
+        Assert.Equal(("ENER7", 4449), Assert.Single(store.Writes));
+        Assert.Equal(1, result.Written);
+    }
+
+    [Fact]
     public async Task Disabled_mode_reads_nothing()
     {
         var store = new FakeStore([Item("ENER12", 3000)]);

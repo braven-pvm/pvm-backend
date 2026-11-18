@@ -64,6 +64,12 @@ public sealed record StockSyncOptions
     /// </summary>
     public string[] WarehouseRulePrefixes { get; init; } = ["PROT", "SUPL", "REPL"];
 
+    /// <summary>
+    /// Variations that take their stock from the parent product in the web store, but must hold
+    /// their own level. The sync turns on their own stock and sets it, as for any other item.
+    /// </summary>
+    public string[] OwnStockVariations { get; init; } = [];
+
     /// <summary>The UTC offset Acumatica stores order dates in. South Africa has no daylight saving.</summary>
     public string AcumaticaUtcOffset { get; init; } = "+02:00";
 
