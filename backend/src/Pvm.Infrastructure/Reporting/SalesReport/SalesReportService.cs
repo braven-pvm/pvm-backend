@@ -69,12 +69,6 @@ public sealed record SalesReportLine(
 
 public sealed record SalesReportLinePage(int TotalLines, int Page, int PageSize, IReadOnlyList<SalesReportLine> Lines);
 
-public sealed record SalesReportOption(string Value, string Label);
-
-/// <summary>The values for the filters of the report pages.</summary>
-public sealed record SalesReportOptions(
-    IReadOnlyList<SalesReportOption> Reps, IReadOnlyList<string> Provinces, IReadOnlyList<SalesReportOption> ItemGroups, IReadOnlyList<string> Channels);
-
 public sealed class SalesReportService(PvmDbContext db)
 {
     public const string OtherChannel = "Other";
@@ -87,27 +81,6 @@ public sealed class SalesReportService(PvmDbContext db)
     {
         var channels = await db.ReportingCustomerClassChannels.AsNoTracking().Select(item => item.Channel).Distinct().ToListAsync(cancellationToken);
         return [.. channels.Where(channel => channel != OtherChannel).Order(StringComparer.Ordinal), OtherChannel];
-    }
-
-    /// <summary>The reps, provinces and item groups that have sales, and the channels, each sorted by name.</summary>
-    public async Task<SalesReportOptions> OptionsAsync(CancellationToken cancellationToken)
-    {
-        var lines = db.SellInReportLines.AsNoTracking();
-        var reps = await lines.Where(line => line.SalesRepId != null)
-            .Select(line => new { line.SalesRepId, line.SalesRepName }).Distinct().ToListAsync(cancellationToken);
-        var provinces = await lines.Where(line => line.Province != null && line.Province != "")
-            .Select(line => line.Province!).Distinct().ToListAsync(cancellationToken);
-        var groups = await lines.Where(line => line.ItemClassId != null)
-            .Select(line => new { line.ItemClassId, line.ItemClassName }).Distinct().ToListAsync(cancellationToken);
-
-        static List<SalesReportOption> Sorted(IEnumerable<SalesReportOption> options) =>
-            [.. options.DistinctBy(option => option.Value).OrderBy(option => option.Label, StringComparer.OrdinalIgnoreCase)];
-
-        return new SalesReportOptions(
-            Sorted(reps.Select(rep => new SalesReportOption(rep.SalesRepId!, rep.SalesRepName ?? rep.SalesRepId!))),
-            [.. provinces.Order(StringComparer.OrdinalIgnoreCase)],
-            Sorted(groups.Select(group => new SalesReportOption(group.ItemClassId!, group.ItemClassName ?? group.ItemClassId!))),
-            await ChannelsAsync(cancellationToken));
     }
 
     /// <summary>A grid with its top level, and the children of each row whose key is in <paramref name="open"/>.</summary>

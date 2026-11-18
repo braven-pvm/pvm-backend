@@ -12,7 +12,6 @@ export type NavIcon =
   | "stock"
   | "sellout"
   | "statements"
-  | "sales"
   | "documents"
   | "automations"
   | "runs"
@@ -57,7 +56,6 @@ export const navigation: NavGroup[] = [
       { label: "Stock", href: "/stock", icon: "stock" },
       { label: "Sell-out", href: "/sell-out", icon: "sellout", roles: write },
       { label: "Statements", href: "/statements", icon: "statements", roles: write },
-      { label: "Sales report", href: "/reports/sales", icon: "sales", roles: write },
       {
         label: "Documents",
         href: "/documents",

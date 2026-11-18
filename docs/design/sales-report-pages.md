@@ -62,9 +62,8 @@ All pages use the templates and parts of `src/ui` only.
 | `/reports/sales/customers` | `ListPage` with a `PivotGrid` | Distinct customers by rep, by financial month |
 | `/reports/sales/data` | `ListPage` with a `DataTable` | The sales lines, 100 for each page, with the same filters and a CSV export |
 
-The navigation gets one item, "Sales report", under "Operations". The
-navigation rules put each new business area there, not in a new group. It is
-for the roles Admin and Operator, as the other report pages are.
+The navigation gets one item, "Sales report", under a new group "Insight". It
+is for the roles Admin and Operator, as the other report pages are.
 
 ### 3.1 Filters
 
@@ -122,9 +121,7 @@ The answer:
 - A level is open in the request (`open=R01,R01|RETAIL`). Closed levels send no
   children, so a page with 31 reps and 3 400 customers stays small.
 - `format=csv` gives the same grid as a CSV file, with all levels open.
-- `GET /api/reports/sales/data` gives the lines, 100 for each page.
-- `GET /api/reports/sales/options` gives the reps, provinces, item groups and
-  channels for the filters.
+- `GET /api/reports/sales/data` gives the lines, 100 for each page, and CSV.
 - `dataTo` is the end of the last successful sell-in run, for the freshness
   line on the page.
 - The endpoints need the role Admin or Operator. They only read.
@@ -139,7 +136,7 @@ Each part goes into `src/ui`, into `docs/design/design-system.md` and onto
 | Part | What it does |
 | --- | --- |
 | `PivotGrid` | A grid with a sticky first column, row levels that open and close, a total column, a totals row, and figures in tabular numbers. A row level opens with a link, so that it works without JavaScript and keeps the URL |
-| `ColumnChart` | Columns by month, this year against last year. HTML and CSS with no chart library, as the redesign document requires |
+| `ColumnChart` | Columns by month, this year against last year. A small SVG part with no chart library, as the redesign document requires |
 
 `DataTable` stays the table for lists. It allows 7 columns, and a year of
 months needs 13 or more, so the report grids need `PivotGrid`.

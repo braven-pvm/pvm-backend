@@ -196,19 +196,6 @@ public sealed class SalesReportServiceTests : IAsyncLifetime
         Assert.Equal(2, page.Lines.Count);
     }
 
-    [Fact]
-    public async Task The_options_list_the_reps_provinces_item_groups_and_channels_by_name()
-    {
-        await using var db = CreateDbContext();
-
-        var options = await Service(db).OptionsAsync(CancellationToken.None);
-
-        Assert.Equal([("R1", "Rep One"), ("R2", "Rep Two")], options.Reps.Select(rep => (rep.Value, rep.Label)));
-        Assert.Equal(["GP", "WC"], options.Provinces);
-        Assert.Equal([("BARS", "Bars"), ("GELS", "Gels")], options.ItemGroups.Select(group => (group.Value, group.Label)));
-        Assert.Equal(["Pharmacy", "Other"], options.Channels);
-    }
-
     private PvmDbContext CreateDbContext() => new(
         new DbContextOptionsBuilder<PvmDbContext>().UseNpgsql(_postgres.GetConnectionString()).Options);
 }
