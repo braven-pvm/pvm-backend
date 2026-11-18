@@ -181,5 +181,7 @@ public static class MerchandiserStatementBuilder
         return new DisChemYearOnYear(months, stores);
     }
 
-    private static decimal Percent(decimal amount, decimal ratePercent) => Math.Round(amount * ratePercent / 100m, 2);
+    // Excel rounds a half cent away from zero. The statements must give the same cent.
+    private static decimal Percent(decimal amount, decimal ratePercent) =>
+        Math.Round(amount * ratePercent / 100m, 2, MidpointRounding.AwayFromZero);
 }

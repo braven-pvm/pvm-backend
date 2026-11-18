@@ -74,6 +74,16 @@ public sealed class MerchandiserStatementBuilderTests
     }
 
     [Fact]
+    public void A_half_cent_of_commission_rounds_up_as_in_excel()
+    {
+        var company = Company(new StatementAreaSetting("Area", null, [Line("Retail", "RETAIL", ["R1"])], []));
+
+        var statement = MerchandiserStatementBuilder.Build(company, October, October, [Sale("C1", "RETAIL", "R1", 31000.50m)], []);
+
+        Assert.Equal(1550.03m, statement.Commission);
+    }
+
+    [Fact]
     public void A_retainer_company_shows_its_fixed_amount_and_no_commission()
     {
         var company = new StatementCompany("Example", "EXAMPLE", true, null, 10000m, false,
