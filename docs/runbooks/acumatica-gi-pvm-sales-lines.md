@@ -144,6 +144,12 @@ To put the inquiry in another instance, such as production:
 3. Save. Make sure that "Expose via OData" is ticked.
 4. Read one period over OData, as in [How to read it](#how-to-read-it).
 
+If the import says that a site map node with the screen ID already exists,
+the other instance already uses that screen ID for another screen. Then import
+[`PVM-Sales-Lines.no-menu.xml`](../../infra/acumatica/generic-inquiries/PVM-Sales-Lines.no-menu.xml).
+It is the same inquiry without its menu entry. OData does not need the menu
+entry. Production needed this file on 2026-11-18.
+
 The integration user needs only read access to the inquiry. If the inquiry
 changes in QA, export it again on SM208000 and replace the file in the
 repository.
