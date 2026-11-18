@@ -114,6 +114,9 @@ public static class ScannerAdminEndpoints
             NewSetupCodeOutcome.Revoked => Results.Problem(
                 "The device is revoked; add it again as a new device.",
                 statusCode: StatusCodes.Status409Conflict),
+            NewSetupCodeOutcome.CodeUsedMeanwhile => Results.Problem(
+                "The phone used its setup code at the same moment. Refresh the list; make a new code only if the phone is not set up.",
+                statusCode: StatusCodes.Status409Conflict),
             _ => throw new InvalidOperationException("Unknown setup-code outcome.")
         };
     }

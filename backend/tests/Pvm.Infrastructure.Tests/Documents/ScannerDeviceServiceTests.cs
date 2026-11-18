@@ -178,6 +178,26 @@ public sealed class ScannerDeviceServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task NewSetupCode_PhoneEnrolsBetweenReadAndWrite_ReturnsCodeUsedMeanwhile_MakesNoNewCode()
+    {
+        var issued = await CreateAsync("Dispatch phone 1");
+        DeviceEnrolment? enrolment = null;
+
+        var result = await WithRaceAsync(
+            async other => enrolment = await new ScannerDeviceService(other).EnrolAsync(issued.Code, default),
+            service => service.NewSetupCodeAsync(issued.Device.Id, Admin, default));
+
+        Assert.Equal(NewSetupCodeOutcome.CodeUsedMeanwhile, result.Outcome);
+        Assert.Null(result.Issued);
+        Assert.NotNull(enrolment);
+        await using var db = CreateDbContext();
+        var code = await db.ScannerDeviceSetupCodes.SingleAsync();
+        Assert.NotNull(code.UsedAt);
+        Assert.True(code.ExpiresAt > DateTimeOffset.UtcNow);
+        Assert.NotNull(await new ScannerDeviceService(db).AuthenticateAsync(enrolment.DeviceKey, default));
+    }
+
+    [Fact]
     public async Task Database_DeviceNameIsUniqueIgnoringCase_AmongDevicesNotRevoked()
     {
         await using (var db = CreateDbContext())
@@ -204,7 +224,11 @@ public sealed class ScannerDeviceServiceTests : IAsyncLifetime
     };
 
     /// <summary>Enrols with a context that runs <paramref name="race"/> on another connection just before it writes.</summary>
-    private async Task<DeviceEnrolment?> EnrolWithRaceAsync(string code, Func<PvmDbContext, Task> race)
+    private Task<DeviceEnrolment?> EnrolWithRaceAsync(string code, Func<PvmDbContext, Task> race)
+        => WithRaceAsync(race, service => service.EnrolAsync(code, default));
+
+    /// <summary>Runs <paramref name="act"/> with a context that runs <paramref name="race"/> on another connection just before it writes.</summary>
+    private async Task<T> WithRaceAsync<T>(Func<PvmDbContext, Task> race, Func<ScannerDeviceService, Task<T>> act)
     {
         var interceptor = new BeforeSaveInterceptor(async () =>
         {
@@ -216,7 +240,7 @@ public sealed class ScannerDeviceServiceTests : IAsyncLifetime
             .AddInterceptors(interceptor)
             .Options;
         await using var db = new PvmDbContext(options);
-        return await new ScannerDeviceService(db).EnrolAsync(code, default);
+        return await act(new ScannerDeviceService(db));
     }
 
     private sealed class BeforeSaveInterceptor(Func<Task> action) : SaveChangesInterceptor

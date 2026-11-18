@@ -597,7 +597,7 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             // Enrol writes a key only while the device is not revoked: the UPDATE carries
             // "RevokedAt" IS NULL. The unique name among devices that are not revoked, ignoring
             // case, is the expression index ux_scanner_devices_active_name_lower made in the
-            // AddScannerDevices migration (EF cannot model an index on lower("Name")).
+            // AddDocumentCaptureAndScannerDevices migration (EF cannot model an index on lower("Name")).
             entity.Property(device => device.RevokedAt).IsConcurrencyToken();
         });
 

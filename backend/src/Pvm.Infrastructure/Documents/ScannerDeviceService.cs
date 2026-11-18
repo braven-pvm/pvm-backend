@@ -105,7 +105,19 @@ public sealed class ScannerDeviceService(PvmDbContext dbContext)
 
         var (plain, row) = NewCode(deviceId, createdBy, now);
         dbContext.ScannerDeviceSetupCodes.Add(row);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            // Expiring an earlier code is a conditional update ("UsedAt" IS NULL and the
+            // "ExpiresAt" that was read). If the phone enrolled with that code meanwhile, no row
+            // matches; everything rolls back, so no new code is made.
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            dbContext.ChangeTracker.Clear();
+            return new NewSetupCodeResult(NewSetupCodeOutcome.CodeUsedMeanwhile, null);
+        }
+
         return new NewSetupCodeResult(NewSetupCodeOutcome.Created, new IssuedSetupCode(device, plain, row.ExpiresAt));
     }
 
@@ -264,6 +276,9 @@ public enum NewSetupCodeOutcome
     Created,
     NotFound,
     Revoked,
+
+    /// <summary>The phone used an earlier code while this request expired it; nothing changed.</summary>
+    CodeUsedMeanwhile,
 }
 
 public enum RevokeOutcome
