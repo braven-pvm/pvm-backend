@@ -340,6 +340,69 @@ production. The app accepts only an `https` API base URL.
 The existing `POST /api/documents` with Entra and the `Documents.Capture`
 policy stays for other clients.
 
+### 6.12 General documents (owner decision, 2026-11-18)
+
+The owner wants a general pool of scans next to the POD flow: any paper that
+staff want to keep, with no invoice matching.
+
+Document type:
+
+- A second document type `GENERAL`, display name "General document". The
+  phone gets it from `GET /api/device/config` like POD.
+- A general document never goes to the review list and never touches
+  Acumatica. Its states are `Received`, `Processing`, `Filed` and `Failed`.
+  `Filed` means "stored, with its title and search words".
+
+Fields typed on the phone (all optional, nobody has to type):
+
+- Title, at most 120 characters. General documents only.
+- Note, at most 1000 characters. General documents and POD.
+- The upload sends them as optional multipart fields `title` and `note`.
+
+Automatic title (owner decision: "Yes, auto title"):
+
+- The worker sends a general document to Claude with a small field schema: a
+  short title (at most 80 characters), a one-sentence summary, the document
+  date if one is printed, and up to 10 search words.
+- If the user typed a title, the user's title stays the title. The automatic
+  title is stored apart, and the search uses both.
+- An unreadable document still becomes `Filed`, with no automatic title. It
+  is never lost and never goes to review.
+- The cost is about the same as one POD read.
+
+Ownership and access:
+
+- Each general document keeps the device ID, the device name, the staff ID
+  and the staff name, the same as POD.
+- For now, every workbench user with the read policy sees every general
+  document. Access rules per user or per phone can come later; the stored
+  device and staff IDs make that possible without a data change.
+
+Workbench:
+
+- A page **Documents > General scans** lists the general documents, newest
+  first, with a thumbnail of the first page, title (typed, else automatic),
+  note, phone, staff name and date.
+- Search by text (title, automatic title, summary, search words, note), phone,
+  staff name and date range.
+- Each document opens in the same viewer as POD (6.8): the PDF as the main
+  area, Back, Previous and Next, and Delete (6.11). There is no File, Reject
+  or review action.
+
+Phone app flow:
+
+1. Start screen: two large buttons, **Proof of delivery** and **General
+   document**, with the staff name at the top and **Change**.
+2. The scanner opens. After **Done**, a review screen shows the first page,
+   the page count, the optional fields, a large **Send** button and **Scan
+   again**.
+3. **Send** queues the upload and opens the scanner again for the same type,
+   as the batch flow does today. **Finish** returns to the start screen.
+4. The list shows each scan with a thumbnail, type, title, and a clear state:
+   Waiting, Sending, Sent or Problem, with a plain reason and **Try again**.
+5. A short vibration and a check mark when a scan is sent. An empty state on
+   the first start.
+
 ## 7. Constraints
 
 - The phones are Android only, and the app is side-loaded.
