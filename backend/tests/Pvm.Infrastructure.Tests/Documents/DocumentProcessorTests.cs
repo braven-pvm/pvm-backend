@@ -450,6 +450,27 @@ public sealed class DocumentProcessorTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ProcessMessage_DocumentDeletedMeanwhile_CompletesQuietly()
+    {
+        // A person deleted the document (design 6.11) while its message still waited in the queue.
+        var id = await SeedAsync(state: DocumentState.Received);
+        await using (var db = CreateDbContext())
+        {
+            await db.CapturedDocuments.Where(item => item.Id == id).ExecuteDeleteAsync();
+        }
+
+        MessageProcessingResult result;
+        await using (var db = CreateDbContext())
+        {
+            result = await ProcessMessageAsync(db, id, deliveryCount: 1);
+        }
+
+        Assert.Equal(MessageSettlement.Complete, result.Settlement);
+        Assert.Equal(0, _extractor.Calls);
+        Assert.Equal(0, _acumatica.FindCalls);
+    }
+
+    [Fact]
     public async Task ProcessMessage_SafeMatch_Completed()
     {
         var id = await SeedAsync();
@@ -791,5 +812,11 @@ public sealed class DocumentProcessorTests : IAsyncLifetime
 
         public Task<Stream> OpenReadAsync(string blobPath, CancellationToken cancellationToken)
             => Task.FromResult<Stream>(new MemoryStream(Blobs[blobPath], writable: false));
+
+        public Task DeleteAsync(string blobPath, CancellationToken cancellationToken)
+        {
+            Blobs.Remove(blobPath);
+            return Task.CompletedTask;
+        }
     }
 }
