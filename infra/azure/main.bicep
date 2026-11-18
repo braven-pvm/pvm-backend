@@ -174,6 +174,19 @@ param stockSyncMode string = 'Shadow'
 @description('Loads Acumatica sell-in into the reports schema each night. Off by default. It only reads Acumatica.')
 param sellInEnabled bool = false
 
+@description('Reads the sell-out mailbox and loads the attached retailer files. Off by default. Turn it on in one environment only, because the job moves each mail it reads.')
+param sellOutMailEnabled bool = false
+
+@description('The mailbox that receives the sell-out files.')
+param sellOutMailMailbox string = 'reports@pvm.co.za'
+
+@description('The application (client) id of the app registration pvm-sellout-mail. Not a secret.')
+param sellOutMailClientId string = ''
+
+@description('The client secret of the app registration pvm-sellout-mail.')
+@secure()
+param sellOutMailClientSecret string = ''
+
 @description('Acumatica contract REST endpoint name.')
 param acumaticaEndpointName string = 'Default'
 
@@ -297,6 +310,10 @@ module platform 'modules/platform.bicep' = {
     woocommerceConsumerSecret: woocommerceConsumerSecret
     stockSyncMode: stockSyncMode
     sellInEnabled: sellInEnabled
+    sellOutMailEnabled: sellOutMailEnabled
+    sellOutMailMailbox: sellOutMailMailbox
+    sellOutMailClientId: sellOutMailClientId
+    sellOutMailClientSecret: sellOutMailClientSecret
     acumaticaEndpointName: acumaticaEndpointName
     acumaticaEndpointVersion: acumaticaEndpointVersion
     acumaticaCustomerAccounts: acumaticaCustomerAccounts
