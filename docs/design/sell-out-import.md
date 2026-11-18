@@ -314,3 +314,21 @@ library.
    file.
 5. **Wholesaler customers.** Does a report need the pharmacy of each wholesaler
    line, or only the wholesaler total? The design keeps the pharmacy as a store.
+6. **VAT in the wholesaler values.** CJ gives a unit price without VAT
+   (`UPRICEEX`), so its `VALUE` is without VAT. TopMed and Arrie Nel give
+   `SALES TOTAL`, and Alpha Pharm gives `EXTENDED_AMOUNT`, with no sign of VAT.
+   The import keeps these values as given until a person confirms them.
+
+## 9. Checks on the real files
+
+Run on 2026-11-18 with the files of the owner, outside the repository. Counts
+only.
+
+| File | Rows | Issues | Stores | Check |
+| --- | --- | --- | --- | --- |
+| Makro Dispo, 5 November 2026 | 3 926 | 0 | 47 | October value of 22 stores matches the 3 merchandiser statements within 0.5 % |
+| Shoprite portal report, 11 November 2026 | 3 919 | 0 | 503 | Units of each of the 6 months match the report's consolidated sheet exactly |
+| TopMed list | 28 | 0 | 16 | Units and value match the total row of the list |
+| CJ list | 691 | 0 | 146 | Units and value match the total row of the list |
+| Alpha Pharm list | 130 | 0 | 49 | Units and value match the total row of the list |
+| Arrie Nel list | 541 | 0 | 133 | Units and value match the total row of the list |
