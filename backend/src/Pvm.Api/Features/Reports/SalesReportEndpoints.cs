@@ -23,7 +23,6 @@ public sealed record SalesReportQuery
 /// Sales report endpoints. They only read. Refer to docs/design/sales-report-pages.md.
 /// <list type="bullet">
 ///   <item><c>GET /api/reports/sales/channels</c>: the channels for the filter.</item>
-///   <item><c>GET /api/reports/sales/options</c>: the reps, provinces, item groups and channels for the filters.</item>
 ///   <item><c>GET /api/reports/sales/overview?year=2027&amp;…</c>: this financial year against the year before.</item>
 ///   <item><c>GET /api/reports/sales/data?years=…&amp;page=1</c>: the lines, 100 for each page.</item>
 ///   <item><c>GET /api/reports/sales/{view}?years=2026,2027&amp;open=R1,R1|RETAIL&amp;format=csv</c>: a grid.</item>
@@ -39,8 +38,6 @@ public static class SalesReportEndpoints
         var group = app.MapGroup("/api/reports/sales").RequireAuthorization("Invoices.Write");
         group.MapGet("/channels", async (SalesReportService service, CancellationToken cancellationToken) =>
             Results.Ok(await service.ChannelsAsync(cancellationToken)));
-        group.MapGet("/options", async (SalesReportService service, CancellationToken cancellationToken) =>
-            Results.Ok(await service.OptionsAsync(cancellationToken)));
         group.MapGet("/overview", GetOverviewAsync);
         group.MapGet("/data", GetDataAsync);
         group.MapGet("/{view}", GetGridAsync);
