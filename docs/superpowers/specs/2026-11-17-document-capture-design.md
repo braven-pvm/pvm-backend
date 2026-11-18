@@ -340,6 +340,37 @@ production. The app accepts only an `https` API base URL.
 The existing `POST /api/documents` with Entra and the `Documents.Capture`
 policy stays for other clients.
 
+### 6.11 Delete (owner decision, 2026-11-18)
+
+The owner chose "Delete permanently". An Admin or Operator can remove a
+document that is not filed: the PDF and the document row go for good.
+
+- `POST /api/documents/{id}/delete` with `{ "reason": "..." }`, under the
+  `Invoices.Write` policy. The reason is required, 1 to 500 characters after
+  trimming.
+- Allowed only when the document is not filed: the state is NeedsReview or
+  Failed, or Received or Processing and stuck (uploaded more than 30 minutes
+  ago, the same rule as the review list), and the PDF is not attached in
+  Acumatica.
+- Refusals (409, with a stable `code`): `document-filed` ("Send it back to
+  review first."), `document-attached` (the PDF is in Acumatica),
+  `document-processing` ("Wait until processing ends."). An unknown ID is 404.
+- The backend deletes the row with a conditional DELETE that repeats these
+  rules, so a race with the worker or another person never deletes a filed row.
+  The same transaction writes an audit event: who, when, the reason, the
+  document ID and type, the state at the delete, the uploader (with the scanner
+  device and staff names), the client document ID, the SHA-256, and the blob
+  path. Then the backend deletes the PDF from storage. If that fails, the row
+  stays deleted, the backend logs the blob path as an error, and the answer is
+  200 with a `warning`.
+- A processing message that arrives after the delete finds no row and
+  completes quietly. If the phone uploads the same client document ID again,
+  the backend creates a new document.
+- The detail response has `canDelete`, so the workbench shows **Delete
+  document** only when the backend allows it. The confirm dialog asks for the
+  reason. After the delete, the workbench opens the Documents list with the
+  notice "Document deleted."
+
 ## 7. Constraints
 
 - The phones are Android only, and the app is side-loaded.
