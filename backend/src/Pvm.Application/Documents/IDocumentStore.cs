@@ -7,6 +7,12 @@ public interface IDocumentStore
     Task<StoredDocument> SaveAsync(string blobPath, Stream pdf, CancellationToken cancellationToken);
 
     Task<Stream> OpenReadAsync(string blobPath, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Removes the PDF for good (design 6.11). Deleting a PDF that is not there is not an error,
+    /// so a retry after a partial failure succeeds.
+    /// </summary>
+    Task DeleteAsync(string blobPath, CancellationToken cancellationToken);
 }
 
 /// <param name="Sha256">Lower-case hex SHA-256 of the stored bytes.</param>

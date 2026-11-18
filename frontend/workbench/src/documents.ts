@@ -142,6 +142,38 @@ export function canReturnToReview(document: { state: string; acumaticaAttachedAt
   return document.state === "Filed" && !document.acumaticaAttachedAt;
 }
 
+/**
+ * Delete document: shown only to an Admin or Operator, and only when the
+ * backend says the document can go (canDelete on the detail response). The
+ * workbench never repeats the rule itself.
+ */
+export function showDeleteAction(document: { canDelete?: boolean | null }, canWrite: boolean): boolean {
+  return canWrite && document.canDelete === true;
+}
+
+export const maxDeleteReasonLength = 500;
+
+/** The notice on the Documents list after a delete. */
+export const documentDeletedMessage = "Document deleted.";
+
+export function deleteErrorMessage(status: number, code?: string | null): string {
+  switch (status) {
+    case 409:
+      if (code === "document-filed") return "The document is filed, so it cannot be deleted. Send it back to review first.";
+      if (code === "document-attached") return "The PDF is already attached to the invoice in Acumatica, so the document cannot be deleted.";
+      if (code === "document-processing") return "The document is still being processed. Wait until processing ends, then try again.";
+      return "The document can no longer be deleted. The page now shows its current state.";
+    case 400:
+      return "Write a reason of at most 500 characters that says why the document is deleted.";
+    case 404:
+      return "This document no longer exists. Someone may have deleted it already.";
+    case 403:
+      return "You do not have permission to delete documents. Ask an Admin or Operator.";
+    default:
+      return `The document could not be deleted (error ${status}). Nothing was deleted. Try again in a minute.`;
+  }
+}
+
 /** Process again: a Failed document, or one stuck in Received or Processing. */
 export function canProcessAgain(document: { state: string; stuck: boolean }): boolean {
   return document.state === "Failed" || document.stuck;
@@ -261,7 +293,7 @@ export function acumaticaInvoiceUrl(baseUrl: string | null | undefined, referenc
 }
 
 /** When the API call itself failed (timeout, network), the write may or may not have happened. */
-export function unconfirmedMessage(outcome: "filed" | "rejected" | "sent back to review" | "queued for processing"): string {
+export function unconfirmedMessage(outcome: "filed" | "rejected" | "sent back to review" | "queued for processing" | "deleted"): string {
   return `We could not confirm whether the document was ${outcome}. Reload the page to see its state.`;
 }
 

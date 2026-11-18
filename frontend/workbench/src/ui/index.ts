@@ -36,6 +36,7 @@ export { Pagination } from "./pagination";
 export { Panel } from "./panel";
 export { PdfFrame } from "./pdf-frame";
 export { QrCode } from "./qr-code";
+export { RecordNav } from "./record-nav";
 export { Spinner } from "./spinner";
 export { Stack, type Space } from "./stack";
 export { StatTile, TileGrid } from "./stat-tile";
@@ -52,6 +53,7 @@ export {
   SettingsPage,
   SettingsSection,
   TaskPage,
+  ViewerPage,
 } from "./templates";
 export { Tile } from "./tile";
 export { Timeline, type TimelineEntry } from "./timeline";

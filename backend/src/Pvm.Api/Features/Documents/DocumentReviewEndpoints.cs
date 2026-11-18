@@ -22,6 +22,7 @@ namespace Pvm.Api.Features.Documents;
 ///   <item><c>POST /{id}/return-to-review</c> — takes a wrongly filed document, not yet attached in
 ///   Acumatica, back to the review list.</item>
 ///   <item><c>POST /{id}/process-again</c> — sends a Failed or stuck document through processing again.</item>
+///   <item><c>POST /{id}/delete</c> — removes an unfiled document and its PDF for good (design 6.11).</item>
 /// </list>
 /// </summary>
 public static class DocumentReviewEndpoints
@@ -43,6 +44,7 @@ public static class DocumentReviewEndpoints
         group.MapPost("/{id:guid}/reject", RejectAsync).RequireAuthorization("Invoices.Write");
         group.MapPost("/{id:guid}/return-to-review", ReturnToReviewAsync).RequireAuthorization("Invoices.Write");
         group.MapPost("/{id:guid}/process-again", ProcessAgainAsync).RequireAuthorization("Invoices.Write");
+        group.MapPost("/{id:guid}/delete", DeleteAsync).RequireAuthorization("Invoices.Write");
 
         return app;
     }
@@ -200,6 +202,12 @@ public static class DocumentReviewEndpoints
             state = document.State.ToString(),
             reviewReason = document.ReviewReason?.ToString(),
             stuck = IsStuck(document, stuckBefore),
+            // The delete rule (design 6.11), so the workbench shows Delete without repeating it.
+            canDelete = DocumentReviewService.DeleteCheck(
+                document.State,
+                document.AcumaticaAttachedAt,
+                document.UploadedAt,
+                stuckBefore) == DeleteOutcome.Deleted,
             pageCount = document.PageCount,
             sizeBytes = document.SizeBytes,
             matchedReference = document.MatchedReference,
@@ -378,6 +386,50 @@ public static class DocumentReviewEndpoints
         };
     }
 
+    private static async Task<IResult> DeleteAsync(
+        Guid id,
+        DeleteRequest? request,
+        CurrentAppUserAccessor currentUser,
+        DocumentReviewService reviewService,
+        CancellationToken cancellationToken)
+    {
+        var reason = request?.Reason?.Trim();
+        if (string.IsNullOrEmpty(reason) || reason.Length > DocumentReviewService.MaxDeleteReasonLength)
+        {
+            return BadRequest($"'reason' is required, at most {DocumentReviewService.MaxDeleteReasonLength} characters.");
+        }
+
+        var user = CurrentEmail(currentUser);
+        if (user is null)
+        {
+            return UserNotResolved();
+        }
+
+        var result = await reviewService.DeleteAsync(id, reason, user, cancellationToken);
+        return result.Outcome switch
+        {
+            DeleteOutcome.Deleted => Results.Ok(new
+            {
+                documentId = id,
+                deleted = true,
+                warning = result.BlobDeleteFailed
+                    ? "The document is deleted, but its PDF could not be removed from storage. The path is logged for the developer."
+                    : null
+            }),
+            DeleteOutcome.NotFound => NotFound(),
+            DeleteOutcome.Filed => Conflict(
+                "The document is filed. Send it back to review first.",
+                "document-filed"),
+            DeleteOutcome.Attached => Conflict(
+                "The PDF is already attached to the invoice in Acumatica; the document cannot be deleted.",
+                "document-attached"),
+            DeleteOutcome.Processing => Conflict(
+                "The document was uploaded recently and is still processing. Wait until processing ends.",
+                "document-processing"),
+            _ => throw new InvalidOperationException("Unknown delete outcome.")
+        };
+    }
+
     private static object SearchItem(CapturedDocumentEntity item, IReadOnlyDictionary<Guid, string> deviceNames) => new
     {
         id = item.Id,
@@ -480,10 +532,18 @@ public static class DocumentReviewEndpoints
     private static IResult Conflict(string detail)
         => Results.Problem(detail, statusCode: StatusCodes.Status409Conflict);
 
+    private static IResult Conflict(string detail, string code)
+        => Results.Problem(
+            detail,
+            statusCode: StatusCodes.Status409Conflict,
+            extensions: new Dictionary<string, object?> { ["code"] = code });
+
     private static IResult NotFound()
         => Results.Problem("The document was not found.", statusCode: StatusCodes.Status404NotFound);
 
     public sealed record FileToRequest(string? InvoiceReference);
 
     public sealed record RejectRequest(string? Note);
+
+    public sealed record DeleteRequest(string? Reason);
 }

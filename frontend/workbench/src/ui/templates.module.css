@@ -61,3 +61,132 @@
   gap: var(--space-m);
   grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
 }
+
+/* ViewerPage: the file is the page. */
+.viewerPage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-s);
+  height: calc(100vh - 2 * var(--space-m));
+  height: calc(100dvh - 2 * var(--space-m));
+  min-height: 560px;
+}
+
+.viewerBar {
+  align-items: center;
+  border-bottom: 1px solid var(--color-stroke-weak);
+  display: grid;
+  gap: var(--space-xs) var(--space-m);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding-bottom: var(--space-s);
+}
+
+.viewerTitle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.viewerEyebrow {
+  color: var(--color-text-weak);
+  font-size: var(--text-caption);
+  font-weight: var(--font-bold);
+  line-height: var(--leading-caption);
+  margin: 0;
+}
+
+.viewerHeading {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.viewerHeading h1 {
+  color: var(--color-text-strong);
+  font-size: var(--text-h3);
+  font-weight: var(--font-bold);
+  line-height: var(--leading-h3);
+  margin: 0;
+}
+
+.viewerDescription {
+  color: var(--color-text-weak);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  margin: 0;
+}
+
+.viewerNav {
+  justify-self: end;
+}
+
+.viewerBody {
+  display: grid;
+  flex: 1;
+  gap: var(--space-m);
+  grid-template-columns: minmax(0, 2fr) minmax(400px, 1fr);
+  min-height: 0;
+}
+
+.viewerMain {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.viewerAside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-m);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Room for the focus ring and the scroll bar. */
+  padding: 2px 4px 2px 2px;
+}
+
+/* The panels keep their height; the aside scrolls instead. */
+.viewerAside > * {
+  flex: none;
+}
+
+@media (max-width: 900px) {
+  .viewerPage {
+    height: auto;
+    min-height: 0;
+  }
+
+  /*
+   * Back, Previous and Next stay at the top while the page scrolls, under the
+   * shell's sticky phone bar (one control high, with --space-xs above and below).
+   */
+  .viewerBar {
+    background: var(--color-canvas);
+    grid-template-columns: minmax(0, 1fr) auto;
+    margin: 0 calc(-1 * var(--space-s));
+    padding: var(--space-xs) var(--space-s);
+    position: sticky;
+    top: calc(var(--control-height) + 2 * var(--space-xs));
+    z-index: 5;
+  }
+
+  .viewerBar > a {
+    white-space: nowrap;
+  }
+
+  .viewerTitle {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .viewerBody {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .viewerAside {
+    overflow: visible;
+  }
+}

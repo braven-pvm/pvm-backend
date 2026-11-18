@@ -1,0 +1,22 @@
+.nav {
+  align-items: center;
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.position {
+  color: var(--color-text-weak);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-small);
+  min-width: 6ch;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* On a phone the arrows stand alone; the link keeps its name for screen readers. */
+@media (max-width: 600px) {
+  .label {
+    display: none;
+  }
+}

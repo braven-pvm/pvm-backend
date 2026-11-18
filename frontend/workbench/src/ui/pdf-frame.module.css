@@ -13,6 +13,19 @@
   width: 100%;
 }
 
+/* fill: the frame takes the height its container gives it. */
+.frame[data-size="fill"] {
+  flex: 1;
+  min-height: 0;
+}
+
+.frame[data-size="fill"] .viewer {
+  flex: 1;
+  height: auto;
+  max-height: none;
+  min-height: 0;
+}
+
 .open {
   align-items: center;
   align-self: flex-start;
@@ -33,5 +46,13 @@
   .viewer {
     height: 480px;
     max-height: 70vh;
+  }
+}
+
+@media (max-width: 900px) {
+  .frame[data-size="fill"] .viewer {
+    flex: none;
+    height: 75vh;
+    height: 75dvh;
   }
 }

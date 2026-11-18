@@ -43,9 +43,22 @@ export function customerOf(candidate: InvoiceCandidate) {
   return extra && extra !== name ? `${name} (${extra})` : name;
 }
 
-/** The invoice columns shared by the possible invoices and the search results; the page adds the action. */
+/**
+ * The invoice columns shared by the possible invoices and the search results;
+ * the page adds the action. One column, so it fits the document page's narrow
+ * side panel with the File to this invoice button next to it.
+ */
 export const invoiceColumns: Column<InvoiceCandidate>[] = [
-  { key: "invoice", header: "Invoice", render: (row) => row.referenceNumber, mono: true },
-  { key: "date", header: "Date", render: (row) => (row.date ? formatDate(row.date) : "—"), weak: true },
-  { key: "customer", header: "Customer", render: (row) => customerOf(row) },
+  {
+    key: "invoice",
+    header: "Invoice",
+    render: (row) => (
+      <>
+        {row.referenceNumber}
+        <br />
+        {customerOf(row)}
+        {row.date ? `, ${formatDate(row.date)}` : null}
+      </>
+    ),
+  },
 ];
