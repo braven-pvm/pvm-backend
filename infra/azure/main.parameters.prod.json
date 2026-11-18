@@ -12,6 +12,7 @@
     "alertEmail": { "value": "developer@pvm.co.za" },
     "acumaticaBaseUrl": { "value": "https://pvm.aboutitgroup.co.za" },
     "workbenchAcumaticaBaseUrl": { "value": "https://pvm.aboutitgroup.co.za" },
+    "deviceApiBaseUrl": { "value": "https://ca-pvm-api-prod.kindfield-1b3d7c88.southafricanorth.azurecontainerapps.io" },
     "acumaticaWebhookAllowedCompanies": { "value": [ "PVM" ] },
     "acumaticaWebhookAllowedQueries": { "value": [ "PVM-Shoprite-Finalized-Invoices" ] },
     "acumaticaEndpointName": { "value": "Default" },
