@@ -21,6 +21,30 @@ public sealed class DocumentCaptureOptions
 
     /// <summary>Shadow records the Acumatica attachment it would make; Write makes it (design 6.6).</summary>
     public AcumaticaAttachMode AcumaticaAttachMode { get; set; } = AcumaticaAttachMode.Shadow;
+
+    /// <summary>
+    /// The API's public https address that a scanner phone calls, written into the setup QR code
+    /// (design 6.10). Set per environment; never taken from the request, because request headers
+    /// can be spoofed into an enrolment QR. Empty or invalid: the setup-code endpoints refuse.
+    /// </summary>
+    public string? DeviceApiBaseUrl { get; set; }
+
+    /// <summary>The <see cref="DeviceApiBaseUrl"/> without a trailing slash, when it is an absolute, credential-free https URL.</summary>
+    public bool TryGetDeviceApiBaseUrl(out string baseUrl)
+    {
+        baseUrl = string.Empty;
+        if (!Uri.TryCreate(DeviceApiBaseUrl?.Trim(), UriKind.Absolute, out var uri)
+            || uri.Scheme != Uri.UriSchemeHttps
+            || !string.IsNullOrEmpty(uri.UserInfo)
+            || !string.IsNullOrEmpty(uri.Query)
+            || !string.IsNullOrEmpty(uri.Fragment))
+        {
+            return false;
+        }
+
+        baseUrl = uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
+        return true;
+    }
 }
 
 public enum AcumaticaAttachMode

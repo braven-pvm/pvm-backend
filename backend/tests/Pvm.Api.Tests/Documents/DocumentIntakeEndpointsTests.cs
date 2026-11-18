@@ -256,6 +256,7 @@ public sealed class DocumentIntakeEndpointsTests : IAsyncLifetime
         builder.Services.AddScoped<IIntegrationCommandQueue, IntegrationCommandQueue>();
         builder.Services.AddScoped<CurrentAppUserAccessor>();
         builder.Services.AddDocumentCapture(builder.Configuration);
+        builder.Services.AddScoped<DocumentIntakeService>();
         builder.Services
             .AddAuthentication(TestAuthHandler.SchemeName)
             .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });

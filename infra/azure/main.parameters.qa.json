@@ -32,6 +32,9 @@
     "workbenchAcumaticaBaseUrl": {
       "value": "https://devtest1.aboutitgroup.co.za/PVMGroup25R101D250625"
     },
+    "deviceApiBaseUrl": {
+      "value": "https://ca-pvm-api-qa.blackbay-85d5b3d6.southafricanorth.azurecontainerapps.io"
+    },
     "acumaticaEndpointName": {
       "value": "Default"
     },

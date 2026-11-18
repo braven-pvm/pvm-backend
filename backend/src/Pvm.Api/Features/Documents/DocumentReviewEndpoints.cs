@@ -121,9 +121,10 @@ public static class DocumentReviewEndpoints
             .Take(PageSize)
             .ToListAsync(cancellationToken);
 
+        var deviceNames = await DeviceNamesAsync(dbContext, items, cancellationToken);
         return Results.Ok(new
         {
-            items = items.Select(SearchItem),
+            items = items.Select(item => SearchItem(item, deviceNames)),
             page = pageNumber,
             pageSize = PageSize,
             total
@@ -151,6 +152,7 @@ public static class DocumentReviewEndpoints
             .Take(PageSize)
             .ToListAsync(cancellationToken);
 
+        var deviceNames = await DeviceNamesAsync(dbContext, items, cancellationToken);
         return Results.Ok(new
         {
             items = items.Select(item => new
@@ -163,6 +165,8 @@ public static class DocumentReviewEndpoints
                 pageCount = item.PageCount,
                 uploadedBy = item.UploadedBy,
                 uploadedAt = item.UploadedAt,
+                scannerDeviceName = DeviceName(item, deviceNames),
+                scannerStaffName = item.ScannerStaffName,
                 updatedAt = item.UpdatedAt
             }),
             page = pageNumber,
@@ -186,6 +190,7 @@ public static class DocumentReviewEndpoints
         }
 
         var (extraction, unreadableReason, candidates) = ReadExtraction(document.ExtractionJson);
+        var deviceNames = await DeviceNamesAsync(dbContext, [document], cancellationToken);
         var stuckBefore = DateTimeOffset.UtcNow - DocumentReviewService.StuckAfter;
         return Results.Ok(new
         {
@@ -204,6 +209,8 @@ public static class DocumentReviewEndpoints
             acumaticaAttachedAt = document.AcumaticaAttachedAt,
             uploadedBy = document.UploadedBy,
             uploadedAt = document.UploadedAt,
+            scannerDeviceName = DeviceName(document, deviceNames),
+            scannerStaffName = document.ScannerStaffName,
             resolvedBy = document.ResolvedBy,
             resolvedAt = document.ResolvedAt,
             reviewNote = document.ReviewNote,
@@ -371,7 +378,7 @@ public static class DocumentReviewEndpoints
         };
     }
 
-    private static object SearchItem(CapturedDocumentEntity item) => new
+    private static object SearchItem(CapturedDocumentEntity item, IReadOnlyDictionary<Guid, string> deviceNames) => new
     {
         id = item.Id,
         documentType = item.DocumentType,
@@ -385,10 +392,37 @@ public static class DocumentReviewEndpoints
         pageCount = item.PageCount,
         uploadedBy = item.UploadedBy,
         uploadedAt = item.UploadedAt,
+        scannerDeviceName = DeviceName(item, deviceNames),
+        scannerStaffName = item.ScannerStaffName,
         resolvedBy = item.ResolvedBy,
         resolvedAt = item.ResolvedAt,
         rejectedAt = item.RejectedAt
     };
+
+    /// <summary>The current names of the scanner devices that uploaded these documents (design 6.10).</summary>
+    private static async Task<IReadOnlyDictionary<Guid, string>> DeviceNamesAsync(
+        PvmDbContext dbContext,
+        IReadOnlyCollection<CapturedDocumentEntity> documents,
+        CancellationToken cancellationToken)
+    {
+        var ids = documents
+            .Where(document => document.ScannerDeviceId is not null)
+            .Select(document => document.ScannerDeviceId!.Value)
+            .Distinct()
+            .ToList();
+        if (ids.Count == 0)
+        {
+            return new Dictionary<Guid, string>();
+        }
+
+        return await dbContext.ScannerDevices
+            .AsNoTracking()
+            .Where(device => ids.Contains(device.Id))
+            .ToDictionaryAsync(device => device.Id, device => device.Name, cancellationToken);
+    }
+
+    private static string? DeviceName(CapturedDocumentEntity document, IReadOnlyDictionary<Guid, string> deviceNames)
+        => document.ScannerDeviceId is { } id && deviceNames.TryGetValue(id, out var name) ? name : null;
 
     private static bool IsStuck(CapturedDocumentEntity item, DateTimeOffset stuckBefore)
         => (item.State == DocumentState.Received || item.State == DocumentState.Processing)

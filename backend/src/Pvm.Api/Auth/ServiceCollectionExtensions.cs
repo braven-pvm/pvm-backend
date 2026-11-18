@@ -10,6 +10,12 @@ public static class ServiceCollectionExtensions
     /// <summary>Upload of captured documents from the phone app (design 6.9).</summary>
     public const string DocumentsCapturePolicy = "Documents.Capture";
 
+    /// <summary>
+    /// Scanner phones (design 6.10): only the <c>DeviceKey</c> scheme, and only a principal with a
+    /// device claim. The default (Entra or development) scheme is not evaluated for this policy.
+    /// </summary>
+    public const string DocumentsDevicePolicy = "Documents.Device";
+
     public static IServiceCollection AddPvmAuth(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -101,6 +107,7 @@ public static class ServiceCollectionExtensions
             });
         }
 
+        authentication.AddDeviceKey();
         services.AddAuthorization(AddPvmPolicies);
 
         return services;
@@ -120,5 +127,9 @@ public static class ServiceCollectionExtensions
         options.AddPolicy(DocumentsCapturePolicy, policy => policy
             .RequireAuthenticatedUser()
             .RequireRole(AppRoles.Write));
+        options.AddPolicy(DocumentsDevicePolicy, policy => policy
+            .AddAuthenticationSchemes(DeviceKeyAuthenticationHandler.SchemeName)
+            .RequireAuthenticatedUser()
+            .RequireClaim(DeviceKeyAuthenticationHandler.DeviceIdClaim));
     }
 }

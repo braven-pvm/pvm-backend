@@ -56,6 +56,9 @@ param acumaticaBaseUrl string = ''
 
 @description('ACUMATICA_BASE_URL for the workbench: the Acumatica site its invoice links open. Empty: not set.')
 param workbenchAcumaticaBaseUrl string = ''
+
+@description('DocumentCapture__DeviceApiBaseUrl for the API: the https URL in the scanner setup QR code. Empty: not set.')
+param deviceApiBaseUrl string = ''
 param acumaticaCompany string = ''
 param acumaticaBranch string = ''
 
@@ -531,7 +534,12 @@ var apiRuntimeEnvironment = concat(apiEnvironment, [
     name: 'AcumaticaPushNotifications__RateLimitPerMinute'
     value: '120'
   }
-], acumaticaWebhookSecretEnvironment, acumaticaWebhookCompanyEnvironment, acumaticaWebhookQueryEnvironment)
+], acumaticaWebhookSecretEnvironment, acumaticaWebhookCompanyEnvironment, acumaticaWebhookQueryEnvironment, empty(deviceApiBaseUrl) ? [] : [
+  {
+    name: 'DocumentCapture__DeviceApiBaseUrl'
+    value: deviceApiBaseUrl
+  }
+])
 var workerEnvironment = concat(apiEnvironment, [
   {
     name: 'ServiceBus__FullyQualifiedNamespace'

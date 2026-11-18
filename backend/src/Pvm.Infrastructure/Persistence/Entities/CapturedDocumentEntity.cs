@@ -47,6 +47,15 @@ public sealed class CapturedDocumentEntity
 
     public DateTimeOffset UploadedAt { get; set; }
 
+    /// <summary>The scanner device that uploaded the document; null for a workbench (Entra) upload.</summary>
+    public Guid? ScannerDeviceId { get; set; }
+
+    /// <summary>The staff name the person tapped on the phone, if any.</summary>
+    public Guid? ScannerStaffId { get; set; }
+
+    /// <summary>The staff name at upload time, kept so a later rename does not change history.</summary>
+    public string? ScannerStaffName { get; set; }
+
     public string? ResolvedBy { get; set; }
 
     public DateTimeOffset? ResolvedAt { get; set; }

@@ -88,6 +88,12 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<CapturedDocumentEntity> CapturedDocuments => Set<CapturedDocumentEntity>();
 
+    public DbSet<ScannerDeviceEntity> ScannerDevices => Set<ScannerDeviceEntity>();
+
+    public DbSet<ScannerDeviceSetupCodeEntity> ScannerDeviceSetupCodes => Set<ScannerDeviceSetupCodeEntity>();
+
+    public DbSet<ScannerStaffEntity> ScannerStaff => Set<ScannerStaffEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<InvoiceCandidateEntity>(entity =>
@@ -559,6 +565,50 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(document => document.ResolvedBy).HasMaxLength(320);
             entity.Property(document => document.RejectedBy).HasMaxLength(320);
             entity.Property(document => document.ReviewNote).HasMaxLength(2048);
+            entity.Property(document => document.ScannerStaffName).HasMaxLength(100);
+            entity.HasOne<ScannerDeviceEntity>()
+                .WithMany()
+                .HasForeignKey(document => document.ScannerDeviceId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ScannerStaffEntity>()
+                .WithMany()
+                .HasForeignKey(document => document.ScannerStaffId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ScannerDeviceEntity>(entity =>
+        {
+            entity.ToTable("scanner_devices");
+            entity.HasKey(device => device.Id);
+            entity.Property(device => device.Name).HasMaxLength(100);
+            entity.Property(device => device.KeyHash).HasMaxLength(64);
+            entity.Property(device => device.CreatedBy).HasMaxLength(320);
+            entity.Property(device => device.RevokedBy).HasMaxLength(320);
+            entity.HasIndex(device => device.KeyHash).IsUnique();
+            entity.HasIndex(device => device.Name)
+                .IsUnique()
+                .HasFilter("\"RevokedAt\" IS NULL");
+        });
+
+        modelBuilder.Entity<ScannerDeviceSetupCodeEntity>(entity =>
+        {
+            entity.ToTable("scanner_device_setup_codes");
+            entity.HasKey(code => code.Id);
+            entity.Property(code => code.CodeHash).HasMaxLength(64);
+            entity.Property(code => code.CreatedBy).HasMaxLength(320);
+            entity.Property(code => code.UsedAt).IsConcurrencyToken();
+            entity.HasIndex(code => code.CodeHash).IsUnique();
+            entity.HasOne<ScannerDeviceEntity>()
+                .WithMany()
+                .HasForeignKey(code => code.DeviceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ScannerStaffEntity>(entity =>
+        {
+            entity.ToTable("scanner_staff");
+            entity.HasKey(staff => staff.Id);
+            entity.Property(staff => staff.Name).HasMaxLength(100);
         });
 
         ConfigureReporting(modelBuilder);

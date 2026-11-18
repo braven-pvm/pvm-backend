@@ -114,6 +114,9 @@ param acumaticaBaseUrl string = ''
 @description('The Acumatica site the workbench links invoice numbers to, for example https://pvm.example.com/Instance. Optional: empty leaves ACUMATICA_BASE_URL unset and invoice numbers stay plain text.')
 param workbenchAcumaticaBaseUrl string = ''
 
+@description('The API public https URL that scanner phones call; it goes into the setup QR code (DocumentCapture:DeviceApiBaseUrl). Empty: the scanner setup-code endpoints return 500 until it is set.')
+param deviceApiBaseUrl string = ''
+
 @description('Acumatica company or tenant used for API sign-in.')
 param acumaticaCompany string = ''
 
@@ -301,6 +304,7 @@ module platform 'modules/platform.bicep' = {
     acumaticaInvoiceSourceMode: acumaticaInvoiceSourceMode
     acumaticaBaseUrl: acumaticaBaseUrl
     workbenchAcumaticaBaseUrl: workbenchAcumaticaBaseUrl
+    deviceApiBaseUrl: deviceApiBaseUrl
     acumaticaCompany: acumaticaCompany
     acumaticaBranch: acumaticaBranch
     acumaticaUsername: acumaticaUsername

@@ -612,6 +612,7 @@ public sealed class DocumentReviewEndpointsTests : IAsyncLifetime
             .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
         builder.Services.AddScoped<CurrentAppUserAccessor>();
         builder.Services.AddDocumentCapture(builder.Configuration);
+        builder.Services.AddScoped<DocumentIntakeService>();
         builder.Services.AddSingleton<IAcumaticaDocumentClient>(_acumatica);
         builder.Services.AddScoped<DocumentProcessor>();
         builder.Services.AddScoped<IIntegrationCommandQueue, IntegrationCommandQueue>();
