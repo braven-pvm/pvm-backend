@@ -62,7 +62,8 @@ export default async function ExceptionsPage({ searchParams }: ExceptionsPagePro
         title: "Exceptions",
         description: `Problems an automation could not finish on its own. ${summary.overdue} overdue.`,
         actions:
-          isAdmin && queue.key === "dead-letters" && summary.deadLetters > 0 ? (
+          // On every tab: an Admin who opens the queue must find the action without first choosing the Dead letters tab.
+          isAdmin && summary.deadLetters > 0 ? (
             <ConfirmDialog
               triggerLabel="Close old dead letters"
               triggerVariant="secondary"
