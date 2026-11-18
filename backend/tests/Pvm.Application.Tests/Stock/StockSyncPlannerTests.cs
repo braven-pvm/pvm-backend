@@ -88,6 +88,39 @@ public class StockSyncPlannerTests
     }
 
     [Fact]
+    public void A_parent_variation_named_for_own_stock_gets_its_own_level()
+    {
+        // The owner's choice: each Bite Size flavour holds its own stock, not the parent's pool.
+        var own = new HashSet<string>(["ENER3", "ENER7"], StringComparer.OrdinalIgnoreCase);
+
+        var lines = StockSyncPlanner.Plan(
+            [Item("ENER3", 454, WebStockManagement.Parent), Item("ENER7", 454, WebStockManagement.Parent), Item("ENER2", 454, WebStockManagement.Parent)],
+            Snapshot([Figures("ENER3", -2721), Figures("ENER7", 4449), Figures("ENER2", 4974)]),
+            NoPending,
+            5,
+            own);
+
+        Assert.Equal((StockSyncAction.Update, (int?)0), (lines[0].Action, lines[0].NewQuantity));
+        Assert.Equal((StockSyncAction.Update, (int?)4449), (lines[1].Action, lines[1].NewQuantity));
+        Assert.Equal(StockSyncAction.Skip, lines[2].Action);
+    }
+
+    [Fact]
+    public void A_parent_variation_named_for_own_stock_is_an_update_even_at_the_parent_quantity()
+    {
+        // The web store reports the parent's quantity. Until the variation holds its own stock,
+        // it must be written once, even when the numbers agree.
+        var line = Assert.Single(StockSyncPlanner.Plan(
+            [Item("ENER7", 4449, WebStockManagement.Parent)],
+            Snapshot([Figures("ENER7", 4449)]),
+            NoPending,
+            5,
+            new HashSet<string>(["ENER7"], StringComparer.OrdinalIgnoreCase)));
+
+        Assert.Equal(StockSyncAction.Update, line.Action);
+    }
+
+    [Fact]
     public void Pending_web_orders_reduce_the_published_quantity()
     {
         var pending = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase) { ["SION10"] = 3 };
@@ -99,9 +132,9 @@ public class StockSyncPlannerTests
     }
 
     [Fact]
-    public void A_level_below_the_minimum_publishes_zero()
+    public void A_level_at_the_out_of_stock_level_publishes_zero()
     {
-        var line = Assert.Single(StockSyncPlanner.Plan([Item("SION11", 6)], Snapshot([Figures("SION11", 4)]), NoPending, 5));
+        var line = Assert.Single(StockSyncPlanner.Plan([Item("SION11", 6)], Snapshot([Figures("SION11", 5)]), NoPending, 5));
 
         Assert.Equal(StockSyncAction.Update, line.Action);
         Assert.Equal(0, line.NewQuantity);

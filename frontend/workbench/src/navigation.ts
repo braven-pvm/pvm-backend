@@ -10,6 +10,7 @@ export type NavIcon =
   | "shoprite"
   | "banking"
   | "stock"
+  | "sellout"
   | "documents"
   | "automations"
   | "runs"
@@ -52,6 +53,7 @@ export const navigation: NavGroup[] = [
       },
       { label: "Banking", href: "/banking", icon: "banking", roles: write },
       { label: "Stock", href: "/stock", icon: "stock" },
+      { label: "Sell-out", href: "/sell-out", icon: "sellout", roles: write },
       {
         label: "Documents",
         href: "/documents",

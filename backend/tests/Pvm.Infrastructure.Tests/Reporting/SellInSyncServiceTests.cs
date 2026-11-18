@@ -20,6 +20,7 @@ public sealed class SellInSyncServiceTests : IAsyncLifetime
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:16").Build();
     private readonly string _archiveRoot = Path.Combine(Path.GetTempPath(), $"pvm-sell-in-{Guid.NewGuid():N}");
     private readonly FakeSource _source = new();
+    private readonly FakeCustomerReps _customerReps = new();
 
     public async Task InitializeAsync()
     {
@@ -62,6 +63,93 @@ public sealed class SellInSyncServiceTests : IAsyncLifetime
         Assert.Equal("Energy Bars", (await db.ReportingProducts.SingleAsync()).ItemClassName);
         Assert.Equal("Example Rep", (await db.ReportingSalesReps.SingleAsync()).Name);
         Assert.Equal("Finished Goods", (await db.ReportingWarehouseLocations.SingleAsync()).LocationName);
+    }
+
+    [Fact]
+    public async Task The_financial_month_is_the_posting_period_not_the_document_date()
+    {
+        // PVM closes March near the 25th. A document of 26 March posts to the next period,
+        // and the sales workbook counts it there.
+        _source.Set(April, SellInRowParserTests.Row(reference: "IN000001", date: "2024-03-26T00:00:00"));
+
+        await RunAsync(April, April);
+
+        await using var db = CreateDbContext();
+        var line = await db.SellInLines.SingleAsync();
+        Assert.Equal(new DateOnly(2024, 3, 26), line.DocumentDate);
+        Assert.Equal(2025, line.FinancialYear);
+        Assert.Equal(2, line.FinancialMonth);
+        Assert.Equal("202502", line.PostPeriod);
+    }
+
+    [Fact]
+    public async Task Each_customer_gets_its_current_rep_from_the_customer_list()
+    {
+        _source.Set(March,
+            SellInRowParserTests.Row(reference: "IN000001", customer: "C0001", rep: "REP01"),
+            SellInRowParserTests.Row(reference: "IN000002", customer: "C0002", rep: "REP01"));
+        _customerReps.Set(
+            new CustomerSalesRep("C0001", "REP02", "Second Rep"),
+            new CustomerSalesRep("C0002", null, null),
+            new CustomerSalesRep("C0099", "REP03", "Third Rep"));
+
+        await RunAsync(March, March);
+
+        await using var db = CreateDbContext();
+        var customers = await db.ReportingCustomers.OrderBy(customer => customer.CustomerId).ToListAsync();
+        Assert.Equal(["C0001", "C0002"], customers.Select(customer => customer.CustomerId));
+        Assert.Equal("REP02", customers[0].CurrentSalesRepId);
+        Assert.Null(customers[1].CurrentSalesRepId);
+        // The rep on the line stays as it was at the sale.
+        Assert.All(await db.SellInLines.ToListAsync(), line => Assert.Equal("REP01", line.SalesRepId));
+        Assert.Equal(["REP01", "REP02"], await db.ReportingSalesReps.OrderBy(rep => rep.SalesRepId).Select(rep => rep.SalesRepId).ToListAsync());
+    }
+
+    [Fact]
+    public async Task The_report_view_follows_the_workbook_rules_and_lists_the_rest_apart()
+    {
+        _source.Set(March,
+            SellInRowParserTests.Row(reference: "IN000001", amount: "100.00"),
+            SellInRowParserTests.Row(type: "CRM", reference: "CM000001", amount: "30.00"),
+            SellInRowParserTests.Row(type: "DRM", reference: "DM000001", amount: "5.00"),
+            SellInRowParserTests.Row(reference: "IN000002", item: "SAMPLE", itemClass: null, amount: "250.00"),
+            SellInRowParserTests.Row(reference: "IN000003", customer: "C0002", rep: null, amount: "10.00"));
+        _customerReps.Set(new CustomerSalesRep("C0001", "REP02", "Second Rep"));
+
+        await RunAsync(March, March);
+
+        await using var db = CreateDbContext();
+        var report = await db.SellInReportLines.OrderBy(line => line.ReferenceNumber).ToListAsync();
+        Assert.Equal(["CM000001", "IN000001", "IN000003"], report.Select(line => line.ReferenceNumber));
+        Assert.Equal(80.00m, report.Sum(line => line.Amount));
+        var invoice = report.Single(line => line.ReferenceNumber == "IN000001");
+        Assert.Equal("REP02", invoice.SalesRepId);
+        Assert.Equal("Second Rep", invoice.SalesRepName);
+        Assert.Equal("REP01", invoice.SalesRepAtSaleId);
+        Assert.Equal("Example Rep", invoice.SalesRepAtSaleName);
+        Assert.Equal("Example Retail", invoice.CustomerClassName);
+        Assert.Equal("Energy Bars", invoice.ItemClassName);
+        // A line with no rep stays in the report.
+        Assert.Null(report.Single(line => line.ReferenceNumber == "IN000003").SalesRepId);
+
+        var excluded = await db.SellInExcludedLines.OrderBy(line => line.ReferenceNumber).ToListAsync();
+        Assert.Equal(["DM000001", "IN000002"], excluded.Select(line => line.ReferenceNumber));
+        Assert.Equal(["debit-memo", "no-item-class"], excluded.Select(line => line.Reason));
+    }
+
+    [Fact]
+    public async Task A_failed_customer_list_read_fails_the_run_and_keeps_the_lines()
+    {
+        _source.Set(March, SellInRowParserTests.Row(reference: "IN000001"));
+        _customerReps.Fail(new SellInReadException("Acumatica answered 500"));
+
+        await Assert.ThrowsAsync<SellInReadException>(() => RunAsync(March, March));
+
+        await using var db = CreateDbContext();
+        Assert.Equal("IN000001", (await db.SellInLines.SingleAsync()).ReferenceNumber);
+        var run = await db.IntegrationRuns.SingleAsync();
+        Assert.Equal(IntegrationRunStatuses.Failed, run.Status);
+        Assert.Equal("sell-in-customer-reps-failed", run.ErrorCode);
     }
 
     [Fact]
@@ -161,6 +249,7 @@ public sealed class SellInSyncServiceTests : IAsyncLifetime
     private SellInSyncService CreateService(bool enabled, PvmDbContext db) => new(
         db,
         _source,
+        _customerReps,
         Options.Create(new SellInSyncOptions { Enabled = enabled }),
         new ConfigurationBuilder().Build(),
         TimeProvider.System,
@@ -169,6 +258,19 @@ public sealed class SellInSyncServiceTests : IAsyncLifetime
 
     private PvmDbContext CreateDbContext() => new(
         new DbContextOptionsBuilder<PvmDbContext>().UseNpgsql(_postgres.GetConnectionString()).Options);
+
+    private sealed class FakeCustomerReps : ICustomerSalesRepSource
+    {
+        private IReadOnlyList<CustomerSalesRep> _customers = [];
+        private Exception? _failure;
+
+        public void Set(params CustomerSalesRep[] customers) => _customers = customers;
+
+        public void Fail(Exception exception) => _failure = exception;
+
+        public Task<IReadOnlyList<CustomerSalesRep>> ReadAllAsync(CancellationToken cancellationToken) =>
+            _failure is null ? Task.FromResult(_customers) : throw _failure;
+    }
 
     private sealed class FakeSource : ISellInSource
     {

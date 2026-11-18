@@ -26,11 +26,13 @@ public sealed record SellInSyncResult(
 /// Loads Acumatica sell-in into the reporting schema, one posting period at a time. Each period
 /// replaces the lines held for it, in one transaction, so a line deleted or moved in Acumatica
 /// does not stay behind. The run stops at the first period that fails, records the failure, and
-/// rethrows, so that the scheduler shows a failed run.
+/// rethrows, so that the scheduler shows a failed run. After the periods, the run reads the
+/// current rep of each customer, because the sales report groups by it.
 /// </summary>
 public sealed class SellInSyncService(
     PvmDbContext db,
     ISellInSource source,
+    ICustomerSalesRepSource customerReps,
     IOptions<SellInSyncOptions> options,
     IConfiguration configuration,
     TimeProvider timeProvider,
@@ -114,6 +116,20 @@ public sealed class SellInSyncService(
             throw;
         }
 
+        try
+        {
+            await RefreshCustomerRepsAsync(run.Id, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            // The lines of the periods stay loaded. The reps of the last good run stay too.
+            await CompleteRunAsync(run, IntegrationRunStatuses.Failed, rowsRead, written, skipped,
+                "sell-in-customer-reps-failed",
+                $"Customer list: {exception.Message}",
+                CancellationToken.None);
+            throw;
+        }
+
         await CompleteRunAsync(run, IntegrationRunStatuses.Succeeded, rowsRead, written, skipped, null, null, cancellationToken);
         return new SellInSyncResult(run.Id, from, to, periods, rowsRead, written, skipped);
     }
@@ -153,7 +169,7 @@ public sealed class SellInSyncService(
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
         await db.SellInLines.Where(line => line.PostPeriod == postPeriod).ExecuteDeleteAsync(cancellationToken);
-        db.SellInLines.AddRange(read.Rows.Select(row => ToLine(row, postPeriod, now)));
+        db.SellInLines.AddRange(read.Rows.Select(row => ToLine(row, read.Period, now)));
         await UpsertDimensionsAsync(read.Rows, now, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
@@ -162,9 +178,10 @@ public sealed class SellInSyncService(
         return read.Rows.Count;
     }
 
-    private static SellInLineEntity ToLine(SellInRow row, string postPeriod, DateTimeOffset now)
+    private static SellInLineEntity ToLine(SellInRow row, PostingPeriod period, DateTimeOffset now)
     {
-        var month = FinancialMonth.FromDate(row.DocumentDate);
+        // The month is the posting period, not the month of the document date. PVM closes a
+        // period near the 25th, and the sales workbook counts a sale in its posting period.
         return new SellInLineEntity
         {
             Id = Guid.NewGuid(),
@@ -172,9 +189,9 @@ public sealed class SellInSyncService(
             ReferenceNumber = row.ReferenceNumber,
             LineNumber = row.LineNumber,
             DocumentDate = row.DocumentDate,
-            FinancialYear = month.FinancialYear,
-            FinancialMonth = month.Number,
-            PostPeriod = postPeriod,
+            FinancialYear = period.FinancialYear,
+            FinancialMonth = period.Number,
+            PostPeriod = period.InternalId,
             CustomerId = row.CustomerId,
             SalesRepId = row.SalesRepId,
             InventoryId = row.InventoryId,
@@ -275,6 +292,58 @@ public sealed class SellInSyncService(
             location.LocationName = row.LocationName;
             location.UpdatedAt = now;
         }
+    }
+
+    private async Task RefreshCustomerRepsAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        var current = await customerReps.ReadAllAsync(cancellationToken);
+        var byCustomer = current
+            .GroupBy(customer => customer.CustomerId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+        var now = timeProvider.GetUtcNow();
+        var changed = 0;
+        // Only the customers with sales are in the reporting schema. The others do not matter here.
+        var customers = await db.ReportingCustomers.ToListAsync(cancellationToken);
+        foreach (var customer in customers)
+        {
+            // A customer missing from the list keeps its last known rep.
+            if (byCustomer.TryGetValue(customer.CustomerId, out var known) && customer.CurrentSalesRepId != known.SalesRepId)
+            {
+                customer.CurrentSalesRepId = known.SalesRepId;
+                customer.UpdatedAt = now;
+                changed++;
+            }
+        }
+
+        // A current rep that sold nothing in the loaded periods still needs its name.
+        var names = current
+            .Where(customer => customer.SalesRepId is not null)
+            .GroupBy(customer => customer.SalesRepId!)
+            .ToDictionary(group => group.Key, group => group.First().SalesRepName);
+        var repIds = customers.Select(customer => customer.CurrentSalesRepId).OfType<string>().Distinct().ToList();
+        var knownReps = await db.ReportingSalesReps
+            .Where(rep => repIds.Contains(rep.SalesRepId))
+            .Select(rep => rep.SalesRepId)
+            .ToListAsync(cancellationToken);
+        foreach (var repId in repIds.Except(knownReps))
+        {
+            db.ReportingSalesReps.Add(new ReportingSalesRepEntity
+            {
+                SalesRepId = repId,
+                Name = names.GetValueOrDefault(repId) ?? repId,
+                UpdatedAt = now
+            });
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        db.ChangeTracker.Clear();
+        logger.LogInformation(
+            "sell-in.customer-reps.loaded RunId={RunId} Customers={Customers} Read={Read} Changed={Changed}",
+            runId,
+            customers.Count,
+            current.Count,
+            changed);
     }
 
     private async Task<IntegrationRunEntity> StartRunAsync(

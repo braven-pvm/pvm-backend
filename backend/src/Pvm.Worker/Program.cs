@@ -7,6 +7,7 @@ using Pvm.Domain.Reporting;
 using Pvm.Infrastructure.Acumatica;
 using Pvm.Infrastructure.Documents;
 using Pvm.Infrastructure.Reporting;
+using Pvm.Infrastructure.Reporting.SellOut;
 using Pvm.Infrastructure.Messaging;
 using Pvm.Infrastructure.Operations;
 using Pvm.Infrastructure.PayloadArchive;
@@ -36,6 +37,36 @@ var syncWooCommerceStock = args.Contains(
 var syncSellIn = args.Contains(
     "--sync-sell-in",
     StringComparer.OrdinalIgnoreCase);
+var refreshProductGtins = args.Contains(
+    "--refresh-product-gtins",
+    StringComparer.OrdinalIgnoreCase);
+
+if (refreshProductGtins)
+{
+    // Reads the GTINs of the Acumatica stock items, then maps the sell-out rows that waited for them.
+    builder.Services.AddAcumaticaInvoiceSource(builder.Configuration);
+    builder.Services.AddProductGtinRefresh();
+
+    using var gtinHost = builder.Build();
+    await using var gtinScope = gtinHost.Services.CreateAsyncScope();
+    var gtinLogger = gtinScope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("ProductGtinRefresh");
+    try
+    {
+        var result = await gtinScope.ServiceProvider.GetRequiredService<ProductGtinRefreshService>().RefreshAsync(CancellationToken.None);
+        gtinLogger.LogInformation(
+            "integration.run.completed RunType=product-gtin-refresh Gtins={Gtins} Ambiguous={Ambiguous} ProductsMapped={Mapped}",
+            result.Gtins,
+            result.Ambiguous.Count,
+            result.ProductsMapped);
+    }
+    catch (Exception exception)
+    {
+        gtinLogger.LogError(exception, "integration.run.failed RunType=product-gtin-refresh");
+        throw;
+    }
+
+    return;
+}
 
 if (syncSellIn)
 {
@@ -166,52 +197,7 @@ if (syncWooCommerceStock)
 
     using var stockHost = builder.Build();
     await using var stockScope = stockHost.Services.CreateAsyncScope();
-    var stockLogger = stockScope.ServiceProvider
-        .GetRequiredService<ILoggerFactory>()
-        .CreateLogger("WooCommerceStockSync");
-    var stockSync = stockScope.ServiceProvider.GetRequiredService<StockSyncService>();
-    var stockRecorder = stockScope.ServiceProvider.GetRequiredService<StockSyncRunRecorder>();
-    var stockMode = stockScope.ServiceProvider.GetRequiredService<IOptions<StockSyncOptions>>().Value.Mode;
-    var stockStarted = DateTimeOffset.UtcNow;
-    string? stockFailure;
-
-    try
-    {
-        var result = await stockSync.RunAsync(CancellationToken.None);
-        await stockRecorder.RecordAsync(result, stockStarted, CancellationToken.None);
-        stockLogger.LogInformation(
-            "integration.run.completed RunType=woocommerce-stock-sync Mode={Mode} Items={Items} Updates={Updates} Unchanged={Unchanged} Skipped={Skipped} Written={Written} Refusal={Refusal}",
-            result.Mode,
-            result.Lines.Count,
-            result.Updates,
-            result.Unchanged,
-            result.Skipped,
-            result.Written,
-            result.Refusal ?? string.Empty);
-        stockFailure = result.Failure;
-    }
-    catch (Exception exception)
-    {
-        // Rethrow so that the Container Apps job reports a failed replica.
-        stockLogger.LogError(exception, "integration.run.failed RunType=woocommerce-stock-sync");
-        try
-        {
-            await stockRecorder.RecordFailureAsync(stockMode, stockStarted, exception, CancellationToken.None);
-        }
-        catch (Exception recordException)
-        {
-            stockLogger.LogError(recordException, "stock.sync.record.failed");
-        }
-
-        throw;
-    }
-
-    if (stockFailure is not null)
-    {
-        // The run is recorded with what it wrote. Fail the replica so the job shows the failure.
-        throw new InvalidOperationException(stockFailure);
-    }
-
+    await stockScope.ServiceProvider.GetRequiredService<StockSyncJob>().RunAsync(CancellationToken.None);
     return;
 }
 

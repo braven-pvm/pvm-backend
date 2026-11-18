@@ -142,7 +142,7 @@ export default async function StockPage() {
       header={{
         eyebrow: "Operations",
         title: "Stock",
-        description: "Stock levels from Acumatica to the web store, every 30 minutes, worked out as on the inventory lite sheet. A level under 5 shows as out of stock.",
+        description: "Stock levels from Acumatica to the web store, every 30 minutes, worked out as on the inventory lite sheet. A level of 5 or less shows as out of stock.",
       }}
       notice={modeNotice(run)}
       attention={{

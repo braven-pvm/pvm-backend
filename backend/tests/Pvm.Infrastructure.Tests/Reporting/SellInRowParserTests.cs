@@ -16,11 +16,12 @@ public sealed class SellInRowParserTests
         string amount = "120.50",
         string quantity = "2",
         string? rep = "REP01",
-        string location = "FG") => $$"""
+        string location = "FG",
+        string? itemClass = "BARS") => $$"""
         {
           "TranType": "{{type}}", "RefNbr": "{{reference}}", "LineNbr": {{line}},
           "CustomerID": "{{customer}}", "CustomerClassID": "RETAIL", "SalesRepID": {{(rep is null ? "null" : $"\"{rep}\"")}},
-          "InventoryID": "{{item}}", "ItemClassID": "BARS", "WarehouseID": "HO", "LocationID": "{{location}}",
+          "InventoryID": "{{item}}", "ItemClassID": {{(itemClass is null ? "null" : $"\"{itemClass}\"")}}, "WarehouseID": "HO", "LocationID": "{{location}}",
           "TranDate": "{{date}}", "TranPeriodID": "012025", "FinPeriodID": "012025",
           "CustomerName": "Example Store", "CustomerClassName": "Example Retail", "Province": "GP",
           "SalesRepName": "Example Rep", "ItemDescription": "Example Bar 20x45g", "ItemClassName": "Energy Bars",

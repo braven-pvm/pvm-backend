@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createUser, updateUserRoles, updateUserStatus } from "../src/api/admin";
+import { importSellOutFile, mapSellOutProduct, previewSellOutFile } from "../src/api/sell-out";
 import {
   refreshInvoiceCandidates,
   refreshPurchaseOrders,
@@ -350,4 +351,44 @@ function requiredAutomationMode(formData: FormData, key: string): AutomationMode
     throw new Error(`${key} is invalid.`);
   }
   return value as AutomationMode;
+}
+
+export async function previewSellOutFileAction(formData: FormData) {
+  const file = readStatementFile(formData);
+  if (!file) {
+    return { ok: false as const, message: "Choose a file first." };
+  }
+
+  try {
+    return { ok: true as const, result: await previewSellOutFile(file) };
+  } catch (error) {
+    return { ok: false as const, message: error instanceof Error ? error.message : "The file could not be read." };
+  }
+}
+
+export async function importSellOutFileAction(formData: FormData) {
+  const file = readStatementFile(formData);
+  if (!file) {
+    return { ok: false as const, message: "Choose a file first." };
+  }
+
+  try {
+    const result = await importSellOutFile(file);
+    revalidatePath("/sell-out");
+    return { ok: true as const, result };
+  } catch (error) {
+    return { ok: false as const, message: error instanceof Error ? error.message : "The file could not be loaded." };
+  }
+}
+
+export async function mapSellOutProductAction(formData: FormData) {
+  const units = formData.get("unitsPerEach");
+  await mapSellOutProduct({
+    source: requiredString(formData, "source"),
+    productCode: requiredString(formData, "productCode"),
+    inventoryId: requiredString(formData, "inventoryId"),
+    unitsPerEach: typeof units === "string" && units.trim().length > 0 ? Number(units) : undefined,
+  });
+  revalidatePath("/sell-out");
+  revalidatePath("/sell-out/mapping");
 }

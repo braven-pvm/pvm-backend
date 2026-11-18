@@ -15,7 +15,7 @@ public enum StockSyncMode
 
 /// <summary>
 /// Configuration for the Acumatica → WooCommerce stock sync. The defaults reproduce the "current
-/// stock" sheet of inventory lite.xlsm for warehouse HO, location FG, with a published minimum of 5.
+/// stock" sheet of inventory lite.xlsm for warehouse HO, location FG, out of stock at a level of 5 or less.
 /// </summary>
 public sealed record StockSyncOptions
 {
@@ -29,8 +29,8 @@ public sealed record StockSyncOptions
     /// <summary>The location inside that warehouse.</summary>
     public string LocationId { get; init; } = "FG";
 
-    /// <summary>Below this level the store shows no stock.</summary>
-    public int MinimumPublishedQuantity { get; init; } = 5;
+    /// <summary>At or below this level the store shows the product as out of stock.</summary>
+    public int OutOfStockAtOrBelow { get; init; } = 5;
 
     /// <summary>How far back a sales order with no confirmed shipment still holds stock.</summary>
     public int OpenOrderLookbackDays { get; init; } = 45;
@@ -63,6 +63,12 @@ public sealed record StockSyncOptions
     /// or allocated quantity and the open orders, and their transfers count at every location.
     /// </summary>
     public string[] WarehouseRulePrefixes { get; init; } = ["PROT", "SUPL", "REPL"];
+
+    /// <summary>
+    /// Variations that take their stock from the parent product in the web store, but must hold
+    /// their own level. The sync turns on their own stock and sets it, as for any other item.
+    /// </summary>
+    public string[] OwnStockVariations { get; init; } = [];
 
     /// <summary>The UTC offset Acumatica stores order dates in. South Africa has no daylight saving.</summary>
     public string AcumaticaUtcOffset { get; init; } = "+02:00";

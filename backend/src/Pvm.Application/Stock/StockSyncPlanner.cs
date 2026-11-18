@@ -10,7 +10,8 @@ public static class StockSyncPlanner
         IReadOnlyList<WebStockItem> webItems,
         AcumaticaStockSnapshot snapshot,
         IReadOnlyDictionary<string, decimal> webPending,
-        int minimumPublished)
+        int outOfStockAtOrBelow,
+        IReadOnlySet<string>? ownStockVariations = null)
     {
         ArgumentNullException.ThrowIfNull(webItems);
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -20,7 +21,8 @@ public static class StockSyncPlanner
         foreach (var item in webItems)
         {
             var pending = webPending.GetValueOrDefault(item.Sku);
-            lines.Add(PlanOne(item, snapshot, pending, minimumPublished));
+            var takeOwnStock = item.Management == WebStockManagement.Parent && ownStockVariations?.Contains(item.Sku) == true;
+            lines.Add(PlanOne(item, snapshot, pending, outOfStockAtOrBelow, takeOwnStock));
         }
 
         return lines;
@@ -30,14 +32,15 @@ public static class StockSyncPlanner
         WebStockItem item,
         AcumaticaStockSnapshot snapshot,
         decimal pending,
-        int minimumPublished)
+        int outOfStockAtOrBelow,
+        bool takeOwnStock)
     {
         if (item.Management == WebStockManagement.None)
         {
             return Skip(item, pending, "the web store does not track stock for this item");
         }
 
-        if (item.Management == WebStockManagement.Parent)
+        if (item.Management == WebStockManagement.Parent && !takeOwnStock)
         {
             return Skip(item, pending, "this variation takes its stock from the parent product");
         }
@@ -58,8 +61,10 @@ public static class StockSyncPlanner
         }
 
         var level = StockLevelCalculator.AcumaticaLevel(figures) - pending;
-        var quantity = StockLevelCalculator.PublishedQuantity(level, minimumPublished);
-        var action = quantity == item.CurrentQuantity ? StockSyncAction.Unchanged : StockSyncAction.Update;
+        var quantity = StockLevelCalculator.PublishedQuantity(level, outOfStockAtOrBelow);
+        // A variation that still takes the parent's stock reports the parent's quantity, so it is
+        // written once to give it its own stock, even when the numbers agree.
+        var action = quantity == item.CurrentQuantity && !takeOwnStock ? StockSyncAction.Unchanged : StockSyncAction.Update;
         return new StockSyncLine(item, action, quantity, level, pending, null, figures);
     }
 
