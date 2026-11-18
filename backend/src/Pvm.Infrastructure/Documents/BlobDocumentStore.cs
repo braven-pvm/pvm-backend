@@ -9,13 +9,20 @@ public sealed class BlobDocumentStore(
     BlobContainerClient container,
     string containerName) : IDocumentStore
 {
-    public async Task<StoredDocument> SaveAsync(
+    public Task<StoredDocument> SaveAsync(
         string blobPath,
         Stream pdf,
         CancellationToken cancellationToken)
+        => SaveAsync(blobPath, pdf, "application/pdf", cancellationToken);
+
+    public async Task<StoredDocument> SaveAsync(
+        string blobPath,
+        Stream content,
+        string contentType,
+        CancellationToken cancellationToken)
     {
         var blob = container.GetBlobClient(DocumentStorePath.WithinContainer(blobPath, containerName));
-        var bytes = await DocumentStorePath.ReadAllAsync(pdf, cancellationToken);
+        var bytes = await DocumentStorePath.ReadAllAsync(content, cancellationToken);
         var hash = DocumentStorePath.Sha256(bytes);
 
         try
@@ -25,7 +32,7 @@ public sealed class BlobDocumentStore(
                 new BlobUploadOptions
                 {
                     Conditions = new BlobRequestConditions { IfNoneMatch = ETag.All },
-                    HttpHeaders = new BlobHttpHeaders { ContentType = "application/pdf" },
+                    HttpHeaders = new BlobHttpHeaders { ContentType = contentType },
                     Metadata = new Dictionary<string, string> { ["sha256"] = hash }
                 },
                 cancellationToken);

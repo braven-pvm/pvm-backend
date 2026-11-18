@@ -67,5 +67,32 @@ public sealed class CapturedDocumentEntity
 
     public string? RejectedBy { get; set; }
 
+    /// <summary>The title typed on the phone (general documents only, at most 120 characters).</summary>
+    public string? Title { get; set; }
+
+    /// <summary>The note typed on the phone (general documents and POD, at most 1000 characters).</summary>
+    public string? Note { get; set; }
+
+    /// <summary>A general document's title as Claude read it; kept apart from the typed title (design 6.12).</summary>
+    public string? AutoTitle { get; set; }
+
+    /// <summary>A general document's one-sentence summary as Claude read it.</summary>
+    public string? Summary { get; set; }
+
+    /// <summary>The date printed on a general document, when Claude found one.</summary>
+    public DateOnly? DocumentDate { get; set; }
+
+    /// <summary>Up to 10 search words Claude read from a general document, as they are shown.</summary>
+    public string[]? SearchWords { get; set; }
+
+    /// <summary>
+    /// The lower-case text the General scans search matches: title, note, automatic title, summary
+    /// and search words, one per line. Written at upload and again when the document is read.
+    /// </summary>
+    public string? SearchText { get; set; }
+
+    /// <summary>A small JPEG of the first page from the phone, next to the PDF: <c>{pdf path without .pdf}.thumb.jpg</c>.</summary>
+    public string? ThumbnailBlobPath { get; set; }
+
     public DateTimeOffset UpdatedAt { get; set; }
 }

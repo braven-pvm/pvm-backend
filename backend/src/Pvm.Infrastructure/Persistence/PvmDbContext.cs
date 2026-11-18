@@ -574,6 +574,13 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(document => document.RejectedBy).HasMaxLength(320);
             entity.Property(document => document.ReviewNote).HasMaxLength(2048);
             entity.Property(document => document.ScannerStaffName).HasMaxLength(100);
+            entity.Property(document => document.Title).HasMaxLength(120);
+            entity.Property(document => document.Note).HasMaxLength(1000);
+            entity.Property(document => document.AutoTitle).HasMaxLength(80);
+            entity.Property(document => document.Summary).HasMaxLength(500);
+            entity.Property(document => document.ThumbnailBlobPath).HasMaxLength(512);
+            // The General scans list: one type, newest first.
+            entity.HasIndex(document => new { document.DocumentType, document.UploadedAt });
             entity.HasOne<ScannerDeviceEntity>()
                 .WithMany()
                 .HasForeignKey(document => document.ScannerDeviceId)

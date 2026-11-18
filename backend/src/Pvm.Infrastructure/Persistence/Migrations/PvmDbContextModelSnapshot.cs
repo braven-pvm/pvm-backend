@@ -312,6 +312,10 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("AcumaticaAttachedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("AutoTitle")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
                     b.Property<string>("BlobPath")
                         .IsRequired()
                         .HasMaxLength(512)
@@ -319,6 +323,9 @@ namespace Pvm.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("ClientDocumentId")
                         .HasColumnType("uuid");
+
+                    b.Property<DateOnly?>("DocumentDate")
+                        .HasColumnType("date");
 
                     b.Property<string>("DocumentType")
                         .IsRequired()
@@ -339,6 +346,10 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                     b.Property<string>("MatchedReference")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<int>("PageCount")
                         .HasColumnType("integer");
@@ -375,6 +386,12 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("SearchText")
+                        .HasColumnType("text");
+
+                    b.PrimitiveCollection<string[]>("SearchWords")
+                        .HasColumnType("text[]");
+
                     b.Property<string>("Sha256")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -387,6 +404,18 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Summary")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("ThumbnailBlobPath")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("Title")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -409,6 +438,8 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                     b.HasIndex("ScannerDeviceId");
 
                     b.HasIndex("ScannerStaffId");
+
+                    b.HasIndex("DocumentType", "UploadedAt");
 
                     b.ToTable("captured_documents", (string)null);
                 });

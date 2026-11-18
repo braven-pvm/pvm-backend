@@ -13,10 +13,15 @@ namespace Pvm.Api.Features.Documents;
 /// <summary>
 /// The workbench's Documents page and review list (design 6.8, 6.9):
 /// <list type="bullet">
-///   <item><c>GET /api/documents</c> — search, newest first, pages of 50.</item>
+///   <item><c>GET /api/documents</c> — search, newest first, pages of 50. Without <c>type</c> it
+///   searches POD only; <c>type=GENERAL</c> searches the general documents.</item>
 ///   <item><c>GET /api/documents/review</c> — the open review list, oldest first: NeedsReview and
-///   Failed documents that are not rejected, and Received or Processing ones that are stuck.</item>
-///   <item><c>GET /api/documents/{id}</c> and <c>/{id}/file</c> — one document and its PDF.</item>
+///   Failed documents that are not rejected, and Received or Processing ones that are stuck. General
+///   documents are never on it.</item>
+///   <item><c>GET /api/documents/{id}</c>, <c>/{id}/file</c> and <c>/{id}/thumbnail</c> — one
+///   document, its PDF, and the phone's JPEG of the first page (404 when there is none).</item>
+///   <item><c>GET /api/documents/general</c> and <c>/general/filters</c> — the General scans list
+///   (design 6.12), in <see cref="GeneralDocumentEndpoints"/>.</item>
 ///   <item><c>GET /api/documents/review/invoice-search</c>, <c>POST /{id}/file-to</c> and
 ///   <c>POST /{id}/reject</c> — the review actions.</item>
 ///   <item><c>POST /{id}/return-to-review</c> — takes a wrongly filed document, not yet attached in
@@ -40,6 +45,8 @@ public static class DocumentReviewEndpoints
         group.MapGet("/review/invoice-search", InvoiceSearchAsync).RequireAuthorization("Invoices.Write");
         group.MapGet("/{id:guid}", DetailAsync).RequireAuthorization("Invoices.Read");
         group.MapGet("/{id:guid}/file", FileAsync).RequireAuthorization("Invoices.Read");
+        group.MapGet("/{id:guid}/thumbnail", ThumbnailAsync).RequireAuthorization("Invoices.Read");
+        GeneralDocumentEndpoints.Map(group);
         group.MapPost("/{id:guid}/file-to", FileToAsync).RequireAuthorization("Invoices.Write");
         group.MapPost("/{id:guid}/reject", RejectAsync).RequireAuthorization("Invoices.Write");
         group.MapPost("/{id:guid}/return-to-review", ReturnToReviewAsync).RequireAuthorization("Invoices.Write");
@@ -85,11 +92,9 @@ public static class DocumentReviewEndpoints
             query = query.Where(item => item.MatchedCustomerName != null && item.MatchedCustomerName.ToLower().Contains(name));
         }
 
-        if (!string.IsNullOrWhiteSpace(type))
-        {
-            var code = type.Trim().ToUpperInvariant();
-            query = query.Where(item => item.DocumentType.ToUpper() == code);
-        }
+        // The Documents page is the POD search: general documents have their own list (design 6.12).
+        var code = string.IsNullOrWhiteSpace(type) ? DocumentTypeCodes.Pod : type.Trim().ToUpperInvariant();
+        query = query.Where(item => item.DocumentType.ToUpper() == code);
 
         if (!string.IsNullOrWhiteSpace(state))
         {
@@ -141,6 +146,7 @@ public static class DocumentReviewEndpoints
         var stuckBefore = DateTimeOffset.UtcNow - DocumentReviewService.StuckAfter;
         var query = dbContext.CapturedDocuments
             .AsNoTracking()
+            .Where(item => item.DocumentType != DocumentTypeCodes.General)
             .Where(item =>
                 ((item.State == DocumentState.NeedsReview || item.State == DocumentState.Failed) && item.RejectedAt == null)
                 || ((item.State == DocumentState.Received || item.State == DocumentState.Processing) && item.UploadedAt < stuckBefore));
@@ -204,6 +210,7 @@ public static class DocumentReviewEndpoints
             stuck = IsStuck(document, stuckBefore),
             // The delete rule (design 6.11), so the workbench shows Delete without repeating it.
             canDelete = DocumentReviewService.DeleteCheck(
+                document.DocumentType,
                 document.State,
                 document.AcumaticaAttachedAt,
                 document.UploadedAt,
@@ -225,6 +232,14 @@ public static class DocumentReviewEndpoints
             rejectedBy = document.RejectedBy,
             rejectedAt = document.RejectedAt,
             updatedAt = document.UpdatedAt,
+            // Typed on the phone; for a general document also what Claude read (design 6.12).
+            title = document.Title,
+            note = document.Note,
+            autoTitle = document.AutoTitle,
+            summary = document.Summary,
+            documentDate = document.DocumentDate,
+            searchWords = document.SearchWords ?? [],
+            hasThumbnail = document.ThumbnailBlobPath != null,
             extraction,
             unreadableReason,
             candidates,
@@ -253,6 +268,38 @@ public static class DocumentReviewEndpoints
         var pdf = await documentStore.OpenReadAsync(document.BlobPath, cancellationToken);
         httpContext.Response.Headers.ContentDisposition = $"inline; filename=\"{document.DocumentType}-{id:D}.pdf\"";
         return Results.Stream(pdf, "application/pdf");
+    }
+
+    private static async Task<IResult> ThumbnailAsync(
+        Guid id,
+        HttpContext httpContext,
+        PvmDbContext dbContext,
+        IDocumentStore documentStore,
+        CancellationToken cancellationToken)
+    {
+        var path = await dbContext.CapturedDocuments
+            .AsNoTracking()
+            .Where(item => item.Id == id)
+            .Select(item => item.ThumbnailBlobPath)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (path is null)
+        {
+            return Results.Problem("The document has no thumbnail.", statusCode: StatusCodes.Status404NotFound);
+        }
+
+        Stream jpeg;
+        try
+        {
+            jpeg = await documentStore.OpenReadAsync(path, cancellationToken);
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException
+            or Azure.RequestFailedException { Status: 404 })
+        {
+            return Results.Problem("The document has no thumbnail.", statusCode: StatusCodes.Status404NotFound);
+        }
+
+        httpContext.Response.Headers.CacheControl = "private, max-age=300";
+        return Results.Stream(jpeg, "image/jpeg");
     }
 
     private static async Task<IResult> InvoiceSearchAsync(
@@ -452,7 +499,7 @@ public static class DocumentReviewEndpoints
     };
 
     /// <summary>The current names of the scanner devices that uploaded these documents (design 6.10).</summary>
-    private static async Task<IReadOnlyDictionary<Guid, string>> DeviceNamesAsync(
+    internal static async Task<IReadOnlyDictionary<Guid, string>> DeviceNamesAsync(
         PvmDbContext dbContext,
         IReadOnlyCollection<CapturedDocumentEntity> documents,
         CancellationToken cancellationToken)
@@ -473,7 +520,7 @@ public static class DocumentReviewEndpoints
             .ToDictionaryAsync(device => device.Id, device => device.Name, cancellationToken);
     }
 
-    private static string? DeviceName(CapturedDocumentEntity document, IReadOnlyDictionary<Guid, string> deviceNames)
+    internal static string? DeviceName(CapturedDocumentEntity document, IReadOnlyDictionary<Guid, string> deviceNames)
         => document.ScannerDeviceId is { } id && deviceNames.TryGetValue(id, out var name) ? name : null;
 
     private static bool IsStuck(CapturedDocumentEntity item, DateTimeOffset stuckBefore)
@@ -526,7 +573,7 @@ public static class DocumentReviewEndpoints
         return (fields.Count == 0 ? null : fields, unreadable, candidates);
     }
 
-    private static IResult BadRequest(string detail)
+    internal static IResult BadRequest(string detail)
         => Results.Problem(detail, statusCode: StatusCodes.Status400BadRequest);
 
     private static IResult Conflict(string detail)

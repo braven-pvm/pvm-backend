@@ -24,6 +24,7 @@ public static class ServiceCollectionExtensions
         var options = section.Get<DocumentCaptureOptions>() ?? new DocumentCaptureOptions();
         services.Configure<DocumentCaptureOptions>(section);
         services.AddSingleton<IDocumentType, ProofOfDeliveryDocumentType>();
+        services.AddSingleton<IDocumentType, GeneralDocumentType>();
         services.Configure<AnthropicOptions>(configuration.GetSection(AnthropicOptions.SectionName));
         services.AddSingleton<IDocumentExtractor>(sp =>
             new ClaudeDocumentExtractor(

@@ -660,6 +660,357 @@ public sealed class DocumentReviewEndpointsTests : IAsyncLifetime
         Assert.Equal(state, (await LoadAsync(id)).State);
     }
 
+
+    [Fact]
+    public async Task GeneralList_NewestFirst_OnlyGeneral_WithTheGeneralFields()
+    {
+        var client = await StartAsync();
+        var now = DateTimeOffset.UtcNow;
+        var older = await SeedGeneralAsync(uploadedAt: now.AddDays(-2), title: "Fleet licence", note: "Keep for SARS");
+        var newer = await SeedGeneralAsync(
+            uploadedAt: now.AddHours(-1),
+            autoTitle: "Eskom statement, October",
+            summary: "Electricity account for October.",
+            documentDate: new DateOnly(2026, 10, 31),
+            searchWords: ["Eskom", "4410"],
+            thumbnail: true);
+        await SeedAsync(DocumentState.Filed, uploadedAt: now, matchedReference: "INV1");
+
+        var response = await client.SendAsync(Get("/api/documents/general", AppRoles.Viewer));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = body.GetProperty("items").EnumerateArray().ToList();
+        Assert.Equal([newer, older], items.Select(item => item.GetProperty("id").GetGuid()));
+        Assert.Equal(2, body.GetProperty("total").GetInt32());
+        Assert.Equal(50, body.GetProperty("pageSize").GetInt32());
+        var first = items[0];
+        Assert.Equal("Filed", first.GetProperty("state").GetString());
+        Assert.Equal(JsonValueKind.Null, first.GetProperty("title").ValueKind);
+        Assert.Equal("Eskom statement, October", first.GetProperty("autoTitle").GetString());
+        Assert.Equal("Electricity account for October.", first.GetProperty("summary").GetString());
+        Assert.Equal("2026-10-31", first.GetProperty("documentDate").GetString());
+        Assert.Equal(["Eskom", "4410"], first.GetProperty("searchWords").EnumerateArray().Select(word => word.GetString()));
+        Assert.True(first.GetProperty("hasThumbnail").GetBoolean());
+        Assert.Equal("Dispatch phone 1", first.GetProperty("scannerDeviceName").GetString());
+        Assert.Equal("Thabo", first.GetProperty("scannerStaffName").GetString());
+        Assert.Equal("Fleet licence", items[1].GetProperty("title").GetString());
+        Assert.Equal("Keep for SARS", items[1].GetProperty("note").GetString());
+        Assert.False(items[1].GetProperty("hasThumbnail").GetBoolean());
+        Assert.False(first.TryGetProperty("searchText", out _));
+        Assert.False(first.TryGetProperty("blobPath", out _));
+    }
+
+    [Theory]
+    [InlineData("FLEET", "title")]
+    [InlineData("eskom statement", "autoTitle")]
+    [InlineData("electricity ACCOUNT", "summary")]
+    [InlineData("4410", "searchWords")]
+    [InlineData("sars", "note")]
+    public async Task GeneralList_Q_MatchesEachField_IgnoringCase(string q, string field)
+    {
+        var client = await StartAsync();
+        var match = field switch
+        {
+            "title" => await SeedGeneralAsync(title: "Fleet licence"),
+            "autoTitle" => await SeedGeneralAsync(autoTitle: "Eskom statement, October"),
+            "summary" => await SeedGeneralAsync(summary: "Electricity account for October."),
+            "searchWords" => await SeedGeneralAsync(searchWords: ["Eskom", "4410"]),
+            _ => await SeedGeneralAsync(note: "Keep for SARS"),
+        };
+        await SeedGeneralAsync(title: "Something else", note: "Nothing to see", searchWords: ["other"]);
+
+        var response = await client.SendAsync(Get($"/api/documents/general?q={Uri.EscapeDataString(q)}", AppRoles.Viewer));
+
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var item = Assert.Single(body.GetProperty("items").EnumerateArray());
+        Assert.Equal(match, item.GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task GeneralList_FiltersByDeviceStaffAndDates()
+    {
+        var client = await StartAsync();
+        var now = DateTimeOffset.UtcNow;
+        var phone2 = await SeedDeviceAsync("Dispatch phone 2");
+        var anna = await SeedStaffAsync("Anna");
+        var match = await SeedGeneralAsync(uploadedAt: now.AddDays(-3), deviceId: phone2, staffId: anna, staffName: "Anna");
+        await SeedGeneralAsync(uploadedAt: now.AddDays(-3));
+        await SeedGeneralAsync(uploadedAt: now.AddDays(-3), deviceId: phone2);
+        await SeedGeneralAsync(uploadedAt: now.AddDays(-10), deviceId: phone2, staffId: anna, staffName: "Anna");
+
+        var from = Uri.EscapeDataString(now.AddDays(-5).ToString("O"));
+        var to = Uri.EscapeDataString(now.AddDays(-1).ToString("O"));
+        var response = await client.SendAsync(Get(
+            $"/api/documents/general?device={phone2:D}&staff={anna:D}&from={from}&to={to}",
+            AppRoles.Viewer));
+
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var item = Assert.Single(body.GetProperty("items").EnumerateArray());
+        Assert.Equal(match, item.GetProperty("id").GetGuid());
+    }
+
+    [Theory]
+    [InlineData("device=not-a-guid")]
+    [InlineData("staff=not-a-guid")]
+    public async Task GeneralList_BadDeviceOrStaff_Returns400(string query)
+    {
+        var client = await StartAsync();
+
+        var response = await client.SendAsync(Get($"/api/documents/general?{query}", AppRoles.Viewer));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GeneralList_PagesOf50()
+    {
+        var client = await StartAsync();
+        var now = DateTimeOffset.UtcNow;
+        for (var index = 0; index < 51; index++)
+        {
+            await SeedGeneralAsync(uploadedAt: now.AddMinutes(-index));
+        }
+
+        var body = await (await client.SendAsync(Get("/api/documents/general?page=2", AppRoles.Viewer)))
+            .Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Single(body.GetProperty("items").EnumerateArray());
+        Assert.Equal(51, body.GetProperty("total").GetInt32());
+        Assert.Equal(2, body.GetProperty("page").GetInt32());
+    }
+
+    [Fact]
+    public async Task GeneralFilters_TheDevicesAndStaffOfGeneralDocuments_ByTheirCurrentNames()
+    {
+        var client = await StartAsync();
+        var phone2 = await SeedDeviceAsync("Dispatch phone 2");
+        var anna = await SeedStaffAsync("Anna");
+        await SeedGeneralAsync(deviceId: phone2, staffId: anna, staffName: "Ana");
+        await SeedGeneralAsync();
+        await SeedGeneralAsync();
+
+        var response = await client.SendAsync(Get("/api/documents/general/filters", AppRoles.Viewer));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(
+            ["Dispatch phone 1", "Dispatch phone 2"],
+            body.GetProperty("devices").EnumerateArray().Select(item => item.GetProperty("name").GetString()));
+        Assert.Equal(
+            ["Anna", "Thabo"],
+            body.GetProperty("staff").EnumerateArray().Select(item => item.GetProperty("name").GetString()));
+    }
+
+    [Fact]
+    public async Task GeneralEndpoints_Anonymous_Return401()
+    {
+        var client = await StartAsync();
+        var id = await SeedGeneralAsync(thumbnail: true);
+
+        foreach (var url in new[] { "/api/documents/general", "/api/documents/general/filters", $"/api/documents/{id:D}/thumbnail" })
+        {
+            var response = await client.GetAsync(url);
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task Search_DefaultsToPod_AndAnExplicitTypeGeneralStillWorks()
+    {
+        var client = await StartAsync();
+        var pod = await SeedAsync(DocumentState.Filed, matchedReference: "INV1");
+        var general = await SeedGeneralAsync();
+
+        var all = await (await client.SendAsync(Get("/api/documents", AppRoles.Viewer))).Content.ReadFromJsonAsync<JsonElement>();
+        var generalOnly = await (await client.SendAsync(Get("/api/documents?type=general", AppRoles.Viewer))).Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(pod, Assert.Single(all.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+        Assert.Equal(general, Assert.Single(generalOnly.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task ReviewList_LeavesOutGeneralDocuments_EvenFailedOrStuck()
+    {
+        var client = await StartAsync();
+        var now = DateTimeOffset.UtcNow;
+        var pod = await SeedAsync(DocumentState.Failed, uploadedAt: now.AddHours(-2));
+        await SeedGeneralAsync(state: DocumentState.Failed, uploadedAt: now.AddHours(-2));
+        await SeedGeneralAsync(state: DocumentState.Processing, uploadedAt: now.AddHours(-2));
+
+        var body = await (await client.SendAsync(Get("/api/documents/review", AppRoles.Viewer))).Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(pod, Assert.Single(body.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task Detail_General_ReturnsTheGeneralFields_AndCanDeleteWhenFiled()
+    {
+        var client = await StartAsync();
+        var id = await SeedGeneralAsync(
+            title: "Fleet licence",
+            note: "Keep for SARS",
+            autoTitle: "Vehicle licence disc",
+            summary: "Licence disc for the delivery truck.",
+            documentDate: new DateOnly(2026, 9, 1),
+            searchWords: ["licence", "truck"],
+            thumbnail: true);
+
+        var body = await (await client.SendAsync(Get($"/api/documents/{id:D}", AppRoles.Viewer))).Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal("GENERAL", body.GetProperty("documentType").GetString());
+        Assert.Equal("Fleet licence", body.GetProperty("title").GetString());
+        Assert.Equal("Keep for SARS", body.GetProperty("note").GetString());
+        Assert.Equal("Vehicle licence disc", body.GetProperty("autoTitle").GetString());
+        Assert.Equal("Licence disc for the delivery truck.", body.GetProperty("summary").GetString());
+        Assert.Equal("2026-09-01", body.GetProperty("documentDate").GetString());
+        Assert.Equal(["licence", "truck"], body.GetProperty("searchWords").EnumerateArray().Select(word => word.GetString()));
+        Assert.True(body.GetProperty("hasThumbnail").GetBoolean());
+        Assert.True(body.GetProperty("canDelete").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData(DocumentState.Filed, 60, true)]
+    [InlineData(DocumentState.Failed, 60, true)]
+    [InlineData(DocumentState.Received, 31, true)]
+    [InlineData(DocumentState.Processing, 31, true)]
+    [InlineData(DocumentState.Received, 5, false)]
+    [InlineData(DocumentState.Processing, 5, false)]
+    public async Task Detail_General_CanDelete_FollowsTheGeneralDeleteRule(DocumentState state, int minutesOld, bool expected)
+    {
+        var client = await StartAsync();
+        var id = await SeedGeneralAsync(state: state, uploadedAt: DateTimeOffset.UtcNow.AddMinutes(-minutesOld));
+
+        var body = await (await client.SendAsync(Get($"/api/documents/{id:D}", AppRoles.Viewer))).Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(expected, body.GetProperty("canDelete").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Detail_Pod_HasTheNewFieldsEmpty()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.NeedsReview);
+
+        var body = await (await client.SendAsync(Get($"/api/documents/{id:D}", AppRoles.Viewer))).Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("title").ValueKind);
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("note").ValueKind);
+        Assert.Empty(body.GetProperty("searchWords").EnumerateArray());
+        Assert.False(body.GetProperty("hasThumbnail").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Thumbnail_ServesTheJpeg_Privately()
+    {
+        var client = await StartAsync();
+        var id = await SeedGeneralAsync(thumbnail: true);
+
+        var response = await client.SendAsync(Get($"/api/documents/{id:D}/thumbnail", AppRoles.Viewer));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("image/jpeg", response.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("private", response.Headers.CacheControl?.ToString());
+        Assert.Equal(Thumbnail, await response.Content.ReadAsByteArrayAsync());
+    }
+
+    [Fact]
+    public async Task Thumbnail_NoneOrUnknownDocument_Returns404()
+    {
+        var client = await StartAsync();
+        var id = await SeedGeneralAsync();
+
+        var none = await client.SendAsync(Get($"/api/documents/{id:D}/thumbnail", AppRoles.Viewer));
+        var unknown = await client.SendAsync(Get($"/api/documents/{Guid.NewGuid():D}/thumbnail", AppRoles.Viewer));
+
+        Assert.Equal(HttpStatusCode.NotFound, none.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+    }
+
+    private static readonly byte[] Thumbnail = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0xFF, 0xD9];
+
+    private Guid? _phone1;
+    private Guid? _thabo;
+
+    private async Task<Guid> SeedDeviceAsync(string name)
+    {
+        var id = Guid.NewGuid();
+        await using var scope = _app!.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<PvmDbContext>();
+        db.ScannerDevices.Add(new ScannerDeviceEntity { Id = id, Name = name, CreatedBy = "admin@pvm.test", CreatedAt = DateTimeOffset.UtcNow });
+        await db.SaveChangesAsync();
+        return id;
+    }
+
+    private async Task<Guid> SeedStaffAsync(string name)
+    {
+        var id = Guid.NewGuid();
+        await using var scope = _app!.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<PvmDbContext>();
+        db.ScannerStaff.Add(new ScannerStaffEntity { Id = id, Name = name, Active = true, CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow });
+        await db.SaveChangesAsync();
+        return id;
+    }
+
+    /// <summary>A general document; by default Filed, from "Dispatch phone 1" and staff "Thabo".</summary>
+    private async Task<Guid> SeedGeneralAsync(
+        DocumentState state = DocumentState.Filed,
+        DateTimeOffset? uploadedAt = null,
+        string? title = null,
+        string? note = null,
+        string? autoTitle = null,
+        string? summary = null,
+        DateOnly? documentDate = null,
+        string[]? searchWords = null,
+        bool thumbnail = false,
+        Guid? deviceId = null,
+        Guid? staffId = null,
+        string? staffName = null)
+    {
+        _phone1 ??= await SeedDeviceAsync("Dispatch phone 1");
+        _thabo ??= await SeedStaffAsync("Thabo");
+        var id = Guid.NewGuid();
+        var at = uploadedAt ?? DateTimeOffset.UtcNow;
+        var blobPath = $"documents/GENERAL/{at:yyyy}/{at:MM}/{id:D}.pdf";
+        var thumbnailPath = thumbnail ? $"documents/GENERAL/{at:yyyy}/{at:MM}/{id:D}.thumb.jpg" : null;
+        await using var scope = _app!.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
+        await store.SaveAsync(blobPath, new MemoryStream(Pdf), CancellationToken.None);
+        if (thumbnailPath is not null)
+        {
+            await store.SaveAsync(thumbnailPath, new MemoryStream(Thumbnail), CancellationToken.None);
+        }
+
+        var db = scope.ServiceProvider.GetRequiredService<PvmDbContext>();
+        db.CapturedDocuments.Add(new CapturedDocumentEntity
+        {
+            Id = id,
+            ClientDocumentId = Guid.NewGuid(),
+            DocumentType = "GENERAL",
+            State = state,
+            BlobPath = blobPath,
+            ThumbnailBlobPath = thumbnailPath,
+            PageCount = 2,
+            SizeBytes = Pdf.Length,
+            Sha256 = new string('a', 64),
+            Title = title,
+            Note = note,
+            AutoTitle = autoTitle,
+            Summary = summary,
+            DocumentDate = documentDate,
+            SearchWords = searchWords ?? [],
+            SearchText = GeneralDocumentFields.SearchText(title, note, autoTitle, summary, searchWords),
+            UploadedBy = "device:Dispatch phone 1",
+            UploadedAt = at,
+            ScannerDeviceId = deviceId ?? _phone1,
+            ScannerStaffId = staffId ?? _thabo,
+            ScannerStaffName = staffName ?? "Thabo",
+            UpdatedAt = at,
+        });
+        await db.SaveChangesAsync();
+        return id;
+    }
+
     private static async Task AssertConflictAsync(HttpResponseMessage response, string code, string detailContains)
     {
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);

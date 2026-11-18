@@ -152,6 +152,131 @@ public sealed class DocumentProcessorTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Process_General_Read_FiledWithTheAutoFields_NoAcumatica_NoReview()
+    {
+        var id = await SeedAsync(documentType: "GENERAL", title: "Fleet licence", note: "Keep for SARS");
+        _extractor.Result = Fields("""
+            { "autoTitle": "Vehicle licence disc", "summary": "Licence disc for the delivery truck.", "documentDate": "2026-09-01", "searchWords": ["licence", "truck", "ND 123-456"] }
+            """);
+
+        await using (var db = CreateDbContext())
+        {
+            await CreateProcessor(db, AcumaticaAttachMode.Write).ProcessAsync(id, default);
+        }
+
+        var row = await LoadAsync(id);
+        Assert.Equal(DocumentState.Filed, row.State);
+        Assert.Null(row.ReviewReason);
+        Assert.Equal("Fleet licence", row.Title);
+        Assert.Equal("Vehicle licence disc", row.AutoTitle);
+        Assert.Equal("Licence disc for the delivery truck.", row.Summary);
+        Assert.Equal(new DateOnly(2026, 9, 1), row.DocumentDate);
+        Assert.Equal(["licence", "truck", "ND 123-456"], row.SearchWords!);
+        Assert.Equal(
+            "fleet licence\nkeep for sars\nvehicle licence disc\nlicence disc for the delivery truck.\nlicence\ntruck\nnd 123-456",
+            row.SearchText);
+        Assert.NotNull(row.ExtractionJson);
+        Assert.False(row.AcumaticaAttachPending);
+        Assert.Null(row.MatchedReference);
+        Assert.Equal("GENERAL", _extractor.Types.Single());
+        Assert.Equal(0, _acumatica.FindCalls);
+        Assert.Empty(_acumatica.AttachAttempts);
+    }
+
+    [Theory]
+    [InlineData("refusal")]
+    [InlineData("empty")]
+    [InlineData("rejected")]
+    [InlineData("schema")]
+    public async Task Process_General_Unreadable_FiledWithoutAutoTitle_NeverReview(string reason)
+    {
+        var id = await SeedAsync(documentType: "GENERAL", note: "Blurry copy");
+        _extractor.Result = new Unreadable(reason);
+
+        await using (var db = CreateDbContext())
+        {
+            await CreateProcessor(db, AcumaticaAttachMode.Write).ProcessAsync(id, default);
+        }
+
+        var row = await LoadAsync(id);
+        Assert.Equal(DocumentState.Filed, row.State);
+        Assert.Null(row.ReviewReason);
+        Assert.Null(row.AutoTitle);
+        Assert.Null(row.Summary);
+        Assert.Empty(row.SearchWords ?? []);
+        Assert.Equal("blurry copy", row.SearchText);
+        using var json = JsonDocument.Parse(row.ExtractionJson!);
+        Assert.Equal(reason, json.RootElement.GetProperty("unreadable").GetString());
+        Assert.False(row.AcumaticaAttachPending);
+        Assert.Equal(0, _acumatica.FindCalls);
+    }
+
+    [Fact]
+    public async Task Process_General_FieldsWithNothingUsable_FiledWithoutAutoTitle()
+    {
+        var id = await SeedAsync(documentType: "GENERAL");
+        _extractor.Result = Fields("""{ "autoTitle": 12, "summary": "  ", "documentDate": "soon", "searchWords": [] }""");
+
+        await using (var db = CreateDbContext())
+        {
+            await CreateProcessor(db, AcumaticaAttachMode.Write).ProcessAsync(id, default);
+        }
+
+        var row = await LoadAsync(id);
+        Assert.Equal(DocumentState.Filed, row.State);
+        Assert.Null(row.AutoTitle);
+        Assert.Null(row.DocumentDate);
+        Assert.Null(row.SearchText);
+    }
+
+    [Fact]
+    public async Task Process_General_ExtractorThrows_Rethrows_RowStaysProcessing()
+    {
+        var id = await SeedAsync(documentType: "GENERAL");
+        _extractor.Exception = new HttpRequestException("Claude is down");
+
+        await using (var db = CreateDbContext())
+        {
+            await Assert.ThrowsAsync<HttpRequestException>(
+                () => CreateProcessor(db, AcumaticaAttachMode.Write).ProcessAsync(id, default));
+        }
+
+        Assert.Equal(DocumentState.Processing, (await LoadAsync(id)).State);
+    }
+
+    [Fact]
+    public async Task ProcessMessage_General_ExtractorThrowsOnLastDelivery_DeadLettered_RowFailed()
+    {
+        var id = await SeedAsync(documentType: "GENERAL");
+        _extractor.Exception = new HttpRequestException("Claude is down");
+
+        MessageProcessingResult result;
+        await using (var db = CreateDbContext())
+        {
+            result = await ProcessMessageAsync(db, id, deliveryCount: 5);
+        }
+
+        Assert.Equal(MessageSettlement.DeadLetter, result.Settlement);
+        Assert.Equal(DocumentState.Failed, (await LoadAsync(id)).State);
+    }
+
+    [Fact]
+    public async Task Backfill_WriteMode_NeverTouchesAGeneralDocument()
+    {
+        var id = await SeedAsync(DocumentState.Filed, documentType: "GENERAL");
+
+        int attached;
+        await using (var db = CreateDbContext())
+        {
+            attached = await CreateProcessor(db, AcumaticaAttachMode.Write).BackfillPendingAttachmentsAsync(default);
+        }
+
+        Assert.Equal(0, attached);
+        Assert.Empty(_acumatica.AttachAttempts);
+        Assert.Null((await LoadAsync(id)).AcumaticaAttachLastAttemptAt);
+    }
+
+    [Fact]
     public async Task Process_Unreadable_NeedsReviewReadFailure()
     {
         var id = await SeedAsync();
@@ -654,7 +779,7 @@ public sealed class DocumentProcessorTests : IAsyncLifetime
     private DocumentProcessor CreateProcessor(PvmDbContext db, AcumaticaAttachMode mode)
         => new(
             db,
-            [new ProofOfDeliveryDocumentType()],
+            [new ProofOfDeliveryDocumentType(), new GeneralDocumentType()],
             _extractor,
             _acumatica,
             _store,
@@ -666,7 +791,9 @@ public sealed class DocumentProcessorTests : IAsyncLifetime
         string documentType = "POD",
         string? matchedReference = null,
         bool attachPending = false,
-        DateTimeOffset? uploadedAt = null)
+        DateTimeOffset? uploadedAt = null,
+        string? title = null,
+        string? note = null)
     {
         var id = Guid.NewGuid();
         var at = uploadedAt ?? DateTimeOffset.UtcNow;
@@ -687,6 +814,9 @@ public sealed class DocumentProcessorTests : IAsyncLifetime
             MatchedCustomerName = matchedReference is null ? null : "Acme Stores (Pty) Ltd",
             MatchedBy = matchedReference is null ? null : "auto",
             AcumaticaAttachPending = attachPending,
+            Title = title,
+            Note = note,
+            SearchText = GeneralDocumentFields.SearchText(title, note),
             UploadedBy = "driver@pvm.co.za",
             UploadedAt = at,
             UpdatedAt = at,
@@ -717,11 +847,21 @@ public sealed class DocumentProcessorTests : IAsyncLifetime
 
         public int Calls { get; private set; }
 
+        public List<string> Types { get; } = [];
+
+        public Exception? Exception { get; set; }
+
         public Func<Task>? OnExtract { get; set; }
 
         public async Task<ExtractionResult> ExtractAsync(IDocumentType type, Stream pdf, CancellationToken cancellationToken)
         {
             Calls++;
+            Types.Add(type.Code);
+            if (Exception is not null)
+            {
+                throw Exception;
+            }
+
             if (OnExtract is not null)
             {
                 await OnExtract();
