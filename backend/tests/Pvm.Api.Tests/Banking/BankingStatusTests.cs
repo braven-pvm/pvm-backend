@@ -24,6 +24,8 @@ public sealed class BankingStatusTests
 
     private static readonly InvestecOptions Investec = new() { CashAccount = "INVESTEC" };
 
+    private static readonly DateTimeOffset FirstRead = new(2026, 11, 18, 9, 0, 0, TimeSpan.Zero);
+
     [Fact]
     public async Task All_accounts_are_read_in_one_call_and_keep_their_order()
     {
@@ -94,11 +96,62 @@ public sealed class BankingStatusTests
 
         var pvm = Assert.Single(status.Accounts, account => account.CashAccount == "PVMNEDBANK");
         Assert.True(pvm.Available);
+        Assert.True(pvm.Stale);
+        Assert.Equal(FirstRead, pvm.ReadAt);
         Assert.Equal(new DateOnly(2026, 11, 10), pvm.ImportedThrough);
+        Assert.False(Assert.Single(status.Accounts, account => account.CashAccount == "INVESTEC").Stale);
         var warning = Assert.Single(logger.Messages, message => message.Contains("banking.status.account.failed", StringComparison.Ordinal));
         Assert.Contains("CashAccount=PVMNEDBANK", warning, StringComparison.Ordinal);
         Assert.Contains("Reason=Acumatica answered 500", warning, StringComparison.Ordinal);
         Assert.DoesNotContain("password", warning, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task A_fresh_read_is_not_stale_and_carries_its_time()
+    {
+        var refresher = NewRefresher(new StubClient());
+
+        var status = await refresher.GetAsync(CancellationToken.None);
+
+        Assert.All(status.Accounts, account =>
+        {
+            Assert.False(account.Stale);
+            Assert.Equal(FirstRead, account.ReadAt);
+        });
+    }
+
+    [Fact]
+    public async Task An_account_named_twice_is_read_once_and_the_read_does_not_fail()
+    {
+        var client = new StubClient();
+
+        var read = await BankImportEndpoints.ReadStatusAsync(
+            client, Nedbank, new InvestecOptions { CashAccount = "pvmnedbank" }, CancellationToken.None);
+
+        Assert.Equal(["ECNEDBANK", "PVMNEDBANK", "WCNEDBANK"], client.LastBatch);
+        Assert.Equal(4, read.Response.Accounts.Count);
+        Assert.Empty(read.Failures);
+    }
+
+    [Fact]
+    public async Task An_import_still_succeeds_when_the_status_refresh_after_it_fails()
+    {
+        var client = new StubClient();
+        var logger = new ListLogger();
+        var refresher = NewRefresher(client, logger);
+        await refresher.RefreshAsync(CancellationToken.None);
+        var importer = new NedbankStatementImportService(
+            new NedbankOfxParser(),
+            client,
+            Options.Create(new NedbankOptions { Accounts = { ["1644294346"] = "PVMNEDBANK" } }));
+
+        client.ThrowOnBatch = true;
+        var result = await BankImportEndpoints.ImportNedbankAsync(
+            OfxFile(), importer, refresher, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status200OK, (result as IStatusCodeHttpResult)?.StatusCode);
+        Assert.Equal(1, client.Imports);
+        Assert.Contains(logger.Messages, message => message.Contains("banking.status.refresh.failed", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -186,6 +239,7 @@ public sealed class BankingStatusTests
             Options.Create(Nedbank),
             Options.Create(Investec),
             Options.Create(new BankingStatusOptions { RefreshInterval = interval ?? TimeSpan.FromMinutes(2.5) }),
+            new SteppingTime(FirstRead),
             logger ?? new ListLogger());
     }
 
@@ -212,6 +266,14 @@ public sealed class BankingStatusTests
 """;
         var bytes = Encoding.ASCII.GetBytes(ofx);
         return new FormFile(new MemoryStream(bytes), 0, bytes.Length, "file", "statement.ofx");
+    }
+
+    /// <summary>The first read happens at the start time; each later read is a minute later.</summary>
+    private sealed class SteppingTime(DateTimeOffset start) : TimeProvider
+    {
+        private int _reads;
+
+        public override DateTimeOffset GetUtcNow() => start.AddMinutes(Interlocked.Increment(ref _reads) - 1);
     }
 
     private sealed class ListLogger : ILogger<BankingStatusRefresher>
@@ -246,6 +308,8 @@ public sealed class BankingStatusTests
 
         public DateOnly EndDate { get; set; } = new(2026, 11, 10);
 
+        public bool ThrowOnBatch { get; set; }
+
         public int BatchCalls => Volatile.Read(ref _batchCalls);
 
         public IReadOnlyList<string> LastBatch { get; private set; } = [];
@@ -277,6 +341,11 @@ public sealed class BankingStatusTests
             CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _batchCalls);
+            if (ThrowOnBatch)
+            {
+                throw new InvalidOperationException("Acumatica sign-in failed with status 500 (InternalServerError).");
+            }
+
             LastBatch = cashAccounts.ToList();
             IReadOnlyList<CashAccountStatements> results = cashAccounts
                 .Select(cashAccount => Failing.Contains(cashAccount)

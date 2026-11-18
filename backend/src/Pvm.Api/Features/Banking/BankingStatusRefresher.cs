@@ -21,8 +21,8 @@ public sealed record BankingStatusOptions
 /// the new statement.
 /// </summary>
 /// <remarks>
-/// When an account read fails, the account keeps the figures of its last good read, and the
-/// failure is logged with the cash account and the reason. Reads run one at a time, so a read
+/// When an account read fails, the account keeps the figures of its last good read, marked stale
+/// with the time of that read, and the failure is logged with the cash account and the reason. Reads run one at a time, so a read
 /// that started earlier never replaces the result of a later one.
 /// </remarks>
 public sealed class BankingStatusRefresher(
@@ -30,6 +30,7 @@ public sealed class BankingStatusRefresher(
     IOptions<NedbankOptions> nedbankOptions,
     IOptions<InvestecOptions> investecOptions,
     IOptions<BankingStatusOptions> options,
+    TimeProvider timeProvider,
     ILogger<BankingStatusRefresher> logger) : BackgroundService
 {
     private readonly SemaphoreSlim _readLock = new(1, 1);
@@ -68,6 +69,22 @@ public sealed class BankingStatusRefresher(
         }
     }
 
+    /// <summary>
+    /// Refreshes after an import. It never throws: the import already happened, so a failed
+    /// status read must not turn its answer into an error. The next background read tries again.
+    /// </summary>
+    public async Task TryRefreshAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await RefreshAsync(cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "banking.status.refresh.failed After=import");
+        }
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var interval = options.Value.RefreshInterval;
@@ -100,6 +117,7 @@ public sealed class BankingStatusRefresher(
 
     private async Task<BankingStatusResponse> ReadAndStoreAsync(CancellationToken cancellationToken)
     {
+        var readAt = timeProvider.GetUtcNow();
         BankingStatusRead read;
         await using (var scope = scopes.CreateAsyncScope())
         {
@@ -117,12 +135,14 @@ public sealed class BankingStatusRefresher(
         }
 
         var previous = _current?.Accounts.Where(account => account.Available)
-            .ToDictionary(account => account.CashAccount, StringComparer.OrdinalIgnoreCase);
+            .GroupBy(account => account.CashAccount, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
         var accounts = read.Response.Accounts
             .Select(account => read.Failures.ContainsKey(account.CashAccount)
-                               && previous?.GetValueOrDefault(account.CashAccount) is { } lastGood
-                ? lastGood
-                : account)
+                ? previous?.GetValueOrDefault(account.CashAccount) is { } lastGood
+                    ? lastGood with { Stale = true }
+                    : account
+                : account with { ReadAt = readAt })
             .ToList();
         var status = new BankingStatusResponse(accounts);
         _current = status;

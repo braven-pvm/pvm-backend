@@ -2,8 +2,8 @@ import { Upload } from "lucide-react";
 import { getBankingStatus, type BankAccountStatus, type BankStatementSummary } from "../../src/api/client";
 import { startEarly } from "../../src/api/early";
 import { hasAnyRole, requireWorkbenchUser } from "../../src/auth/session";
-import { formatMoneyZar, formatStatementDate } from "../../src/formatters.mjs";
-import { ButtonLink, DashboardPage, DataTable, EmptyState, StatTile, TileGrid, type Column } from "../../src/ui";
+import { describeBankAccount, formatMoneyZar, formatStatementDate } from "../../src/formatters.mjs";
+import { ButtonLink, DashboardPage, DataTable, EmptyState, StatTile, TileGrid, type AttentionItem, type Column } from "../../src/ui";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Banking" };
@@ -25,14 +25,6 @@ const statementColumns: Column<StatementRow>[] = [
   { key: "closing", header: "Closing balance", render: (row) => formatMoneyZar(row.endingBalance), align: "end" },
 ];
 
-function accountDetail(account: BankAccountStatus) {
-  const arrives = account.mode === "Automatic" || account.mode === "Feed" ? "Arrives automatically" : "You upload it";
-  if (!account.available) {
-    return `${arrives} · could not read Acumatica`;
-  }
-  return account.importedThrough ? `${arrives} · imported through ${formatStatementDate(account.importedThrough)}` : `${arrives} · nothing imported yet`;
-}
-
 /** The banking overview: each account, and the statements recently created in Acumatica. */
 export default async function BankingPage() {
   const statusCall = startEarly(getBankingStatus());
@@ -47,6 +39,30 @@ export default async function BankingPage() {
   } catch {
     statusFailed = true;
   }
+
+  const staleAccounts = accounts.filter((account) => account.stale).map((account) => account.cashAccount);
+  const attentionItems: AttentionItem[] = [
+    ...(statusFailed
+      ? [
+          {
+            id: "acumatica",
+            status: "Failed",
+            title: "Acumatica could not be reached",
+            detail: "The dates below may be out of date. Try again in a few minutes before you import.",
+          },
+        ]
+      : []),
+    ...(staleAccounts.length > 0
+      ? [
+          {
+            id: "stale",
+            status: "Late",
+            title: `Acumatica could not be read just now for ${staleAccounts.join(", ")}`,
+            detail: "Those accounts show the dates from the last good read. Check again before you import.",
+          },
+        ]
+      : []),
+  ];
 
   const statements: StatementRow[] = accounts
     .flatMap((account) => account.recentStatements.map((statement) => ({ ...statement, bank: account.bank })))
@@ -67,16 +83,7 @@ export default async function BankingPage() {
       }}
       attention={{
         allClear: "Every account was read from Acumatica.",
-        items: statusFailed
-          ? [
-              {
-                id: "acumatica",
-                status: "Failed",
-                title: "Acumatica could not be reached",
-                detail: "The dates below may be out of date. Try again in a few minutes before you import.",
-              },
-            ]
-          : [],
+        items: attentionItems,
       }}
       numbers={{
         title: "Accounts",
@@ -87,8 +94,8 @@ export default async function BankingPage() {
                 key={account.cashAccount}
                 label={`${account.bank} · ${account.cashAccount}`}
                 value={account.available && account.importedThrough ? formatMoneyZar(account.closingBalance) : "—"}
-                detail={accountDetail(account)}
-                tone={account.available ? "default" : "warning"}
+                detail={describeBankAccount(account)}
+                tone={account.available && !account.stale ? "default" : "warning"}
               />
             ))}
           </TileGrid>

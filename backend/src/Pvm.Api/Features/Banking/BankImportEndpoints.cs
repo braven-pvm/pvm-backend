@@ -70,9 +70,11 @@ public static class BankImportEndpoints
         var toRead = accounts
             .Where(account => !string.IsNullOrWhiteSpace(account.CashAccount))
             .Select(account => account.CashAccount!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         var reads = (await acumaticaClient.ReadRecentStatementsAsync(toRead, RecentStatementCount, cancellationToken))
-            .ToDictionary(read => read.CashAccount, StringComparer.OrdinalIgnoreCase);
+            .GroupBy(read => read.CashAccount, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
 
         var failures = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var statuses = new List<BankAccountStatus>(accounts.Count);
@@ -125,7 +127,7 @@ public static class BankImportEndpoints
             async ofx =>
             {
                 var result = await importer.ImportAsync(ofx, cancellationToken);
-                await status.RefreshAsync(cancellationToken);
+                await status.TryRefreshAsync(cancellationToken);
                 return Results.Ok(new NedbankImportResponse(
                     file.FileName,
                     result.LinesImported,
@@ -192,7 +194,7 @@ public static class BankImportEndpoints
         try
         {
             var result = await refreshService.RefreshAsync(from, to, cancellationToken);
-            await status.RefreshAsync(cancellationToken);
+            await status.TryRefreshAsync(cancellationToken);
             return Results.Ok(result);
         }
         catch (InvalidOperationException exception)
@@ -216,7 +218,9 @@ public sealed record BankAccountStatus(
     bool Available,
     DateOnly? ImportedThrough,
     decimal? ClosingBalance,
-    IReadOnlyList<BankStatementSummary> RecentStatements);
+    IReadOnlyList<BankStatementSummary> RecentStatements,
+    bool Stale = false,
+    DateTimeOffset? ReadAt = null);
 
 /// <summary>Response for a Nedbank OFX import.</summary>
 public sealed record NedbankImportResponse(
