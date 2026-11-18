@@ -84,6 +84,14 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<ProductGtinEntity> ProductGtins => Set<ProductGtinEntity>();
 
+    public DbSet<MerchandiserCompanyEntity> MerchandiserCompanies => Set<MerchandiserCompanyEntity>();
+
+    public DbSet<MerchandiserAreaEntity> MerchandiserAreas => Set<MerchandiserAreaEntity>();
+
+    public DbSet<MerchandiserLineEntity> MerchandiserLines => Set<MerchandiserLineEntity>();
+
+    public DbSet<MerchandiserMakroStoreEntity> MerchandiserMakroStores => Set<MerchandiserMakroStoreEntity>();
+
     public DbSet<StockSyncRunEntity> StockSyncRuns => Set<StockSyncRunEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -540,6 +548,7 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
         ConfigureReporting(modelBuilder);
         ConfigureSellOut(modelBuilder);
+        ConfigureMerchandisers(modelBuilder);
     }
 
     private static void ConfigureReporting(ModelBuilder modelBuilder)
@@ -632,6 +641,52 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.ToView(SellInReportViews.ExcludedLinesView, schema);
             entity.HasNoKey();
             entity.Property(line => line.DocumentType).HasConversion<string>();
+        });
+    }
+
+    private static void ConfigureMerchandisers(ModelBuilder modelBuilder)
+    {
+        const string schema = "reporting";
+
+        modelBuilder.Entity<MerchandiserCompanyEntity>(entity =>
+        {
+            entity.ToTable("merchandiser_companies", schema);
+            entity.HasKey(company => company.Id);
+            entity.Property(company => company.Name).HasMaxLength(128);
+            entity.Property(company => company.StatementTitle).HasMaxLength(128);
+            entity.Property(company => company.PaymentKind).HasMaxLength(16);
+            entity.Property(company => company.PaymentRatePercent).HasPrecision(7, 4);
+            entity.Property(company => company.RetainerAmount).HasPrecision(18, 2);
+            entity.Property(company => company.UpdatedBy).HasMaxLength(320);
+            entity.HasIndex(company => new { company.Name, company.ValidFrom }).IsUnique();
+        });
+
+        modelBuilder.Entity<MerchandiserAreaEntity>(entity =>
+        {
+            entity.ToTable("merchandiser_areas", schema);
+            entity.HasKey(area => area.Id);
+            entity.Property(area => area.Name).HasMaxLength(128);
+            entity.Property(area => area.CommissionRatePercent).HasPrecision(7, 4);
+            entity.HasIndex(area => new { area.CompanyId, area.Order });
+            entity.HasOne<MerchandiserCompanyEntity>().WithMany().HasForeignKey(area => area.CompanyId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<MerchandiserLineEntity>(entity =>
+        {
+            entity.ToTable("merchandiser_lines", schema);
+            entity.HasKey(line => line.Id);
+            entity.Property(line => line.Label).HasMaxLength(128);
+            entity.Property(line => line.CustomerClassId).HasMaxLength(64);
+            entity.HasIndex(line => new { line.AreaId, line.Order });
+            entity.HasOne<MerchandiserAreaEntity>().WithMany().HasForeignKey(line => line.AreaId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<MerchandiserMakroStoreEntity>(entity =>
+        {
+            entity.ToTable("merchandiser_makro_stores", schema);
+            entity.HasKey(link => new { link.AreaId, link.StoreId });
+            entity.HasOne<MerchandiserAreaEntity>().WithMany().HasForeignKey(link => link.AreaId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<RetailStoreEntity>().WithMany().HasForeignKey(link => link.StoreId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 
