@@ -1,4 +1,5 @@
 using System.Globalization;
+using Pvm.Api.Auth;
 using Pvm.Infrastructure.Reporting.Statements;
 
 namespace Pvm.Api.Features.Reports;
@@ -9,6 +10,8 @@ namespace Pvm.Api.Features.Reports;
 ///   <item><c>GET /api/reports/statements/companies</c>: the companies with settings.</item>
 ///   <item><c>GET /api/reports/statements?company=…&amp;from=2026-10&amp;to=2026-10</c>: one statement.</item>
 ///   <item><c>GET /api/reports/statements/export?…</c>: the same statement as an Excel file.</item>
+///   <item><c>GET /api/reports/statements/settings?company=…</c>: the settings of a company, with names.</item>
+///   <item><c>PUT /api/reports/statements/settings</c>: save the settings of a company. Admin only.</item>
 /// </list>
 /// </summary>
 public static class StatementEndpoints
@@ -22,6 +25,8 @@ public static class StatementEndpoints
         group.MapGet("/companies", ListCompaniesAsync).RequireAuthorization("Invoices.Write");
         group.MapGet(string.Empty, GetStatementAsync).RequireAuthorization("Invoices.Write");
         group.MapGet("/export", ExportStatementAsync).RequireAuthorization("Invoices.Write");
+        group.MapGet("/settings", GetSettingsAsync).RequireAuthorization("Invoices.Write");
+        group.MapPut("/settings", PutSettingsAsync).RequireAuthorization("Admin");
         return app;
     }
 
@@ -67,6 +72,27 @@ public static class StatementEndpoints
                 StatementWorkbook.Write(statement),
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 StatementWorkbook.FileName(statement));
+    }
+
+    private static async Task<IResult> GetSettingsAsync(string? company, MerchandiserSettingsService service, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(company))
+        {
+            return Results.BadRequest(new { message = "Choose a company." });
+        }
+
+        var settings = await service.ExportAsync(company.Trim(), cancellationToken);
+        return settings is null ? Results.NotFound(new { message = $"There are no settings for {company}." }) : Results.Ok(settings);
+    }
+
+    private static async Task<IResult> PutSettingsAsync(
+        MerchandiserSettingsDocument document,
+        MerchandiserSettingsService service,
+        CurrentAppUserAccessor currentUser,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ImportAsync(document, currentUser.User?.Email ?? "unknown", cancellationToken);
+        return result.Saved ? Results.Ok(result) : Results.BadRequest(result);
     }
 
     /// <summary>Reads "2026-10" months. An empty "to" is the same month as "from".</summary>

@@ -75,6 +75,11 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
         eyebrow="Reports"
         title="Merchandiser statements"
         description="The monthly statement of each merchandiser company: the sales in its area, its Makro stores, and its commission or retainer."
+        actions={
+          <ButtonLink href="/statements/settings" variant="secondary">
+            Settings
+          </ButtonLink>
+        }
       />
       <Stack gap="m">
         <Panel title="Choose the statement">

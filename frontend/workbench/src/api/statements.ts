@@ -58,3 +58,53 @@ export async function getStatement(company: string, from: string, to?: string): 
   }
   return { statement: await response.json() };
 }
+
+export type MerchandiserSettings = {
+  name: string;
+  title: string;
+  validFrom: string;
+  payment: string;
+  ratePercent?: number | null;
+  retainerAmount?: number | null;
+  disChemSheet: boolean;
+  areas: {
+    name: string;
+    commissionRatePercent?: number | null;
+    lines: { label: string; customerGroup: string; reps: string[]; customers: string[]; disChem: boolean }[];
+    makroStores: string[];
+  }[];
+};
+
+export async function getStatementSettings(company: string): Promise<MerchandiserSettings | null> {
+  const headers = await getApiAuthHeaders();
+  const response = await timedFetch(`${apiBaseUrl}/api/reports/statements/settings?${new URLSearchParams({ company })}`, { headers, cache: "no-store" });
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(`Failed to load the settings: ${response.status}`);
+  }
+  return response.json();
+}
+
+/** Saves the settings. Returns the problems when a name does not resolve; nothing is saved then. */
+export async function saveStatementSettings(settings: unknown): Promise<{ saved: boolean; problems: string[] }> {
+  const headers = await getApiAuthHeaders();
+  const response = await timedFetch(`${apiBaseUrl}/api/reports/statements/settings`, {
+    method: "PUT",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+    cache: "no-store",
+  });
+  if (response.status === 400) {
+    const body = (await response.json().catch(() => ({}))) as { problems?: string[]; title?: string };
+    return { saved: false, problems: body.problems ?? [body.title ?? "The settings file does not have the right shape."] };
+  }
+  if (response.status === 403) {
+    return { saved: false, problems: ["Only an Admin can save the settings."] };
+  }
+  if (!response.ok) {
+    throw new Error(`Failed to save the settings: ${response.status}`);
+  }
+  return { saved: true, problems: [] };
+}

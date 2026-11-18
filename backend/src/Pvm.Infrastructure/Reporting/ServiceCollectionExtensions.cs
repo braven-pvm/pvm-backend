@@ -64,7 +64,9 @@ public static class ServiceCollectionExtensions
     /// <summary>Registers the merchandiser statements.</summary>
     public static IServiceCollection AddMerchandiserStatements(this IServiceCollection services)
     {
+        services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<Statements.MerchandiserStatementService>();
+        services.AddScoped<Statements.MerchandiserSettingsService>();
         return services;
     }
 
