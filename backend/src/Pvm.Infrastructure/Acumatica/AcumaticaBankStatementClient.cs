@@ -205,6 +205,29 @@ public sealed class AcumaticaBankStatementClient(
         Func<string?, Task<T>> operation,
         CancellationToken cancellationToken)
     {
+        var sessionCookie = await SignInAsync(cancellationToken);
+        try
+        {
+            return await operation(sessionCookie);
+        }
+        finally
+        {
+            await SignOutAsync(sessionCookie);
+        }
+    }
+
+    private async Task SignOutAsync(string? sessionCookie)
+    {
+        using var logoutRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            BuildUri("entity/auth/logout"),
+            sessionCookie);
+        using var logoutResponse = await httpClient.SendAsync(logoutRequest, CancellationToken.None);
+        EnsureSuccess(logoutResponse, "sign-out");
+    }
+
+    private async Task<string?> SignInAsync(CancellationToken cancellationToken)
+    {
         var login = new Dictionary<string, string>
         {
             ["name"] = _acumatica.Username!,
@@ -226,21 +249,7 @@ public sealed class AcumaticaBankStatementClient(
             SerializerOptions,
             cancellationToken);
         EnsureSuccess(loginResponse, "sign-in");
-        var sessionCookie = ReadSessionCookie(loginResponse);
-
-        try
-        {
-            return await operation(sessionCookie);
-        }
-        finally
-        {
-            using var logoutRequest = CreateSessionRequest(
-                HttpMethod.Post,
-                BuildUri("entity/auth/logout"),
-                sessionCookie);
-            using var logoutResponse = await httpClient.SendAsync(logoutRequest, CancellationToken.None);
-            EnsureSuccess(logoutResponse, "sign-out");
-        }
+        return ReadSessionCookie(loginResponse);
     }
 
     private static async Task<string> ReadReferenceNbrAsync(
@@ -374,6 +383,116 @@ public sealed class AcumaticaBankStatementClient(
         }, cancellationToken);
     }
 
+    /// <summary>
+    /// Reads every account in one Acumatica session, one after the other, so a status read
+    /// holds one API login, not one for each account. A failed sign-in fails every account; a
+    /// failed sign-out is ignored, because the reads already have their answers.
+    /// </summary>
+    public async Task<IReadOnlyList<CashAccountStatements>> ReadRecentStatementsAsync(
+        IReadOnlyList<string> cashAccounts,
+        int count,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(cashAccounts);
+        if (cashAccounts.Count == 0)
+        {
+            return [];
+        }
+
+        try
+        {
+            ValidateOptions();
+        }
+        catch (InvalidOperationException exception)
+        {
+            return cashAccounts.Select(cashAccount => new CashAccountStatements(cashAccount, [], exception.Message)).ToList();
+        }
+
+        string? sessionCookie;
+        try
+        {
+            sessionCookie = await SignInAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException or TaskCanceledException
+                                          && !cancellationToken.IsCancellationRequested)
+        {
+            var reason = exception is InvalidOperationException ? exception.Message : "Acumatica sign-in could not reach the server.";
+            return cashAccounts.Select(cashAccount => new CashAccountStatements(cashAccount, [], reason)).ToList();
+        }
+
+        var results = new List<CashAccountStatements>(cashAccounts.Count);
+        try
+        {
+            foreach (var cashAccount in cashAccounts)
+            {
+                results.Add(await ReadAccountAsync(cashAccount, count, sessionCookie, cancellationToken));
+            }
+        }
+        finally
+        {
+            try
+            {
+                await SignOutAsync(sessionCookie);
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException or TaskCanceledException)
+            {
+                // The session times out by itself. The reads already have their answers.
+            }
+        }
+
+        return results;
+    }
+
+    private async Task<CashAccountStatements> ReadAccountAsync(
+        string cashAccount,
+        int count,
+        string? sessionCookie,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var request = CreateSessionRequest(HttpMethod.Get, StatementsUri(cashAccount, count), sessionCookie);
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new CashAccountStatements(
+                    cashAccount,
+                    [],
+                    $"Acumatica answered {(int)response.StatusCode} ({response.StatusCode})");
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return new CashAccountStatements(cashAccount, [], null);
+            }
+
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return new CashAccountStatements(cashAccount, [], "Acumatica answered with no list of statements");
+            }
+
+            var summaries = document.RootElement.EnumerateArray()
+                .Select(MapSummary)
+                .OfType<BankStatementSummary>()
+                .ToList();
+            return new CashAccountStatements(cashAccount, summaries, null);
+        }
+        catch (JsonException)
+        {
+            return new CashAccountStatements(cashAccount, [], "Acumatica answered with JSON that could not be read");
+        }
+        catch (HttpRequestException)
+        {
+            return new CashAccountStatements(cashAccount, [], "Acumatica could not be reached");
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new CashAccountStatements(cashAccount, [], "Acumatica did not answer in time");
+        }
+    }
+
     public async Task<IReadOnlySet<string>> GetImportedTransactionIdsAsync(
         string cashAccount,
         DateOnly fromDate,
@@ -395,14 +514,7 @@ public sealed class AcumaticaBankStatementClient(
         string? sessionCookie,
         CancellationToken cancellationToken)
     {
-        var query =
-            $"?$filter={Uri.EscapeDataString($"CashAccount eq '{cashAccount}'")}" +
-            "&$orderby=EndBalanceDate desc&$expand=Details" +
-            $"&$top={count.ToString(CultureInfo.InvariantCulture)}";
-        var uri = BuildUri(
-            $"entity/{_bankFeed.EndpointName}/{_bankFeed.EndpointVersion}/{_bankFeed.TopLevelEntity}{query}");
-
-        using var request = CreateSessionRequest(HttpMethod.Get, uri, sessionCookie);
+        using var request = CreateSessionRequest(HttpMethod.Get, StatementsUri(cashAccount, count), sessionCookie);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
@@ -411,6 +523,16 @@ public sealed class AcumaticaBankStatementClient(
 
         var json = await response.Content.ReadAsStringAsync(cancellationToken);
         return string.IsNullOrWhiteSpace(json) ? null : JsonDocument.Parse(json);
+    }
+
+    private Uri StatementsUri(string cashAccount, int count)
+    {
+        var query =
+            $"?$filter={Uri.EscapeDataString($"CashAccount eq '{cashAccount}'")}" +
+            "&$orderby=EndBalanceDate desc&$expand=Details" +
+            $"&$top={count.ToString(CultureInfo.InvariantCulture)}";
+        return BuildUri(
+            $"entity/{_bankFeed.EndpointName}/{_bankFeed.EndpointVersion}/{_bankFeed.TopLevelEntity}{query}");
     }
 
     private static BankStatementSummary? MapSummary(JsonElement element)
