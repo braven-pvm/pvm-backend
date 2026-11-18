@@ -70,6 +70,14 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>Registers the sales report.</summary>
+    public static IServiceCollection AddSalesReport(this IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<SalesReport.SalesReportService>();
+        return services;
+    }
+
     /// <summary>
     /// Registers the sell-out mail intake. Assumes <c>AddSellOutImport</c>.
     /// </summary>
