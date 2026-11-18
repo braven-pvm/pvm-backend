@@ -66,6 +66,20 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<SellInLineEntity> SellInLines => Set<SellInLineEntity>();
 
+    public DbSet<SellOutImportEntity> SellOutImports => Set<SellOutImportEntity>();
+
+    public DbSet<SellOutImportIssueEntity> SellOutImportIssues => Set<SellOutImportIssueEntity>();
+
+    public DbSet<RetailStoreEntity> RetailStores => Set<RetailStoreEntity>();
+
+    public DbSet<SellOutMonthEntity> SellOutMonths => Set<SellOutMonthEntity>();
+
+    public DbSet<StoreStockSnapshotEntity> StoreStockSnapshots => Set<StoreStockSnapshotEntity>();
+
+    public DbSet<SellOutProductMapEntity> SellOutProductMaps => Set<SellOutProductMapEntity>();
+
+    public DbSet<ProductGtinEntity> ProductGtins => Set<ProductGtinEntity>();
+
     public DbSet<StockSyncRunEntity> StockSyncRuns => Set<StockSyncRunEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -521,6 +535,7 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
         });
 
         ConfigureReporting(modelBuilder);
+        ConfigureSellOut(modelBuilder);
     }
 
     private static void ConfigureReporting(ModelBuilder modelBuilder)
@@ -599,4 +614,111 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
             entity.Property(line => line.Amount).HasPrecision(18, 2);
         });
     }
+
+    private static void ConfigureSellOut(ModelBuilder modelBuilder)
+    {
+        const string schema = "reporting";
+
+        modelBuilder.Entity<SellOutImportEntity>(entity =>
+        {
+            entity.ToTable("sell_out_imports", schema);
+            entity.HasKey(import => import.Id);
+            entity.Property(import => import.Source).HasMaxLength(64);
+            entity.Property(import => import.FileName).HasMaxLength(260);
+            entity.Property(import => import.FileSha256).HasMaxLength(64);
+            entity.Property(import => import.ReceivedBy).HasMaxLength(320);
+            entity.Property(import => import.Status).HasMaxLength(16);
+            entity.Property(import => import.StatusReason).HasMaxLength(1000);
+            entity.Property(import => import.ArchivePath).HasMaxLength(512);
+            // A file loads once. A preview or a refusal of the same file can repeat.
+            entity.HasIndex(import => import.FileSha256)
+                .IsUnique()
+                .HasFilter($"\"Status\" = '{SellOutImportStatuses.Loaded}'");
+            entity.HasIndex(import => new { import.Source, import.CreatedAt });
+        });
+
+        modelBuilder.Entity<SellOutImportIssueEntity>(entity =>
+        {
+            entity.ToTable("sell_out_import_issues", schema);
+            entity.HasKey(issue => issue.Id);
+            entity.Property(issue => issue.Reason).HasMaxLength(200);
+            entity.Property(issue => issue.RawKey).HasMaxLength(500);
+            entity.HasIndex(issue => issue.ImportId);
+            entity.HasOne<SellOutImportEntity>().WithMany().HasForeignKey(issue => issue.ImportId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RetailStoreEntity>(entity =>
+        {
+            entity.ToTable("retail_stores", schema);
+            entity.HasKey(store => store.Id);
+            entity.Property(store => store.Retailer).HasMaxLength(64);
+            entity.Property(store => store.StoreCode).HasMaxLength(64);
+            entity.Property(store => store.Name).HasMaxLength(256);
+            entity.Property(store => store.Brand).HasMaxLength(64);
+            entity.Property(store => store.Region).HasMaxLength(128);
+            entity.Property(store => store.Province).HasMaxLength(64);
+            entity.Property(store => store.Gln).HasMaxLength(13);
+            entity.Property(store => store.AcumaticaCustomerId).HasMaxLength(64);
+            entity.HasIndex(store => new { store.Retailer, store.StoreCode }).IsUnique();
+        });
+
+        modelBuilder.Entity<SellOutMonthEntity>(entity =>
+        {
+            entity.ToTable("sell_out_months", schema);
+            entity.HasKey(month => month.Id);
+            entity.Property(month => month.Source).HasMaxLength(64);
+            entity.Property(month => month.InventoryId).HasMaxLength(64);
+            entity.Property(month => month.SourceProductCode).HasMaxLength(64);
+            entity.Property(month => month.Units).HasPrecision(18, 4);
+            entity.Property(month => month.UnitsEach).HasPrecision(18, 4);
+            entity.Property(month => month.ValueExclVat).HasPrecision(18, 2);
+            entity.HasIndex(month => new { month.Source, month.StoreId, month.SourceProductCode, month.Year, month.Month }).IsUnique();
+            entity.HasIndex(month => new { month.Source, month.Year, month.Month });
+            entity.HasIndex(month => new { month.FinancialYear, month.FinancialMonth });
+            entity.HasIndex(month => month.InventoryId);
+            entity.HasIndex(month => month.ImportId);
+            entity.HasOne<RetailStoreEntity>().WithMany().HasForeignKey(month => month.StoreId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<StoreStockSnapshotEntity>(entity =>
+        {
+            entity.ToTable("store_stock_snapshots", schema);
+            entity.HasKey(snapshot => snapshot.Id);
+            entity.Property(snapshot => snapshot.Source).HasMaxLength(64);
+            entity.Property(snapshot => snapshot.InventoryId).HasMaxLength(64);
+            entity.Property(snapshot => snapshot.SourceProductCode).HasMaxLength(64);
+            entity.Property(snapshot => snapshot.StockOnHand).HasPrecision(18, 4);
+            entity.Property(snapshot => snapshot.StockOnOrder).HasPrecision(18, 4);
+            entity.Property(snapshot => snapshot.StockInTransit).HasPrecision(18, 4);
+            entity.Property(snapshot => snapshot.StockValue).HasPrecision(18, 2);
+            entity.Property(snapshot => snapshot.WeeksOfStock).HasPrecision(18, 2);
+            entity.Property(snapshot => snapshot.DcStock).HasPrecision(18, 4);
+            entity.HasIndex(snapshot => new { snapshot.Source, snapshot.StoreId, snapshot.SourceProductCode, snapshot.SnapshotDate }).IsUnique();
+            entity.HasIndex(snapshot => snapshot.ImportId);
+            entity.HasOne<RetailStoreEntity>().WithMany().HasForeignKey(snapshot => snapshot.StoreId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<SellOutProductMapEntity>(entity =>
+        {
+            entity.ToTable("sell_out_product_maps", schema);
+            entity.HasKey(map => new { map.Source, map.SourceProductCode });
+            entity.Property(map => map.Source).HasMaxLength(64);
+            entity.Property(map => map.SourceProductCode).HasMaxLength(64);
+            entity.Property(map => map.InventoryId).HasMaxLength(64);
+            entity.Property(map => map.UnitsPerEach).HasPrecision(18, 4);
+            entity.Property(map => map.Method).HasMaxLength(32);
+            entity.Property(map => map.MappedBy).HasMaxLength(320);
+        });
+
+        modelBuilder.Entity<ProductGtinEntity>(entity =>
+        {
+            entity.ToTable("product_gtins", schema);
+            entity.HasKey(gtin => gtin.Gtin);
+            entity.Property(gtin => gtin.Gtin).HasMaxLength(14);
+            entity.Property(gtin => gtin.InventoryId).HasMaxLength(64);
+            entity.Property(gtin => gtin.Uom).HasMaxLength(16);
+            entity.HasIndex(gtin => gtin.InventoryId);
+        });
+    }
+
 }
