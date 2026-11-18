@@ -24,6 +24,7 @@
     "shopriteAcknowledgeOrders": { "value": false },
     "shopriteUseLayer7Headers": { "value": true },
     "containerAppMinReplicas": { "value": 1 },
-    "stockSyncMode": { "value": "Write" }
+    "stockSyncMode": { "value": "Write" },
+    "sellInEnabled": { "value": true }
   }
 }
