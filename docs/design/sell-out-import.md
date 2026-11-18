@@ -52,12 +52,28 @@ Out of scope for R2:
 
 ### 2.1 Makro Dispo
 
-- Read only the rows with UOM `EA` or `**`. Sales sit on these rows. The other
-  units (`CS`, `SW`, `LAY`, `PAL`) repeat the article with other barcodes.
+- One article has one row for each unit of measure: each (`EA`), shrink wrap
+  (`SW`), case (`CS`), layer (`LAY`), pallet (`PAL`) and `**`. Each row gives
+  its units, stock and `Net Cost` in its own unit. `Compo` is the number of
+  single items in that unit, for example 20 for a shrink wrap.
+- Sales and stock are spread over the rows. Example: the shrink wrap row holds
+  most of the units and the stock on hand, and the case row holds the stock on
+  order. The parser therefore adds all rows of a site and an article:
+  - units in single items = Σ (units × `Compo`).
+  - value = Σ (units × `Net Cost`).
+  - stock in single items = Σ (stock × `Compo`), for `SOH`, `SOO` and `SIT`.
+- Check on 2026-11-18: for October 2026, the value of all 22 Makro stores in
+  the three merchandiser statements matches Σ (units × `Net Cost`) within
+  0.5 %. The statements call this value "Rand value".
+- The `**` rows have no barcode, no cost and no stock. They do not add to the
+  value in the statements. The parser leaves them out and counts them.
+- The product code is `Article`. The GTIN is the `Barcode` of the `EA` row.
 - The month columns include the current month, which is not complete. The
   import marks that month as partial. A later file replaces it.
 - The column `11-2025` (the same month last year) is not loaded. The earlier
   file of that month holds it.
+- Numbers use a comma for thousands and a full stop for decimals, for example
+  `1,920.000`. The date on line 1 has the form `dd.mm.yyyy`.
 
 ### 2.2 Shoprite `vnd-art-sas`
 
