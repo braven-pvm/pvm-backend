@@ -51,6 +51,7 @@ public static class ServiceCollectionExtensions
         }
 
         services.AddScoped<SellOutImportService>();
+        services.AddScoped<SellOutQueries>();
         return services;
     }
 
