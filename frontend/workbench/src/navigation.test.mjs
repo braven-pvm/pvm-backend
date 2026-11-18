@@ -56,13 +56,13 @@ test("the Shoprite entry is current on every page of the module", () => {
   assert.equal(isCurrent(shoprite, "/banking"), false);
 });
 
-test("every signed-in user sees Documents with the review list under it", () => {
+test("every signed-in user sees Documents with the review list and General scans under it", () => {
   const documents = navigationFor(["Viewer"])
     .flatMap((group) => group.items)
     .find((item) => item.label === "Documents");
   assert.ok(documents);
   assert.equal(documents.href, "/documents");
-  assert.deepEqual(documents.children?.map((child) => child.href), ["/documents/review"]);
+  assert.deepEqual(documents.children?.map((child) => child.href), ["/documents/review", "/documents/general"]);
 });
 
 test("the review list, not the search, is current on the review page", () => {
@@ -72,6 +72,8 @@ test("the review list, not the search, is current on the review page", () => {
   assert.equal(isCurrent(documents, "/documents/review"), true);
   assert.equal(isCurrent(documents.children[0], "/documents/review"), true);
   assert.equal(isCurrent(documents.children[0], "/documents"), false);
+  assert.equal(isCurrent(documents.children[1], "/documents/general"), true);
+  assert.equal(isCurrent(documents.children[1], "/documents/review"), false);
   assert.equal(isCurrent(documents, "/documents/6f1d0c2a-0001-4a7e-9a10-000000000001"), true);
 });
 
@@ -81,9 +83,9 @@ test("only an admin sees the scanner devices link under Documents", () => {
       .flatMap((group) => group.items)
       .find((item) => item.label === "Documents");
   const childLabels = (roles) => (documentsFor(roles)?.children ?? []).map((child) => child.label);
-  assert.deepEqual(childLabels(["Admin"]), ["Review list", "Scanner devices"]);
-  assert.deepEqual(childLabels(["Operator"]), ["Review list"]);
-  assert.deepEqual(childLabels(["Viewer"]), ["Review list"]);
+  assert.deepEqual(childLabels(["Admin"]), ["Review list", "General scans", "Scanner devices"]);
+  assert.deepEqual(childLabels(["Operator"]), ["Review list", "General scans"]);
+  assert.deepEqual(childLabels(["Viewer"]), ["Review list", "General scans"]);
 });
 
 test("Operations lists Statements before Documents, and a viewer sees Documents but not Statements", () => {

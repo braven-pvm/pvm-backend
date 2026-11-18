@@ -1,5 +1,6 @@
 import { getApiAuthHeaders } from "../auth/session";
 import { buildDocumentSearchQuery, type DocumentSearchFilters } from "../documents";
+import { buildGeneralQuery, type GeneralSearchFilters } from "../general-documents";
 import { timedFetch } from "./timed-fetch";
 
 /*
@@ -94,7 +95,43 @@ export type DocumentDetail = {
   acumaticaAttachMode?: string;
   /** The backend's delete rule for this document as it is now (design 6.11). Missing means no. */
   canDelete?: boolean;
+  /** Typed on the phone: the title (general documents only) and the note. */
+  title?: string | null;
+  note?: string | null;
+  /** What Claude read from a general document (design 6.12). */
+  autoTitle?: string | null;
+  summary?: string | null;
+  /** yyyy-mm-dd, printed on the paper. */
+  documentDate?: string | null;
+  searchWords?: string[];
+  hasThumbnail?: boolean;
 };
+
+/** One row of the General scans list (GET /api/documents/general). */
+export type GeneralDocumentItem = {
+  id: string;
+  documentType: string;
+  state: string;
+  title: string | null;
+  note: string | null;
+  autoTitle: string | null;
+  summary: string | null;
+  documentDate: string | null;
+  searchWords: string[];
+  hasThumbnail: boolean;
+  pageCount: number;
+  uploadedBy: string;
+  uploadedAt: string;
+  scannerDeviceId: string | null;
+  scannerDeviceName: string | null;
+  scannerStaffId: string | null;
+  scannerStaffName: string | null;
+};
+
+export type GeneralFilterOption = { id: string; name: string };
+
+/** The phones and staff names that uploaded general documents, for the list's filters. */
+export type GeneralFilterOptions = { devices: GeneralFilterOption[]; staff: GeneralFilterOption[] };
 
 export type DocumentType = { code: string; displayName: string };
 
@@ -135,6 +172,21 @@ async function getJson<T>(path: string, what: string): Promise<T> {
 export function searchDocuments(filters: DocumentSearchFilters): Promise<DocumentPage<DocumentSearchItem>> {
   const query = buildDocumentSearchQuery(filters);
   return getJson(`/api/documents${query ? `?${query}` : ""}`, "documents");
+}
+
+export function getGeneralDocuments(filters: GeneralSearchFilters): Promise<DocumentPage<GeneralDocumentItem>> {
+  const query = buildGeneralQuery(filters);
+  return getJson(`/api/documents/general${query ? `?${query}` : ""}`, "the general scans");
+}
+
+/** The filter choices. If the call fails, no choices: the list still works. */
+export async function getGeneralFilterOptions(): Promise<GeneralFilterOptions> {
+  try {
+    return await getJson<GeneralFilterOptions>("/api/documents/general/filters", "the general scan filters");
+  } catch (error) {
+    console.warn("documents.general.filters.unavailable", { error: String(error) });
+    return { devices: [], staff: [] };
+  }
 }
 
 export function getReviewList(page = 1): Promise<DocumentPage<ReviewListItem>> {
@@ -221,6 +273,15 @@ export async function deleteDocument(id: string, reason: string): Promise<Delete
     return { ok: false, status: response.status, code: typeof body?.code === "string" ? body.code : null };
   }
   return { ok: true, warning: typeof body?.warning === "string" ? body.warning : null };
+}
+
+/** The first-page JPEG, as the backend streams it. For the workbench's own thumbnail route only. */
+export async function fetchDocumentThumbnail(id: string): Promise<Response | null> {
+  const headers = await getApiAuthHeaders();
+  if (Object.keys(headers).length === 0) {
+    return null;
+  }
+  return timedFetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(id)}/thumbnail`, { headers, cache: "no-store" });
 }
 
 /** The PDF, as the backend streams it. For the workbench's own file route only. */

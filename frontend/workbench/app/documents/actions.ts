@@ -60,6 +60,7 @@ async function nextOnReviewList(id: string, context: ListContext | null): Promis
 function revalidate(id: string) {
   revalidatePath("/documents");
   revalidatePath("/documents/review");
+  revalidatePath("/documents/general");
   revalidatePath(`/documents/${id}`);
 }
 
@@ -184,6 +185,7 @@ export async function deleteDocumentAction(formData: FormData) {
       // Gone already: the document page would only show "not found".
       revalidatePath("/documents");
       revalidatePath("/documents/review");
+      revalidatePath("/documents/general");
       redirect(listHref(context, { documentError: deleteErrorMessage(404) }));
     }
     fail(id, context, deleteErrorMessage(result.status, result.code));

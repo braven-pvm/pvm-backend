@@ -58,6 +58,7 @@ export function formatReviewReason(reason: string | null | undefined, state: str
 
 const typeLabels: Record<string, string> = {
   POD: "Proof of delivery",
+  GENERAL: "General document",
 };
 
 export function documentTypeLabel(code: string): string {

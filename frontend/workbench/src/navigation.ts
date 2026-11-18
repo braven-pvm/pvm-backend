@@ -60,9 +60,10 @@ export const navigation: NavGroup[] = [
         label: "Documents",
         href: "/documents",
         icon: "documents",
-        // The search is the Documents page itself; the review list and, for Admins, the scanner devices are its sub-links.
+        // The search is the Documents page itself; the review list, the general scans and, for Admins, the scanner devices are its sub-links.
         children: [
           { label: "Review list", href: "/documents/review" },
+          { label: "General scans", href: "/documents/general" },
           { label: "Scanner devices", href: "/documents/devices", roles: admin },
         ],
       },

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import {
   acumaticaBaseUrl,
   getDocument,
+  getGeneralDocuments,
   getReviewList,
   searchDocuments,
   searchReviewInvoices,
@@ -35,6 +36,7 @@ import {
   uploaderText,
 } from "../../../src/documents";
 import { formatDate, formatDateTime } from "../../../src/formatters.mjs";
+import { generalTitle, isGeneralDocument } from "../../../src/general-documents";
 import {
   Button,
   ConfirmDialog,
@@ -81,9 +83,16 @@ async function neighboursIn(context: ListContext | null, id: string): Promise<Ne
     return null;
   }
   try {
-    return await findNeighbours(id, context.page, (page) =>
-      context.kind === "review" ? getReviewList(page) : searchDocuments({ ...context.filters, page }),
-    );
+    return await findNeighbours(id, context.page, (page) => {
+      switch (context.kind) {
+        case "review":
+          return getReviewList(page);
+        case "general":
+          return getGeneralDocuments({ ...context.filters, page });
+        default:
+          return searchDocuments({ ...context.filters, page });
+      }
+    });
   } catch (error) {
     // The page still works without Previous and Next.
     console.warn("documents.neighbours.unavailable", { error: String(error) });
@@ -105,6 +114,9 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
   }
 
   const canWrite = hasAnyRole(user, ["Admin", "Operator"]);
+  if (isGeneralDocument(document.documentType)) {
+    return <GeneralDocumentView document={document} context={context} neighbours={neighbours} canWrite={canWrite} query={query} />;
+  }
   const open = canActOnDocument(document);
   const onReviewList = (open && !document.rejectedAt) || document.stuck;
   const typeLabel = documentTypeLabel(document.documentType);
@@ -127,7 +139,7 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
 
   return (
     <ViewerPage
-      back={{ href: listHref(context), label: context?.kind === "review" ? "Back to the review list" : "Back to Documents" }}
+      back={{ href: listHref(context), label: backLabel(context) }}
       nav={
         neighbours ? (
           <RecordNav
@@ -233,6 +245,118 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
       <Panel title="Activity">
         <Timeline label="Document history" entries={history(document)} />
       </Panel>
+    </ViewerPage>
+  );
+}
+
+function backLabel(context: ListContext | null) {
+  switch (context?.kind) {
+    case "review":
+      return "Back to the review list";
+    case "general":
+      return "Back to General scans";
+    default:
+      return "Back to Documents";
+  }
+}
+
+/**
+ * A general document (design 6.12): the PDF, what was typed on the phone and
+ * what Claude read, who scanned it, and Delete. It is never filed to an
+ * invoice, so there is no File, Reject or review action.
+ */
+function GeneralDocumentView({
+  document,
+  context,
+  neighbours,
+  canWrite,
+  query,
+}: {
+  document: DocumentDetail;
+  context: ListContext | null;
+  neighbours: Neighbours | null;
+  canWrite: boolean;
+  query: Record<string, string | string[] | undefined>;
+}) {
+  const title = generalTitle(document);
+  const documentError = param(query.documentError);
+  const documentStatus = param(query.documentStatus);
+  const fields: Fields = { documentId: document.id, ...listContextFields(context) };
+  const step = (neighbour: { id: string; page: number } | null) =>
+    neighbour && context ? documentHref(neighbour.id, { ...context, page: neighbour.page }) : undefined;
+  const words = document.searchWords ?? [];
+  const read = Boolean(document.autoTitle || document.summary || document.documentDate || words.length > 0);
+  const reading = document.state === "Received" || document.state === "Processing";
+
+  return (
+    <ViewerPage
+      back={{ href: listHref(context), label: backLabel(context) }}
+      nav={
+        neighbours ? (
+          <RecordNav
+            noun="scan"
+            position={positionText(neighbours.position, neighbours.total)}
+            previousHref={step(neighbours.previous)}
+            nextHref={step(neighbours.next)}
+          />
+        ) : null
+      }
+      header={{
+        eyebrow: "General document",
+        title,
+        status: document.state === "Filed" ? null : <DocumentStateBadge state={document.state} stuck={document.stuck} />,
+        description: `Uploaded ${formatDateTime(document.uploadedAt)} by ${uploaderText(document)} · ${pages(document.pageCount)}`,
+      }}
+      viewer={<PdfFrame size="fill" src={`/documents/${document.id}/file`} title={`${title}, uploaded ${formatDateTime(document.uploadedAt)}`} />}
+    >
+      {documentError ? (
+        <Notice tone="error" title="Nothing changed" live>
+          {documentError}
+        </Notice>
+      ) : null}
+      {documentStatus ? <Notice tone="success" title={documentStatus} live /> : null}
+      {document.stuck ? (
+        <Notice tone="warning" title="Stuck — reading did not finish">
+          The scan is stored, but Claude has not read it yet. Tell the backoffice developer if it stays like this.
+        </Notice>
+      ) : document.state === "Failed" ? (
+        <Notice tone="error" title="Reading failed after every retry">
+          The scan is stored, but it has no automatic title or search words.
+        </Notice>
+      ) : null}
+      <Panel title="Scan">
+        <KeyValueList
+          items={[
+            { label: "Title", value: document.title?.trim() || null },
+            { label: "Note", value: document.note?.trim() || null },
+            { label: "Uploaded by", value: uploaderText(document) },
+            { label: "Uploaded", value: formatDateTime(document.uploadedAt) },
+          ]}
+        />
+      </Panel>
+      <Panel title="Read by Claude" description="An automatic title and search words, so the scan can be found again.">
+        {read ? (
+          <KeyValueList
+            layout="stacked"
+            items={[
+              { label: "Auto title", value: document.autoTitle },
+              { label: "Summary", value: document.summary },
+              { label: "Document date", value: document.documentDate ? formatDate(document.documentDate) : null },
+              { label: "Search words", value: words.length > 0 ? words.join(", ") : null },
+            ]}
+          />
+        ) : (
+          <EmptyState
+            title={reading ? "Not read yet" : "Nothing was read"}
+            description={reading ? "Claude reads the scan in a minute or two." : "The scan could not be read. Search for it by its title, note, phone or date."}
+          />
+        )}
+      </Panel>
+      {showDeleteAction(document, canWrite) ? (
+        <Panel title="Actions">
+          <DeleteDocument fields={fields} general />
+        </Panel>
+      ) : null}
     </ViewerPage>
   );
 }
@@ -396,27 +520,31 @@ function ProcessAgain({ document, fields }: { document: DocumentDetail; fields: 
   );
 }
 
-function DeleteDocument({ fields }: { fields: Fields }) {
+function DeleteDocument({ fields, general = false }: { fields: Fields; general?: boolean }) {
   return (
     <ConfirmDialog
-      triggerLabel="Delete document"
+      triggerLabel={general ? "Delete scan" : "Delete document"}
       triggerVariant="tertiary"
       tone="danger"
-      title="Delete this document permanently?"
+      title={general ? "Delete this scan permanently?" : "Delete this document permanently?"}
       confirmLabel="Delete permanently"
       pendingLabel="Deleting…"
       action={deleteDocumentAction}
       fields={fields}
     >
-      <p>
-        For a duplicate, a test upload or a scan that is not a delivery document. The document is not filed, so nothing in
-        Acumatica changes.
-      </p>
+      {general ? (
+        <p>For a duplicate, a test scan or a paper that does not need keeping. A general scan is never in Acumatica.</p>
+      ) : (
+        <p>
+          For a duplicate, a test upload or a scan that is not a delivery document. The document is not filed, so nothing in
+          Acumatica changes.
+        </p>
+      )}
       <p>The PDF and its record are removed for good. This cannot be undone.</p>
       <TextareaField
         name="reason"
         label="Reason"
-        hint={`Why it is deleted, such as “Duplicate scan of the same delivery note”. At most ${maxDeleteReasonLength} characters.`}
+        hint={`Why it is deleted, such as “${general ? "Scanned twice" : "Duplicate scan of the same delivery note"}”. At most ${maxDeleteReasonLength} characters.`}
         width="full"
         maxLength={maxDeleteReasonLength}
         required

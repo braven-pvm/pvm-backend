@@ -213,3 +213,30 @@ test("J, K and the arrow keys move only when nothing else has the keys", () => {
   // A link or a button with focus does not use the arrows itself.
   assert.equal(keyboardStep(key({ target: "A", key: "ArrowLeft" })), "previous");
 });
+
+test("the General scans context keeps its search, filters and page", () => {
+  assert.deepEqual(
+    parseListContext({ list: "general", q: " eskom ", device: "d1", staff: "s1", from: "2026-11-01", to: "soon", page: "2", invoice: "ignored" }),
+    { kind: "general", filters: { q: "eskom", device: "d1", staff: "s1", from: "2026-11-01" }, page: 2 },
+  );
+  assert.deepEqual(parseListContext({ list: "general" }), { kind: "general", filters: {}, page: 1 });
+});
+
+test("from a general document, Back, Previous and Next walk the General scans list", () => {
+  const context = { kind: "general", filters: { q: "eskom", staff: "s1" }, page: 2 };
+  assert.equal(listHref(context), "/documents/general?q=eskom&staff=s1&page=2");
+  assert.equal(listHref({ kind: "general", filters: {}, page: 1 }), "/documents/general");
+  assert.equal(listLabel(context), "General scans");
+  const href = documentHref("d1", context);
+  assert.equal(href, "/documents/d1?list=general&q=eskom&staff=s1&page=2");
+  assert.deepEqual(parseListContext(new URLSearchParams(href.split("?")[1])), context);
+  assert.deepEqual(listContextFields(context), { list: "general", q: "eskom", staff: "s1", page: "2" });
+});
+
+test("after a delete from General scans, the General scans list opens with the notice", () => {
+  const context = { kind: "general", filters: { q: "eskom" }, page: 1 };
+  assert.equal(
+    afterActionHref({ id: "d1", context, next: { id: "d2", page: 1 }, notice: { documentStatus: "Document deleted." }, leave: "list" }),
+    "/documents/general?q=eskom&documentStatus=Document+deleted.",
+  );
+});
