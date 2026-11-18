@@ -7,6 +7,8 @@ import {
   canActOnDocument,
   canProcessAgain,
   canReturnToReview,
+  deleteErrorMessage,
+  documentDeletedMessage,
   documentTypeLabel,
   fileToAttachText,
   fileToErrorMessage,
@@ -16,6 +18,7 @@ import {
   processAgainErrorMessage,
   rejectErrorMessage,
   returnToReviewErrorMessage,
+  showDeleteAction,
   unconfirmedMessage,
   uploaderText,
 } from "./documents.ts";
@@ -229,4 +232,34 @@ test("a phone upload without a staff name shows the device only", () => {
 test("a workbench upload shows the uploader as before", () => {
   assert.equal(uploaderText({ uploadedBy: "driver.thabo@pvm.co.za", scannerDeviceName: null, scannerStaffName: null }), "driver.thabo@pvm.co.za");
   assert.equal(uploaderText({ uploadedBy: "driver.thabo@pvm.co.za" }), "driver.thabo@pvm.co.za");
+});
+
+test("showDeleteAction follows the backend's canDelete, for Admin and Operator only", () => {
+  assert.equal(showDeleteAction({ canDelete: true }, true), true);
+  assert.equal(showDeleteAction({ canDelete: false }, true), false);
+  // An older API without the field never shows the action.
+  assert.equal(showDeleteAction({}, true), false);
+  assert.equal(showDeleteAction({ canDelete: null }, true), false);
+  // A Viewer never sees it, whatever the backend says.
+  assert.equal(showDeleteAction({ canDelete: true }, false), false);
+});
+
+test("deleteErrorMessage maps each 409 code to a plain message", () => {
+  assert.match(deleteErrorMessage(409, "document-filed"), /Send it back to review first\./);
+  assert.match(deleteErrorMessage(409, "document-attached"), /attached to the invoice in Acumatica/);
+  assert.match(deleteErrorMessage(409, "document-processing"), /Wait until processing ends/);
+  assert.match(deleteErrorMessage(409, null), /can no longer be deleted/);
+  assert.match(deleteErrorMessage(409, "something-new"), /can no longer be deleted/);
+});
+
+test("deleteErrorMessage explains the other answers", () => {
+  assert.match(deleteErrorMessage(400), /at most 500 characters/);
+  assert.match(deleteErrorMessage(404), /no longer exists/);
+  assert.match(deleteErrorMessage(403), /Admin or Operator/);
+  assert.match(deleteErrorMessage(500), /error 500\)\. Nothing was deleted/);
+});
+
+test("the delete notice and the unconfirmed delete message", () => {
+  assert.equal(documentDeletedMessage, "Document deleted.");
+  assert.equal(unconfirmedMessage("deleted"), "We could not confirm whether the document was deleted. Reload the page to see its state.");
 });

@@ -11,7 +11,9 @@ import {
   formatDocumentState,
   formatReviewReason,
   isDocumentId,
+  maxDeleteReasonLength,
   readExtraction,
+  showDeleteAction,
   uploaderText,
 } from "../../../src/documents";
 import { formatDate, formatDateTime } from "../../../src/formatters.mjs";
@@ -33,7 +35,7 @@ import {
   type Column,
   type TimelineEntry,
 } from "../../../src/ui";
-import { fileDocumentToAction, processAgainAction, rejectDocumentAction, returnToReviewAction } from "../actions";
+import { deleteDocumentAction, fileDocumentToAction, processAgainAction, rejectDocumentAction, returnToReviewAction } from "../actions";
 import { AcumaticaInvoice, DocumentStateBadge, acumaticaLabel, customerOf, invoiceColumns } from "../document-parts";
 
 export const dynamic = "force-dynamic";
@@ -203,6 +205,7 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
               </ConfirmDialog>
             </Panel>
           ) : null}
+          {showDeleteAction(document, canWrite) ? <DeleteDocument document={document} /> : null}
         </Stack>
       </Columns>
     </RecordPage>
@@ -314,6 +317,36 @@ function ProcessAgain({ document }: { document: DocumentDetail }) {
         fields={{ documentId: document.id }}
       >
         <p>The PDF is read and matched again. It is filed if the match is safe; otherwise it comes back to the review list.</p>
+      </ConfirmDialog>
+    </Panel>
+  );
+}
+
+function DeleteDocument({ document }: { document: DocumentDetail }) {
+  return (
+    <Panel
+      title="Delete document"
+      description="For a duplicate, a test upload or a scan that is not a delivery document. The document is not filed, so nothing in Acumatica changes."
+    >
+      <ConfirmDialog
+        triggerLabel="Delete document"
+        triggerVariant="tertiary"
+        tone="danger"
+        title="Delete this document permanently?"
+        confirmLabel="Delete permanently"
+        pendingLabel="Deleting…"
+        action={deleteDocumentAction}
+        fields={{ documentId: document.id }}
+      >
+        <p>The PDF and its record are removed for good. This cannot be undone.</p>
+        <TextareaField
+          name="reason"
+          label="Reason"
+          hint={`Why it is deleted, such as “Duplicate scan of the same delivery note”. At most ${maxDeleteReasonLength} characters.`}
+          width="full"
+          maxLength={maxDeleteReasonLength}
+          required
+        />
       </ConfirmDialog>
     </Panel>
   );

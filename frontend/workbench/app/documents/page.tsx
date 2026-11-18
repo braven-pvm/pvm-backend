@@ -9,6 +9,7 @@ import {
   FilterBar,
   FilterChips,
   ListPage,
+  Notice,
   Pagination,
   TextField,
   type Column,
@@ -18,7 +19,19 @@ import { AcumaticaInvoice, DocumentStateBadge, acumaticaLabel } from "./document
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Documents" };
 
-type SearchParams = { invoice?: string; client?: string; type?: string; state?: string; from?: string; to?: string; page?: string };
+type SearchParams = {
+  invoice?: string;
+  client?: string;
+  type?: string;
+  state?: string;
+  from?: string;
+  to?: string;
+  page?: string;
+  /** After a delete: the result notice, and a storage warning when the PDF stayed behind. */
+  documentStatus?: string;
+  documentWarning?: string;
+  documentError?: string;
+};
 
 // The state comes right after the invoice: on a phone the table scrolls sideways.
 // The first cell links to the document page; the Acumatica link sits in its own column.
@@ -84,6 +97,23 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
         description: "Delivery documents scanned at the office. Search by invoice number when a client asks about a delivery.",
         actions: <ButtonLink href="/documents/review">Open the review list</ButtonLink>,
       }}
+      notice={
+        params.documentStatus || params.documentWarning || params.documentError ? (
+          <>
+            {params.documentError ? (
+              <Notice tone="error" title="Nothing changed" live>
+                {params.documentError}
+              </Notice>
+            ) : null}
+            {params.documentStatus ? <Notice tone="success" title={params.documentStatus} live /> : null}
+            {params.documentWarning ? (
+              <Notice tone="warning" title="The PDF is still in storage">
+                {params.documentWarning}
+              </Notice>
+            ) : null}
+          </>
+        ) : undefined
+      }
       filters={
         <>
           <FilterChips

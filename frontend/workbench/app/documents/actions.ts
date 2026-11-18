@@ -2,9 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { fileDocumentTo, processDocumentAgain, rejectDocument, returnDocumentToReview } from "../../src/api/documents";
+import { deleteDocument, fileDocumentTo, processDocumentAgain, rejectDocument, returnDocumentToReview } from "../../src/api/documents";
 import {
+  deleteErrorMessage,
+  documentDeletedMessage,
   fileToErrorMessage,
+  maxDeleteReasonLength,
   isDocumentId,
   processAgainErrorMessage,
   rejectErrorMessage,
@@ -107,4 +110,36 @@ export async function processAgainAction(formData: FormData) {
     finish(id, { error: processAgainErrorMessage(result.status) });
   }
   finish(id, { status: "Document queued. It will be read and matched again in a minute or two." });
+}
+
+/** Deletes the document for good, then opens the Documents list with the notice. */
+export async function deleteDocumentAction(formData: FormData) {
+  const id = documentId(formData);
+  const reason = text(formData, "reason");
+  if (!reason || reason.length > maxDeleteReasonLength) {
+    finish(id, { error: deleteErrorMessage(400) });
+  }
+
+  let result: Awaited<ReturnType<typeof deleteDocument>>;
+  try {
+    result = await deleteDocument(id, reason);
+  } catch {
+    finish(id, { error: unconfirmedMessage("deleted") });
+  }
+  if (!result.ok) {
+    if (result.status === 404) {
+      // Gone already: the document page would only show "not found".
+      revalidatePath("/documents");
+      redirect(`/documents?documentError=${encodeURIComponent(deleteErrorMessage(404))}`);
+    }
+    finish(id, { error: deleteErrorMessage(result.status, result.code) });
+  }
+
+  revalidatePath("/documents");
+  revalidatePath("/documents/review");
+  const query = new URLSearchParams({ documentStatus: documentDeletedMessage });
+  if (result.warning) {
+    query.set("documentWarning", result.warning);
+  }
+  redirect(`/documents?${query.toString()}`);
 }
