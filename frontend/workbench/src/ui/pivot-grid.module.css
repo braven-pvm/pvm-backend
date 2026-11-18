@@ -1,0 +1,125 @@
+/* The grid scrolls in both directions inside its panel. The first column and the headers stay in view. */
+.scroll {
+  max-height: 72vh;
+  max-width: 100%;
+  overflow: auto;
+}
+
+.scroll:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-small);
+  min-width: 100%;
+}
+
+.th {
+  background: var(--color-fill);
+  color: var(--color-text-weak);
+  font-size: var(--text-caption);
+  font-weight: var(--font-bold);
+  line-height: var(--leading-caption);
+  padding: 8px var(--space-s);
+  position: sticky;
+  text-align: left;
+  top: 0;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+/* The second header row sits under the first. */
+thead tr + tr .th {
+  top: calc(var(--leading-caption) + 16px);
+}
+
+.group {
+  border-bottom: 1px solid var(--color-stroke-weak);
+  text-align: center;
+}
+
+.td {
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-stroke-weak);
+  color: var(--color-text-strong);
+  font-weight: var(--font-regular);
+  padding: 8px var(--space-s);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.num {
+  text-align: right;
+}
+
+.rowHead {
+  border-right: 1px solid var(--color-stroke-weak);
+  left: 0;
+  max-width: 320px;
+  min-width: 220px;
+  position: sticky;
+  z-index: 1;
+}
+
+.th.rowHead {
+  z-index: 3;
+}
+
+.label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toggle {
+  align-items: center;
+  color: var(--color-text-strong);
+  display: inline-flex;
+  gap: var(--space-2xs);
+  text-decoration: none;
+}
+
+.toggle:hover {
+  color: var(--color-brand);
+}
+
+.toggle svg {
+  color: var(--color-text-weak);
+  flex: none;
+}
+
+/* A leaf has no chevron. The space keeps its label in line with the labels above it. */
+.leaf {
+  display: inline-block;
+  padding-inline-start: calc(16px + var(--space-2xs));
+}
+
+tr[data-level="0"] .td {
+  font-weight: var(--font-bold);
+}
+
+.td[data-subtotal],
+.th[data-subtotal] {
+  background: var(--color-fill);
+  font-weight: var(--font-bold);
+}
+
+.total {
+  font-weight: var(--font-bold);
+}
+
+.foot {
+  border-top: 2px solid var(--color-stroke-strong);
+  bottom: 0;
+  font-weight: var(--font-bold);
+  position: sticky;
+}
+
+.foot.rowHead {
+  z-index: 2;
+}

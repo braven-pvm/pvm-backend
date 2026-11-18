@@ -23,7 +23,7 @@ test("an operator sees banking but not admin settings", () => {
 
 test("an admin sees everything", () => {
   const groups = navigationFor(["Admin"]);
-  for (const label of ["Today", "Exceptions", "Shoprite", "Banking", "Stock", "Sell-out", "Statements", "Documents", "Automations", "Runs", "Events", "Users"]) {
+  for (const label of ["Today", "Exceptions", "Shoprite", "Banking", "Stock", "Sell-out", "Statements", "Sales report", "Documents", "Automations", "Runs", "Events", "Users"]) {
     assert.ok(labels(groups).includes(label), label);
   }
 });
@@ -88,7 +88,12 @@ test("only an admin sees the scanner devices link under Documents", () => {
 
 test("Operations lists Statements before Documents, and a viewer sees Documents but not Statements", () => {
   const operations = (roles) => navigationFor(roles).find((group) => group.label === "Operations").items.map((item) => item.label);
-  assert.deepEqual(operations(["Admin"]), ["Shoprite", "Banking", "Stock", "Sell-out", "Statements", "Documents"]);
+  assert.deepEqual(operations(["Admin"]), ["Shoprite", "Banking", "Stock", "Sell-out", "Statements", "Sales report", "Documents"]);
   assert.ok(!operations(["Viewer"]).includes("Statements"));
   assert.ok(operations(["Viewer"]).includes("Documents"));
+});
+
+test("a viewer does not see the sales report", () => {
+  assert.ok(!labels(navigationFor(["Viewer"])).includes("Sales report"));
+  assert.ok(labels(navigationFor(["Operator"])).includes("Sales report"));
 });
