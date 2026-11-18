@@ -963,6 +963,31 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                     b.ToTable("payload_archives", (string)null);
                 });
 
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ProductGtinEntity", b =>
+                {
+                    b.Property<string>("Gtin")
+                        .HasMaxLength(14)
+                        .HasColumnType("character varying(14)");
+
+                    b.Property<string>("InventoryId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Uom")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Gtin");
+
+                    b.HasIndex("InventoryId");
+
+                    b.ToTable("product_gtins", "reporting");
+                });
+
             modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ReportingCustomerClassChannelEntity", b =>
                 {
                     b.Property<string>("CustomerClassId")
@@ -1094,6 +1119,61 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                     b.HasKey("WarehouseId", "LocationId");
 
                     b.ToTable("warehouse_locations", "reporting");
+                });
+
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.RetailStoreEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AcumaticaCustomerId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Brand")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Gln")
+                        .HasMaxLength(13)
+                        .HasColumnType("character varying(13)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("Province")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Region")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("Retailer")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("StoreCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Retailer", "StoreCode")
+                        .IsUnique();
+
+                    b.ToTable("retail_stores", "reporting");
                 });
 
             modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.SellInExcludedLine", b =>
@@ -1317,6 +1397,226 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                     b.ToTable((string)null);
 
                     b.ToView("sell_in_report_lines", "reporting");
+                });
+
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.SellOutImportEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ArchivePath")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("FileDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)");
+
+                    b.Property<string>("FileSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("FileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateOnly?>("FirstMonth")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("LastMonth")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset?>("LoadedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReceivedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<int>("RowsLoaded")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RowsRead")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RowsRefused")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RowsUnmapped")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("StatusReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FileSha256")
+                        .IsUnique()
+                        .HasFilter("\"Status\" = 'Loaded'");
+
+                    b.HasIndex("Source", "CreatedAt");
+
+                    b.ToTable("sell_out_imports", "reporting");
+                });
+
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.SellOutImportIssueEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ImportId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RawKey")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("RowNumber")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ImportId");
+
+                    b.ToTable("sell_out_import_issues", "reporting");
+                });
+
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.SellOutMonthEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("FinancialMonth")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("FinancialYear")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Gtin")
+                        .HasMaxLength(14)
+                        .HasColumnType("character varying(14)");
+
+                    b.Property<Guid>("ImportId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("InventoryId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<bool>("IsPartial")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Month")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SourceProductCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("StoreId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Units")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal>("UnitsEach")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal?>("ValueExclVat")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ImportId");
+
+                    b.HasIndex("InventoryId");
+
+                    b.HasIndex("StoreId");
+
+                    b.HasIndex("FinancialYear", "FinancialMonth");
+
+                    b.HasIndex("Source", "Year", "Month");
+
+                    b.HasIndex("Source", "StoreId", "SourceProductCode", "Year", "Month")
+                        .IsUnique();
+
+                    b.ToTable("sell_out_months", "reporting");
+                });
+
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.SellOutProductMapEntity", b =>
+                {
+                    b.Property<string>("Source")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SourceProductCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("InventoryId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset>("MappedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MappedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<decimal>("UnitsPerEach")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.HasKey("Source", "SourceProductCode");
+
+                    b.ToTable("sell_out_product_maps", "reporting");
                 });
 
             modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ShopriteDeliveryLocationEntity", b =>
@@ -1738,6 +2038,75 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                     b.ToTable("stock_sync_runs", (string)null);
                 });
 
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.StoreStockSnapshotEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal?>("DcStock")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("Gtin")
+                        .HasMaxLength(14)
+                        .HasColumnType("character varying(14)");
+
+                    b.Property<Guid>("ImportId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("InventoryId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateOnly>("SnapshotDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SourceProductCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<decimal?>("StockInTransit")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal?>("StockOnHand")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal?>("StockOnOrder")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal?>("StockValue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<Guid>("StoreId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal?>("WeeksOfStock")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ImportId");
+
+                    b.HasIndex("StoreId");
+
+                    b.HasIndex("Source", "StoreId", "SourceProductCode", "SnapshotDate")
+                        .IsUnique();
+
+                    b.ToTable("store_stock_snapshots", "reporting");
+                });
+
             modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.SubmissionOperationEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1977,12 +2346,39 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.SellOutImportIssueEntity", b =>
+                {
+                    b.HasOne("Pvm.Infrastructure.Persistence.Entities.SellOutImportEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ImportId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.SellOutMonthEntity", b =>
+                {
+                    b.HasOne("Pvm.Infrastructure.Persistence.Entities.RetailStoreEntity", null)
+                        .WithMany()
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ShopritePurchaseOrderLineEntity", b =>
                 {
                     b.HasOne("Pvm.Infrastructure.Persistence.Entities.ShopritePurchaseOrderEntity", null)
                         .WithMany("Lines")
                         .HasForeignKey("ShopritePurchaseOrderId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.StoreStockSnapshotEntity", b =>
+                {
+                    b.HasOne("Pvm.Infrastructure.Persistence.Entities.RetailStoreEntity", null)
+                        .WithMany()
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

@@ -6,6 +6,7 @@ using Pvm.Application.Submissions;
 using Pvm.Domain.Reporting;
 using Pvm.Infrastructure.Acumatica;
 using Pvm.Infrastructure.Reporting;
+using Pvm.Infrastructure.Reporting.SellOut;
 using Pvm.Infrastructure.Messaging;
 using Pvm.Infrastructure.Operations;
 using Pvm.Infrastructure.PayloadArchive;
@@ -35,6 +36,36 @@ var syncWooCommerceStock = args.Contains(
 var syncSellIn = args.Contains(
     "--sync-sell-in",
     StringComparer.OrdinalIgnoreCase);
+var refreshProductGtins = args.Contains(
+    "--refresh-product-gtins",
+    StringComparer.OrdinalIgnoreCase);
+
+if (refreshProductGtins)
+{
+    // Reads the GTINs of the Acumatica stock items, then maps the sell-out rows that waited for them.
+    builder.Services.AddAcumaticaInvoiceSource(builder.Configuration);
+    builder.Services.AddProductGtinRefresh();
+
+    using var gtinHost = builder.Build();
+    await using var gtinScope = gtinHost.Services.CreateAsyncScope();
+    var gtinLogger = gtinScope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("ProductGtinRefresh");
+    try
+    {
+        var result = await gtinScope.ServiceProvider.GetRequiredService<ProductGtinRefreshService>().RefreshAsync(CancellationToken.None);
+        gtinLogger.LogInformation(
+            "integration.run.completed RunType=product-gtin-refresh Gtins={Gtins} Ambiguous={Ambiguous} ProductsMapped={Mapped}",
+            result.Gtins,
+            result.Ambiguous.Count,
+            result.ProductsMapped);
+    }
+    catch (Exception exception)
+    {
+        gtinLogger.LogError(exception, "integration.run.failed RunType=product-gtin-refresh");
+        throw;
+    }
+
+    return;
+}
 
 if (syncSellIn)
 {
