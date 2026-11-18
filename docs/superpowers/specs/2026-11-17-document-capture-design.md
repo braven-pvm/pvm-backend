@@ -277,14 +277,66 @@ each change occurred.
 
 ### 6.9 Access
 
-- A new auth policy `Documents.Capture` allows the upload. My proposal: the
-  Operator and Admin roles get this policy. No new role is necessary.
-- The phone app is a public client of the existing API app registration. It
-  requests the same API scope as the workbench, so the existing app roles
-  apply. The Entra change is a new mobile platform entry (redirect URI) for
-  the app, which an Entra administrator must add.
 - The Documents page and the review list use the current read and write
-  policies.
+  policies. The workbench keeps Microsoft Entra sign-in.
+
+### 6.10 Device enrolment (owner decision, 2026-11-18)
+
+The staff who scan have no email address and no Microsoft account. The phone
+app therefore has no user sign-in. The device signs in, not the person. This
+replaces the Entra sign-in in the phone app that the first version of this
+design described.
+
+Enrolment:
+
+1. An Admin opens **Documents > Scanner devices** in the workbench, selects
+   **Add device**, and types a name, for example "Dispatch phone 1".
+2. The backend makes a one-time setup code: 32 random bytes, valid for 15
+   minutes, usable once. The backend stores only a SHA-256 hash of the code.
+3. The workbench shows the setup code as a QR code. The QR content is JSON:
+   `{"v":1,"api":"<API base URL>","code":"<setup code>"}`.
+4. On the first start, the app shows **Scan setup code**. The person scans the
+   QR code. The app calls `POST /api/device/enrol` with the code.
+5. The backend checks the code (exists, not used, not expired, device not
+   revoked), marks it used, and returns a device key: the prefix `pvmd_` and
+   32 random bytes in base64url. The backend stores only a SHA-256 hash of the
+   key. The app stores the key and the API base URL in Android encrypted
+   storage.
+6. An Admin can make a new setup code for an existing device (re-enrolment).
+   A new enrolment replaces the old device key.
+
+Use of the key:
+
+- The device endpoints read the key from the header
+  `Authorization: Device <key>`. A separate authentication scheme handles it.
+  It never grants access to a workbench endpoint, and a workbench token never
+  grants access to a device endpoint.
+- Device endpoints:
+  - `GET /api/device/config`: the device name, the document types, and the
+    active staff names.
+  - `POST /api/device/documents`: the same upload contract as
+    `POST /api/documents`, plus an optional `staffId`.
+- The backend records the uploader as `device:<device name>` and keeps the
+  device ID and the staff ID on the document row. The workbench shows
+  "Dispatch phone 1 · Thabo".
+- A revoked device gets `401` on every device endpoint. The app then deletes
+  its key and shows "This phone was removed. Ask an admin for a new setup
+  code."
+- The enrol endpoint is rate-limited, because it accepts calls without a key.
+
+Staff names (optional):
+
+- An Admin keeps a short list of staff names on the same workbench page: add,
+  rename, and turn off. A name has no password and no email address.
+- Before a batch, the app shows the active names as large buttons. The person
+  taps a name. The app remembers it until the person changes it. If the list
+  is empty, the app skips this step.
+
+The app gets the API base URL from the QR code, so one APK serves QA and
+production. The app accepts only an `https` API base URL.
+
+The existing `POST /api/documents` with Entra and the `Documents.Capture`
+policy stays for other clients.
 
 ## 7. Constraints
 
