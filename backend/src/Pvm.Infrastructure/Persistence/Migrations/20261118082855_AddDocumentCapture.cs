@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Pvm.Infrastructure.Persistence.Migrations
 {
     /// <inheritdoc />
-    public partial class AddCapturedDocuments : Migration
+    public partial class AddDocumentCapture : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -30,11 +30,14 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                     MatchedBy = table.Column<string>(type: "character varying(320)", maxLength: 320, nullable: true),
                     AcumaticaAttachPending = table.Column<bool>(type: "boolean", nullable: false),
                     AcumaticaAttachedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    AcumaticaAttachLastAttemptAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     UploadedBy = table.Column<string>(type: "character varying(320)", maxLength: 320, nullable: false),
                     UploadedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     ResolvedBy = table.Column<string>(type: "character varying(320)", maxLength: 320, nullable: true),
                     ResolvedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     ReviewNote = table.Column<string>(type: "character varying(2048)", maxLength: 2048, nullable: true),
+                    RejectedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    RejectedBy = table.Column<string>(type: "character varying(320)", maxLength: 320, nullable: true),
                     UpdatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
