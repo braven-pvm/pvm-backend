@@ -36,6 +36,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<StockSyncService>();
         services.AddScoped<StockSyncRunRecorder>();
+        services.AddScoped<StockSyncJob>();
         return services;
     }
 
