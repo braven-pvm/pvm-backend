@@ -77,7 +77,7 @@ public static class SellOutEndpoints
         Results.Ok(await queries.ListUnmappedAsync(cancellationToken));
 
     private static async Task<IResult> SearchProductsAsync(SellOutQueries queries, string? search, CancellationToken cancellationToken) =>
-        Results.Ok(await queries.SearchProductsAsync(search, 30, cancellationToken));
+        Results.Ok(await queries.SearchProductsAsync(search, 1000, cancellationToken));
 
     private static async Task<IResult> MapProductAsync(
         ProductMapRequest request,

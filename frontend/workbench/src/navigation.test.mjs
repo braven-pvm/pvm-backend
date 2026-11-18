@@ -23,7 +23,7 @@ test("an operator sees banking but not admin settings", () => {
 
 test("an admin sees everything", () => {
   const groups = navigationFor(["Admin"]);
-  for (const label of ["Today", "Exceptions", "Shoprite", "Banking", "Stock", "Automations", "Runs", "Events", "Users"]) {
+  for (const label of ["Today", "Exceptions", "Shoprite", "Banking", "Stock", "Sell-out", "Automations", "Runs", "Events", "Users"]) {
     assert.ok(labels(groups).includes(label), label);
   }
 });

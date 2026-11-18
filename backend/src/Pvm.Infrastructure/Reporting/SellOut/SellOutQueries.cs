@@ -85,7 +85,7 @@ public sealed class SellOutQueries(PvmDbContext db)
             .ToList();
     }
 
-    /// <summary>Acumatica items to map to, from the reporting products that the sell-in load keeps.</summary>
+    /// <summary>Acumatica items to map to, from the reporting products that the sell-in load keeps. PVM has a few hundred items, so the page lists them all.</summary>
     public async Task<IReadOnlyList<SellOutProductChoice>> SearchProductsAsync(string? text, int take, CancellationToken cancellationToken)
     {
         var query = db.ReportingProducts.AsNoTracking();
@@ -97,7 +97,7 @@ public sealed class SellOutQueries(PvmDbContext db)
 
         return await query
             .OrderBy(product => product.InventoryId)
-            .Take(Math.Clamp(take, 1, 100))
+            .Take(Math.Clamp(take, 1, 1000))
             .Select(product => new SellOutProductChoice(product.InventoryId, product.Description, product.ItemClassName))
             .ToListAsync(cancellationToken);
     }

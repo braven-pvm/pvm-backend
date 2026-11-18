@@ -17,6 +17,7 @@ import {
   Users,
   X,
   Zap,
+  ShoppingBasket,
   type LucideIcon,
 } from "lucide-react";
 import { isCurrent, type NavGroup, type NavIcon, type NavItem } from "../navigation";
@@ -28,6 +29,7 @@ const icons: Record<NavIcon, LucideIcon> = {
   shoprite: Store,
   banking: Landmark,
   stock: Package,
+  sellout: ShoppingBasket,
   automations: Zap,
   runs: History,
   events: Activity,
