@@ -38,7 +38,7 @@ public sealed class AcumaticaStockReader(
         "ReferenceNbr,Date,Details/InventoryID,Details/WarehouseID,Details/Qty,Details/UOM,Details/ReasonCode";
     private const string StockTakeFields = "ReferenceNbr,Details/InventoryID";
     private const string TransferFields = "FromWarehouseID,Details/InventoryID,Details/Qty,Details/FromLocationID";
-    private const string OrderFields = "OrderNbr,CustomerID,Date,Details/InventoryID,Details/OrderQty,Details/WarehouseID";
+    private const string OrderFields = "OrderNbr,CustomerID,Status,Date,Details/InventoryID,Details/OrderQty,Details/WarehouseID";
     private const string WebOrderFields = "CustomerOrder,Details/InventoryID,Details/OrderQty";
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
@@ -363,6 +363,13 @@ public sealed class AcumaticaStockReader(
             // The sheet compares the order date with getdate() less the look-back, time of day
             // included, so the day exactly at the edge does not count.
             if (LocalDate(Text(order, "Date")) is not { } date || date.ToDateTime(TimeOnly.MinValue) < since || !include(order))
+            {
+                continue;
+            }
+
+            // The sheet reads no status, so a cancelled order with no shipment would hold stock
+            // there. A cancelled order sells nothing, so it holds none here.
+            if (Same(Text(order, "Status"), "Canceled") || Same(Text(order, "Status"), "Cancelled"))
             {
                 continue;
             }

@@ -33,6 +33,12 @@ public static class ServiceCollectionExtensions
             client.DefaultRequestHeaders.UserAgent.ParseAdd("PVM-SellIn/1.0");
         }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { UseCookies = false });
 
+        services.AddHttpClient<ICustomerSalesRepSource, AcumaticaCustomerSalesRepSource>(client =>
+        {
+            client.Timeout = Timeout.InfiniteTimeSpan;
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("PVM-SellIn/1.0");
+        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { UseCookies = false });
+
         services.AddScoped<SellInSyncService>();
         return services;
     }

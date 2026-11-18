@@ -196,52 +196,7 @@ if (syncWooCommerceStock)
 
     using var stockHost = builder.Build();
     await using var stockScope = stockHost.Services.CreateAsyncScope();
-    var stockLogger = stockScope.ServiceProvider
-        .GetRequiredService<ILoggerFactory>()
-        .CreateLogger("WooCommerceStockSync");
-    var stockSync = stockScope.ServiceProvider.GetRequiredService<StockSyncService>();
-    var stockRecorder = stockScope.ServiceProvider.GetRequiredService<StockSyncRunRecorder>();
-    var stockMode = stockScope.ServiceProvider.GetRequiredService<IOptions<StockSyncOptions>>().Value.Mode;
-    var stockStarted = DateTimeOffset.UtcNow;
-    string? stockFailure;
-
-    try
-    {
-        var result = await stockSync.RunAsync(CancellationToken.None);
-        await stockRecorder.RecordAsync(result, stockStarted, CancellationToken.None);
-        stockLogger.LogInformation(
-            "integration.run.completed RunType=woocommerce-stock-sync Mode={Mode} Items={Items} Updates={Updates} Unchanged={Unchanged} Skipped={Skipped} Written={Written} Refusal={Refusal}",
-            result.Mode,
-            result.Lines.Count,
-            result.Updates,
-            result.Unchanged,
-            result.Skipped,
-            result.Written,
-            result.Refusal ?? string.Empty);
-        stockFailure = result.Failure;
-    }
-    catch (Exception exception)
-    {
-        // Rethrow so that the Container Apps job reports a failed replica.
-        stockLogger.LogError(exception, "integration.run.failed RunType=woocommerce-stock-sync");
-        try
-        {
-            await stockRecorder.RecordFailureAsync(stockMode, stockStarted, exception, CancellationToken.None);
-        }
-        catch (Exception recordException)
-        {
-            stockLogger.LogError(recordException, "stock.sync.record.failed");
-        }
-
-        throw;
-    }
-
-    if (stockFailure is not null)
-    {
-        // The run is recorded with what it wrote. Fail the replica so the job shows the failure.
-        throw new InvalidOperationException(stockFailure);
-    }
-
+    await stockScope.ServiceProvider.GetRequiredService<StockSyncJob>().RunAsync(CancellationToken.None);
     return;
 }
 

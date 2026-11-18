@@ -97,17 +97,21 @@ public sealed class WooCommerceStockClient(HttpClient httpClient, IOptions<WooCo
     public async Task SetStockQuantityAsync(WebStockItem item, int quantity, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(item);
-        if (item.Management != WebStockManagement.Own)
+        if (item.Management == WebStockManagement.None)
         {
-            throw new InvalidOperationException($"{item.Sku} does not hold its own stock in the web store.");
+            throw new InvalidOperationException($"The web store does not track stock for {item.Sku}.");
         }
+
+        // A variation that takes the parent's stock gets its own stock first. The planner sends
+        // one only when it is named for its own stock.
+        var manage = item.Management == WebStockManagement.Parent ? "\"manage_stock\":true," : string.Empty;
 
         var path = item.VariationId is { } variationId
             ? $"products/{item.ProductId}/variations/{variationId}"
             : $"products/{item.ProductId}";
         using var request = Request(HttpMethod.Put, path, null);
         request.Content = new StringContent(
-            "{\"stock_quantity\":" + quantity.ToString(CultureInfo.InvariantCulture) + "}",
+            "{" + manage + "\"stock_quantity\":" + quantity.ToString(CultureInfo.InvariantCulture) + "}",
             Encoding.UTF8,
             "application/json");
         using var response = await httpClient.SendAsync(request, cancellationToken);
