@@ -373,7 +373,7 @@ function documentPdf(id) {
 }
 
 // Problem responses, like the API's RFC 7807 answers.
-const problem = (status, detail) => ({ __status: status, __body: { status, detail } });
+const problem = (status, detail, code) => ({ __status: status, __body: code ? { status, detail, code } : { status, detail } });
 
 // Scanner devices and staff names (src/api/scanner-devices.ts). One device in
 // each state, and a setup-code answer with a realistic qrPayload.
@@ -583,7 +583,7 @@ const routes = {
     if (!scannerSetupConfigured) return scannerNotConfigured();
     const device = scannerDevices.find((item) => item.id === id);
     if (!device) return problem(404, "The scanner device was not found.");
-    if (device.state === "Revoked") return problem(409, "The device is revoked; add it again as a new device.");
+    if (device.state === "Revoked") return problem(409, "The device is revoked; add it again as a new device.", "device-revoked");
     return issuedSetupCode(device);
   },
   "POST /api/scanner-devices/:id/revoke": (id) => {

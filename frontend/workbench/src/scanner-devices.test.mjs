@@ -68,7 +68,13 @@ test("add-device errors say what happened and what to do", () => {
 
 test("setup-code errors say what happened and what to do", () => {
   assert.equal(setupCodeErrorMessage(404), "This device no longer exists. The page now shows the current list.");
-  assert.equal(setupCodeErrorMessage(409), "This device is revoked. Add the phone again as a new device.");
+  assert.equal(setupCodeErrorMessage(409, "device-revoked"), "This device is revoked. Add the phone again as a new device.");
+  assert.equal(
+    setupCodeErrorMessage(409, "setup-code-used-meanwhile", "ignored"),
+    "The phone used its setup code at the same moment. Refresh the list. Make a new code only if the phone is not set up.",
+  );
+  assert.equal(setupCodeErrorMessage(409, null, "Backend words."), "Backend words.");
+  assert.equal(setupCodeErrorMessage(409), "Someone changed this device at the same moment. Refresh the list.");
   assert.equal(setupCodeErrorMessage(503), "The setup code could not be made (error 503). Try again in a minute.");
 });
 

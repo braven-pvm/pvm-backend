@@ -99,7 +99,7 @@ export async function issueSetupCodeAction(_previous: SetupCodeState, formData: 
         return { kind: "notConfigured" };
       }
       revalidatePath(pagePath);
-      return { kind: "error", message: setupCodeErrorMessage(result.status) };
+      return { kind: "error", message: setupCodeErrorMessage(result.status, result.code, result.detail) };
     }
   }
 

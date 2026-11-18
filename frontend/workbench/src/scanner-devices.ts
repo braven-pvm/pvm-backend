@@ -74,12 +74,16 @@ export function addDeviceErrorMessage(status: number, name: string): string {
   }
 }
 
-export function setupCodeErrorMessage(status: number): string {
+export function setupCodeErrorMessage(status: number, code?: string | null, detail?: string | null): string {
   switch (status) {
     case 404:
       return deviceGone;
     case 409:
-      return "This device is revoked. Add the phone again as a new device.";
+      if (code === "device-revoked") return "This device is revoked. Add the phone again as a new device.";
+      if (code === "setup-code-used-meanwhile") {
+        return "The phone used its setup code at the same moment. Refresh the list. Make a new code only if the phone is not set up.";
+      }
+      return detail ? detail : "Someone changed this device at the same moment. Refresh the list.";
     case 403:
       return "Only an Admin can make setup codes.";
     default:

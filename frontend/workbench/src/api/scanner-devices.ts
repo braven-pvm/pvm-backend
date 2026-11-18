@@ -37,8 +37,8 @@ export type ScannerStaff = {
   updatedAt: string;
 };
 
-/** A call whose failure the page explains. detail is the problem's detail, when the API sent one. */
-export type ScannerResult<T> = { ok: true; value: T } | { ok: false; status: number; detail: string | null };
+/** A call whose failure the page explains. detail and code are the problem's detail and its stable `code`, when the API sent them. */
+export type ScannerResult<T> = { ok: true; value: T } | { ok: false; status: number; detail: string | null; code?: string | null };
 
 async function call<T>(method: "GET" | "POST" | "PUT", path: string, body?: unknown): Promise<ScannerResult<T>> {
   const headers = await getApiAuthHeaders();
@@ -50,13 +50,16 @@ async function call<T>(method: "GET" | "POST" | "PUT", path: string, body?: unkn
   });
   if (!response.ok) {
     let detail: string | null = null;
+    let code: string | null = null;
     try {
       const problem = await response.json();
       detail = typeof problem?.detail === "string" ? problem.detail : null;
+      code = typeof problem?.code === "string" ? problem.code : null;
     } catch {
       detail = null;
+      code = null;
     }
-    return { ok: false, status: response.status, detail };
+    return { ok: false, status: response.status, detail, code };
   }
   return { ok: true, value: (await response.json()) as T };
 }

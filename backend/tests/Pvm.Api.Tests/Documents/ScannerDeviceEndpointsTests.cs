@@ -300,8 +300,9 @@ public sealed class ScannerDeviceEndpointsTests : IAsyncLifetime
         Assert.Equal("Revoked", body.GetProperty("state").GetString());
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.SendAsync(Device(HttpMethod.Get, "/api/device/config", key))).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.SendAsync(DeviceUpload("/api/device/documents", key, Guid.NewGuid()))).StatusCode);
-        Assert.Equal(HttpStatusCode.Conflict,
-            (await client.SendAsync(Admin(HttpMethod.Post, $"/api/scanner-devices/{deviceId:D}/setup-code"))).StatusCode);
+        var refused = await client.SendAsync(Admin(HttpMethod.Post, $"/api/scanner-devices/{deviceId:D}/setup-code"));
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        Assert.Equal("device-revoked", (await refused.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
 
         await using var scope = _app!.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PvmDbContext>();
@@ -309,6 +310,22 @@ public sealed class ScannerDeviceEndpointsTests : IAsyncLifetime
         Assert.Null(device.KeyHash);
         Assert.Equal("admin@pvm.test", device.RevokedBy);
         Assert.NotNull(device.RevokedAt);
+    }
+
+    [Fact]
+    public async Task NewSetupCode_PhoneEnrolsAtTheSameMoment_Returns409WithItsOwnCode()
+    {
+        var race = new RaceOnSaveInterceptor();
+        var client = await StartAsync(interceptor: race);
+        var deviceId = await SeedDeviceAsync("Dispatch phone 1");
+        race.Fail = true;
+
+        var response = await client.SendAsync(Admin(HttpMethod.Post, $"/api/scanner-devices/{deviceId:D}/setup-code"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("setup-code-used-meanwhile", problem.GetProperty("code").GetString());
+        Assert.StartsWith("The phone used its setup code at the same moment.", problem.GetProperty("detail").GetString());
     }
 
     [Fact]
@@ -615,7 +632,25 @@ public sealed class ScannerDeviceEndpointsTests : IAsyncLifetime
         return request;
     }
 
-    private async Task<HttpClient> StartAsync(string? deviceApiBaseUrl = ApiBase, bool developmentBypass = false)
+    /// <summary>Stands in for the phone enrolling between the read and the write of a new setup code.</summary>
+    private sealed class RaceOnSaveInterceptor : SaveChangesInterceptor
+    {
+        public bool Fail { get; set; }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (Fail)
+            {
+                Fail = false;
+                throw new DbUpdateConcurrencyException("The phone enrolled first.");
+            }
+
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
+    }
+
+    private async Task<HttpClient> StartAsync(string? deviceApiBaseUrl = ApiBase, bool developmentBypass = false, SaveChangesInterceptor? interceptor = null)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Testing" });
         builder.WebHost.UseTestServer();
@@ -627,6 +662,7 @@ public sealed class ScannerDeviceEndpointsTests : IAsyncLifetime
         });
         builder.Services.AddDbContext<PvmDbContext>(options => options
             .UseInMemoryDatabase(_databaseName)
+            .AddInterceptors(interceptor is null ? [] : [interceptor])
             .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
         builder.Services.AddScoped<IIntegrationCommandQueue, IntegrationCommandQueue>();
         builder.Services.AddScoped<CurrentAppUserAccessor>();
