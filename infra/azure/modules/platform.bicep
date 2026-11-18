@@ -53,6 +53,12 @@ param shopritePoRefreshEnabled bool = false
 param shopriteUseLayer7Headers bool = false
 param acumaticaInvoiceSourceMode string = 'Fixture'
 param acumaticaBaseUrl string = ''
+
+@description('ACUMATICA_BASE_URL for the workbench: the Acumatica site its invoice links open. Empty: not set.')
+param workbenchAcumaticaBaseUrl string = ''
+
+@description('DocumentCapture__DeviceApiBaseUrl for the API: the https URL in the scanner setup QR code. Empty: not set.')
+param deviceApiBaseUrl string = ''
 param acumaticaCompany string = ''
 param acumaticaBranch string = ''
 
@@ -102,6 +108,10 @@ param woocommerceConsumerKey string = ''
 @description('WooCommerce REST API consumer secret for the stock sync.')
 @secure()
 param woocommerceConsumerSecret string = ''
+
+@description('Claude API key for document extraction in the worker.')
+@secure()
+param anthropicApiKey string = ''
 
 @description('Disabled, Shadow (read and log, write nothing) or Write. Write sets stock in the live web store.')
 @allowed([
@@ -179,6 +189,7 @@ var serviceBusNamespaceName = 'sb-pvm-integrations-${suffix}'
 var shopritePurchaseOrderRefreshQueueName = 'shoprite-po-refresh'
 var acumaticaInvoiceDiscoveryQueueName = 'acumatica-invoice-discovery'
 var shopriteInvoiceSubmitQueueName = 'shoprite-invoice-submit'
+var documentProcessingQueueName = 'document-processing'
 var postgresServerName = 'psql-pvm-integrations-${suffix}'
 var postgresAdminUser = 'pvmadmin'
 var databaseName = 'pvm'
@@ -193,6 +204,19 @@ var woocommerceCredentialSecrets = hasWooCommerceCredentials ? [
   {
     name: 'woocommerce-consumersecret'
     value: woocommerceConsumerSecret
+  }
+] : []
+var hasAnthropicApiKey = !empty(anthropicApiKey)
+var anthropicSecrets = hasAnthropicApiKey ? [
+  {
+    name: 'anthropic-apikey'
+    value: anthropicApiKey
+  }
+] : []
+var anthropicEnvironment = hasAnthropicApiKey ? [
+  {
+    name: 'Anthropic__ApiKey'
+    secretRef: 'anthropic-apikey'
   }
 ] : []
 var woocommerceEnvironment = hasWooCommerceCredentials ? [
@@ -373,6 +397,22 @@ var apiEnvironment = concat([
     value: 'https://${storageAccountName}.blob.${environment().suffixes.storage}'
   }
   {
+    name: 'DocumentCapture__Provider'
+    value: 'AzureBlob'
+  }
+  {
+    name: 'DocumentCapture__ContainerName'
+    value: documentsContainer.name
+  }
+  {
+    name: 'DocumentCapture__ServiceUri'
+    value: 'https://${storageAccountName}.blob.${environment().suffixes.storage}'
+  }
+  {
+    name: 'DocumentCapture__AcumaticaAttachMode'
+    value: 'Shadow'
+  }
+  {
     name: 'AZURE_CLIENT_ID'
     value: identity.properties.clientId
   }
@@ -494,7 +534,12 @@ var apiRuntimeEnvironment = concat(apiEnvironment, [
     name: 'AcumaticaPushNotifications__RateLimitPerMinute'
     value: '120'
   }
-], acumaticaWebhookSecretEnvironment, acumaticaWebhookCompanyEnvironment, acumaticaWebhookQueryEnvironment)
+], acumaticaWebhookSecretEnvironment, acumaticaWebhookCompanyEnvironment, acumaticaWebhookQueryEnvironment, empty(deviceApiBaseUrl) ? [] : [
+  {
+    name: 'DocumentCapture__DeviceApiBaseUrl'
+    value: deviceApiBaseUrl
+  }
+])
 var workerEnvironment = concat(apiEnvironment, [
   {
     name: 'ServiceBus__FullyQualifiedNamespace'
@@ -628,6 +673,15 @@ resource payloadsContainer 'Microsoft.Storage/storageAccounts/blobServices/conta
   }
 }
 
+// The original PDF of each captured document (document capture design 6.6).
+resource documentsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobService
+  name: 'documents'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 resource serviceBus 'Microsoft.ServiceBus/namespaces@2024-01-01' = {
   name: serviceBusNamespaceName
   location: location
@@ -647,6 +701,7 @@ resource serviceBusQueues 'Microsoft.ServiceBus/namespaces/queues@2024-01-01' = 
   shopritePurchaseOrderRefreshQueueName
   acumaticaInvoiceDiscoveryQueueName
   shopriteInvoiceSubmitQueueName
+  documentProcessingQueueName
 ]: {
   parent: serviceBus
   name: queueName
@@ -930,7 +985,7 @@ resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: workbenchContainerAppName
           image: '${acr.properties.loginServer}/pvm-workbench:${workbenchImageTag}'
-          env: [
+          env: concat([
             {
               name: 'NODE_ENV'
               value: 'production'
@@ -975,7 +1030,12 @@ resource workbenchContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
               name: 'NEXT_PUBLIC_PVM_ENVIRONMENT_NAME'
               value: toUpper(environmentName)
             }
-          ]
+          ], empty(workbenchAcumaticaBaseUrl) ? [] : [
+            {
+              name: 'ACUMATICA_BASE_URL'
+              value: workbenchAcumaticaBaseUrl
+            }
+          ])
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'
@@ -1010,7 +1070,7 @@ resource workerContainerApp 'Microsoft.App/containerApps@2025-01-01' = {
           identity: identity.id
         }
       ]
-      secrets: commonRuntimeSecrets
+      secrets: concat(commonRuntimeSecrets, anthropicSecrets)
     }
     template: {
       scale: {
@@ -1021,6 +1081,7 @@ resource workerContainerApp 'Microsoft.App/containerApps@2025-01-01' = {
           shopritePurchaseOrderRefreshQueueName
           acumaticaInvoiceDiscoveryQueueName
           shopriteInvoiceSubmitQueueName
+          documentProcessingQueueName
         ]: {
           name: replace(queueName, '-', '')
           custom: {
@@ -1039,7 +1100,7 @@ resource workerContainerApp 'Microsoft.App/containerApps@2025-01-01' = {
         {
           name: workerContainerAppName
           image: '${acr.properties.loginServer}/pvm-worker:${workerImageTag}'
-          env: workerEnvironment
+          env: concat(workerEnvironment, anthropicEnvironment)
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'

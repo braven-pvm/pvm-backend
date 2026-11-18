@@ -6,6 +6,7 @@ using Pvm.Api.Features.AcumaticaPushNotifications;
 using Pvm.Api.Features.Automation;
 using Pvm.Api.Features.Exceptions;
 using Pvm.Api.Features.Auth;
+using Pvm.Api.Features.Documents;
 using Pvm.Api.Features.Invoices;
 using Pvm.Api.Features.IntegrationOperations;
 using Pvm.Api.Features.Mappings;
@@ -15,6 +16,7 @@ using Pvm.Api.Features.ShopritePurchaseOrders;
 using Pvm.Api.Features.Submissions;
 using Pvm.Application.Submissions;
 using Pvm.Infrastructure.Acumatica;
+using Pvm.Infrastructure.Documents;
 using Pvm.Infrastructure.PayloadArchive;
 using Pvm.Infrastructure.Reporting;
 using Pvm.Infrastructure.Persistence;
@@ -42,6 +44,7 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0,
             AutoReplenishment = true
         }));
+    options.AddDeviceEnrolRateLimit();
 });
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -49,6 +52,11 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 });
 builder.Services.AddPvmPersistence(builder.Configuration);
 builder.Services.AddPayloadArchive(builder.Configuration);
+builder.Services.AddDocumentCapture(builder.Configuration);
+builder.Services.AddScoped<DocumentProcessor>();
+builder.Services.AddScoped<DocumentReviewService>();
+builder.Services.AddScoped<DocumentIntakeService>();
+builder.Services.AddScoped<ScannerDeviceService>();
 builder.Services.AddPvmAuth(builder.Configuration, builder.Environment);
 builder.Services.AddAcumaticaInvoiceSource(builder.Configuration);
 builder.Services.AddStockSyncRunReader();
@@ -96,6 +104,10 @@ app.MapAcumaticaPushNotificationAdminEndpoints();
 app.MapInventoryMappingEndpoints();
 app.MapAutomationPolicyEndpoints();
 app.MapExceptionEndpoints();
+app.MapDocumentIntakeEndpoints();
+app.MapDocumentReviewEndpoints();
+app.MapScannerAdminEndpoints();
+app.MapDeviceEndpoints();
 
 app.Run();
 

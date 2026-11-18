@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import {
   Activity,
+  FileText,
   History,
   House,
   Inbox,
@@ -32,6 +33,7 @@ const icons: Record<NavIcon, LucideIcon> = {
   stock: Package,
   sellout: ShoppingBasket,
   statements: FileSpreadsheet,
+  documents: FileText,
   automations: Zap,
   runs: History,
   events: Activity,

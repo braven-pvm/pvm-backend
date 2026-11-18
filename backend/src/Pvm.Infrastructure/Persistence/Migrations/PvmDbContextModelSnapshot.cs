@@ -297,6 +297,122 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                     b.ToTable("automation_policy_versions", (string)null);
                 });
 
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.CapturedDocumentEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("AcumaticaAttachLastAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("AcumaticaAttachPending")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("AcumaticaAttachedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("BlobPath")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<Guid>("ClientDocumentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("ExtractionJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("MatchedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<string>("MatchedCustomerName")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("MatchedReference")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("PageCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("RejectedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RejectedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ResolvedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<string>("ReviewNote")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<string>("ReviewReason")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid?>("ScannerDeviceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ScannerStaffId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ScannerStaffName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("UploadedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UploadedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientDocumentId")
+                        .IsUnique();
+
+                    b.HasIndex("MatchedReference");
+
+                    b.HasIndex("ScannerDeviceId");
+
+                    b.HasIndex("ScannerStaffId");
+
+                    b.ToTable("captured_documents", (string)null);
+                });
+
             modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ExceptionTaskCommentEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1312,6 +1428,116 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("retail_stores", "reporting");
+                });
+
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ScannerDeviceEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<DateTimeOffset?>("EnrolledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("KeyHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset?>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RevokedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("KeyHash")
+                        .IsUnique();
+
+                    b.ToTable("scanner_devices", (string)null);
+                });
+
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ScannerDeviceSetupCodeEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CodeHash")
+                        .IsUnique();
+
+                    b.HasIndex("DeviceId");
+
+                    b.ToTable("scanner_device_setup_codes", (string)null);
+                });
+
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ScannerStaffEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("scanner_staff", (string)null);
                 });
 
             modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.SellInExcludedLine", b =>
@@ -2443,6 +2669,19 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.CapturedDocumentEntity", b =>
+                {
+                    b.HasOne("Pvm.Infrastructure.Persistence.Entities.ScannerDeviceEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ScannerDeviceId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Pvm.Infrastructure.Persistence.Entities.ScannerStaffEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ScannerStaffId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
             modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ExceptionTaskCommentEntity", b =>
                 {
                     b.HasOne("Pvm.Infrastructure.Persistence.Entities.ExceptionTaskEntity", null)
@@ -2514,6 +2753,15 @@ namespace Pvm.Infrastructure.Persistence.Migrations
                         .WithMany("PayloadArchives")
                         .HasForeignKey("SubmissionOperationId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Pvm.Infrastructure.Persistence.Entities.ScannerDeviceSetupCodeEntity", b =>
+                {
+                    b.HasOne("Pvm.Infrastructure.Persistence.Entities.ScannerDeviceEntity", null)
+                        .WithMany()
+                        .HasForeignKey("DeviceId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

@@ -103,6 +103,7 @@ public sealed class IntegrationMessagingPersistenceTests : IAsyncLifetime
             null!,
             null!,
             null!,
+            null!,
             null!);
 
         var result = await processor.ProcessAsync(

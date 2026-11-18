@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Net;
-using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Pvm.Application.Acumatica;
 
@@ -9,12 +9,13 @@ namespace Pvm.Infrastructure.Acumatica;
 
 public sealed class AcumaticaInvoiceClient(
     HttpClient httpClient,
-    IOptions<AcumaticaOptions> options) : IAcumaticaInvoiceClient
+    IOptions<AcumaticaOptions> options,
+    ILogger<AcumaticaInvoiceClient>? logger = null) : IAcumaticaInvoiceClient
 {
     private const int CustomerAccountChunkSize = 20;
     private const int InventoryItemChunkSize = 20;
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly AcumaticaOptions _options = options.Value;
+    private readonly AcumaticaRestSession _session = new(httpClient, options.Value, logger);
 
     public Task<IReadOnlyList<AcumaticaInvoiceDto>> FetchFinalizedInvoicesAsync(
         CancellationToken cancellationToken)
@@ -207,47 +208,10 @@ public sealed class AcumaticaInvoiceClient(
         }).ToArray();
     }
 
-    private async Task<T> WithSessionAsync<T>(
+    private Task<T> WithSessionAsync<T>(
         Func<string?, Task<T>> operation,
         CancellationToken cancellationToken)
-    {
-        var login = new Dictionary<string, string>
-        {
-            ["name"] = _options.Username!,
-            ["password"] = _options.Password!
-        };
-        if (!string.IsNullOrWhiteSpace(_options.Company))
-        {
-            login["company"] = _options.Company;
-        }
-
-        if (!string.IsNullOrWhiteSpace(_options.Branch))
-        {
-            login["branch"] = _options.Branch;
-        }
-
-        using var loginResponse = await httpClient.PostAsJsonAsync(
-            BuildUri("entity/auth/login"),
-            login,
-            SerializerOptions,
-            cancellationToken);
-        EnsureSuccess(loginResponse, "sign-in");
-        var sessionCookie = ReadSessionCookie(loginResponse);
-
-        try
-        {
-            return await operation(sessionCookie);
-        }
-        finally
-        {
-            using var logoutRequest = CreateSessionRequest(
-                HttpMethod.Post,
-                BuildUri("entity/auth/logout"),
-                sessionCookie);
-            using var logoutResponse = await httpClient.SendAsync(logoutRequest, CancellationToken.None);
-            EnsureSuccess(logoutResponse, "sign-out");
-        }
-    }
+        => _session.RunAsync(operation, cancellationToken);
 
     private async Task<string[]> ResolveCustomerAccountsAsync(
         string? sessionCookie,
@@ -293,40 +257,14 @@ public sealed class AcumaticaInvoiceClient(
         return accounts.Order(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
-    private string? ReadSessionCookie(HttpResponseMessage loginResponse)
-    {
-        if (!loginResponse.Headers.TryGetValues("Set-Cookie", out var setCookieHeaders))
-        {
-            return null;
-        }
-
-        var baseUri = new Uri(_options.BaseUrl!.TrimEnd('/') + "/");
-        var cookies = new CookieContainer();
-        foreach (var setCookie in setCookieHeaders)
-        {
-            cookies.SetCookies(baseUri, setCookie);
-        }
-
-        var value = cookies.GetCookieHeader(baseUri);
-        return string.IsNullOrWhiteSpace(value) ? null : value;
-    }
-
     private static HttpRequestMessage CreateSessionRequest(
         HttpMethod method,
         Uri uri,
         string? sessionCookie)
-    {
-        var request = new HttpRequestMessage(method, uri);
-        if (!string.IsNullOrWhiteSpace(sessionCookie))
-        {
-            request.Headers.TryAddWithoutValidation("Cookie", sessionCookie);
-        }
-
-        return request;
-    }
+        => AcumaticaRestSession.CreateRequest(method, uri, sessionCookie);
 
     private Uri BuildUri(string relativePath)
-        => new(new Uri(_options.BaseUrl!.TrimEnd('/') + "/"), relativePath);
+        => _session.BuildUri(relativePath);
 
     private Uri BuildCustomerPageUri(int skip)
     {
@@ -390,10 +328,10 @@ public sealed class AcumaticaInvoiceClient(
     }
 
     private string BuildEntityEndpoint(string entity)
-        => $"entity/{Uri.EscapeDataString(_options.EndpointName)}/{Uri.EscapeDataString(_options.EndpointVersion)}/{entity}";
+        => _session.BuildEntityEndpoint(entity);
 
     private static string EscapeFilterValue(string value)
-        => value.Replace("'", "''", StringComparison.Ordinal);
+        => AcumaticaRestSession.EscapeFilterValue(value);
 
     private static bool IsFinalizedInvoice(JsonElement source)
     {
@@ -668,20 +606,11 @@ public sealed class AcumaticaInvoiceClient(
     private static decimal RoundCurrency(decimal value)
         => decimal.Round(value, 2, MidpointRounding.AwayFromZero);
 
-    private static async Task<JsonElement[]> ReadArrayAsync(
+    private static Task<JsonElement[]> ReadArrayAsync(
         HttpResponseMessage response,
         string operation,
         CancellationToken cancellationToken)
-    {
-        await using var content = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(content, cancellationToken: cancellationToken);
-        if (document.RootElement.ValueKind != JsonValueKind.Array)
-        {
-            throw new InvalidOperationException($"Acumatica {operation} returned an unexpected payload shape.");
-        }
-
-        return document.RootElement.EnumerateArray().Select(element => element.Clone()).ToArray();
-    }
+        => AcumaticaRestSession.ReadArrayAsync(response, operation, cancellationToken);
 
     private static async Task<JsonElement> ReadObjectAsync(
         HttpResponseMessage response,
@@ -771,34 +700,11 @@ public sealed class AcumaticaInvoiceClient(
         => new($"Acumatica sales invoice payload is missing required field {string.Join(" or ", names)}.");
 
     private static void EnsureSuccess(HttpResponseMessage response, string operation)
-    {
-        if (operation == "sign-in"
-            && Pvm.Infrastructure.Operations.IntegrationCredentialsRejectedException.IsCredentialStatus((int)response.StatusCode))
-        {
-            throw new Pvm.Infrastructure.Operations.IntegrationCredentialsRejectedException(
-                "Acumatica",
-                (int)response.StatusCode);
-        }
-
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new InvalidOperationException(
-                $"Acumatica {operation} returned HTTP {(int)response.StatusCode}.");
-        }
-    }
+        => AcumaticaRestSession.EnsureSuccess(response, operation);
 
     private static void ValidateOptions(AcumaticaOptions options)
     {
-        if (!Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var baseUri) ||
-            baseUri.Scheme != Uri.UriSchemeHttps)
-        {
-            throw new InvalidOperationException("Acumatica:BaseUrl must be a non-empty absolute HTTPS URI.");
-        }
-
-        Require(options.Username, "Username");
-        Require(options.Password, "Password");
-        Require(options.EndpointName, "EndpointName");
-        Require(options.EndpointVersion, "EndpointVersion");
+        AcumaticaRestSession.ValidateConnection(options);
 
         if ((options.CustomerAccounts.Length == 0 && options.ParentCustomerAccounts.Length == 0) ||
             options.CustomerAccounts.Any(string.IsNullOrWhiteSpace) ||
@@ -817,14 +723,6 @@ public sealed class AcumaticaInvoiceClient(
         if (options.PageSize is < 1 or > 1000)
         {
             throw new InvalidOperationException("Acumatica:PageSize must be between 1 and 1000.");
-        }
-    }
-
-    private static void Require(string? value, string name)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new InvalidOperationException($"Acumatica:{name} is required.");
         }
     }
 

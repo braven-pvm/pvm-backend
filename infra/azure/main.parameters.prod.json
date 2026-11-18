@@ -11,6 +11,7 @@
     "monthlyBudgetAmountUsd": { "value": 250 },
     "alertEmail": { "value": "developer@pvm.co.za" },
     "acumaticaBaseUrl": { "value": "https://pvm.aboutitgroup.co.za" },
+    "workbenchAcumaticaBaseUrl": { "value": "https://pvm.aboutitgroup.co.za" },
     "acumaticaWebhookAllowedCompanies": { "value": [ "PVM" ] },
     "acumaticaWebhookAllowedQueries": { "value": [ "PVM-Shoprite-Finalized-Invoices" ] },
     "acumaticaEndpointName": { "value": "Default" },

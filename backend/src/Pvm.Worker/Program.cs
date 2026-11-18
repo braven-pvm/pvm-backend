@@ -5,6 +5,7 @@ using Pvm.Application.Messaging;
 using Pvm.Application.Submissions;
 using Pvm.Domain.Reporting;
 using Pvm.Infrastructure.Acumatica;
+using Pvm.Infrastructure.Documents;
 using Pvm.Infrastructure.Reporting;
 using Pvm.Infrastructure.Reporting.SellOut;
 using Pvm.Infrastructure.Messaging;
@@ -279,6 +280,8 @@ builder.Services.AddAcumaticaInvoiceSource(builder.Configuration);
 builder.Services.AddShopritePurchaseOrderClient(builder.Configuration);
 builder.Services.AddScoped<SubmitShopriteInvoiceHandler>();
 builder.Services.AddWorkerShopriteInvoiceClient(builder.Configuration);
+builder.Services.AddDocumentCapture(builder.Configuration);
+builder.Services.AddScoped<DocumentProcessor>();
 builder.Services.AddScoped<IntegrationMessageProcessor>();
 
 builder.Services.AddOptions<ServiceBusOptions>()
@@ -298,6 +301,7 @@ builder.Services.AddSingleton(provider =>
 builder.Services.AddSingleton<IIntegrationMessagePublisher, ServiceBusMessagePublisher>();
 builder.Services.AddHostedService<OutboxDispatcherService>();
 builder.Services.AddHostedService<ServiceBusConsumerService>();
+builder.Services.AddHostedService<DocumentAttachBackfillService>();
 
 await builder.Build().RunAsync();
 

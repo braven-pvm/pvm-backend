@@ -111,6 +111,12 @@ param acumaticaInvoiceSourceMode string = 'Fixture'
 @description('Acumatica QA instance base URL.')
 param acumaticaBaseUrl string = ''
 
+@description('The Acumatica site the workbench links invoice numbers to, for example https://pvm.example.com/Instance. Optional: empty leaves ACUMATICA_BASE_URL unset and invoice numbers stay plain text.')
+param workbenchAcumaticaBaseUrl string = ''
+
+@description('The API public https URL that scanner phones call; it goes into the setup QR code (DocumentCapture:DeviceApiBaseUrl). Empty: the scanner setup-code endpoints return 500 until it is set.')
+param deviceApiBaseUrl string = ''
+
 @description('Acumatica company or tenant used for API sign-in.')
 param acumaticaCompany string = ''
 
@@ -162,6 +168,10 @@ param woocommerceConsumerKey string = ''
 @description('WooCommerce REST API consumer secret for the stock sync.')
 @secure()
 param woocommerceConsumerSecret string = ''
+
+@description('Claude API key for document extraction in the worker.')
+@secure()
+param anthropicApiKey string = ''
 
 @description('Disabled, Shadow or Write. Write sets stock in the live web store.')
 @allowed([
@@ -293,6 +303,8 @@ module platform 'modules/platform.bicep' = {
     shopriteInvoiceSubmissionMode: shopriteInvoiceSubmissionMode
     acumaticaInvoiceSourceMode: acumaticaInvoiceSourceMode
     acumaticaBaseUrl: acumaticaBaseUrl
+    workbenchAcumaticaBaseUrl: workbenchAcumaticaBaseUrl
+    deviceApiBaseUrl: deviceApiBaseUrl
     acumaticaCompany: acumaticaCompany
     acumaticaBranch: acumaticaBranch
     acumaticaUsername: acumaticaUsername
@@ -308,6 +320,7 @@ module platform 'modules/platform.bicep' = {
     woocommerceBaseUrl: woocommerceBaseUrl
     woocommerceConsumerKey: woocommerceConsumerKey
     woocommerceConsumerSecret: woocommerceConsumerSecret
+    anthropicApiKey: anthropicApiKey
     stockSyncMode: stockSyncMode
     sellInEnabled: sellInEnabled
     sellOutMailEnabled: sellOutMailEnabled

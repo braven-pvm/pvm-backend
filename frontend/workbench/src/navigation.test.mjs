@@ -23,7 +23,7 @@ test("an operator sees banking but not admin settings", () => {
 
 test("an admin sees everything", () => {
   const groups = navigationFor(["Admin"]);
-  for (const label of ["Today", "Exceptions", "Shoprite", "Banking", "Stock", "Sell-out", "Statements", "Automations", "Runs", "Events", "Users"]) {
+  for (const label of ["Today", "Exceptions", "Shoprite", "Banking", "Stock", "Sell-out", "Statements", "Documents", "Automations", "Runs", "Events", "Users"]) {
     assert.ok(labels(groups).includes(label), label);
   }
 });
@@ -54,4 +54,41 @@ test("the Shoprite entry is current on every page of the module", () => {
   assert.equal(isCurrent(shoprite, "/shoprite/invoices/abc"), true);
   assert.equal(isCurrent(shoprite, "/shoprite/settings/inventory-mappings"), true);
   assert.equal(isCurrent(shoprite, "/banking"), false);
+});
+
+test("every signed-in user sees Documents with the review list under it", () => {
+  const documents = navigationFor(["Viewer"])
+    .flatMap((group) => group.items)
+    .find((item) => item.label === "Documents");
+  assert.ok(documents);
+  assert.equal(documents.href, "/documents");
+  assert.deepEqual(documents.children?.map((child) => child.href), ["/documents/review"]);
+});
+
+test("the review list, not the search, is current on the review page", () => {
+  const documents = navigationFor(["Viewer"])
+    .flatMap((group) => group.items)
+    .find((item) => item.label === "Documents");
+  assert.equal(isCurrent(documents, "/documents/review"), true);
+  assert.equal(isCurrent(documents.children[0], "/documents/review"), true);
+  assert.equal(isCurrent(documents.children[0], "/documents"), false);
+  assert.equal(isCurrent(documents, "/documents/6f1d0c2a-0001-4a7e-9a10-000000000001"), true);
+});
+
+test("only an admin sees the scanner devices link under Documents", () => {
+  const documentsFor = (roles) =>
+    navigationFor(roles)
+      .flatMap((group) => group.items)
+      .find((item) => item.label === "Documents");
+  const childLabels = (roles) => (documentsFor(roles)?.children ?? []).map((child) => child.label);
+  assert.deepEqual(childLabels(["Admin"]), ["Review list", "Scanner devices"]);
+  assert.deepEqual(childLabels(["Operator"]), ["Review list"]);
+  assert.deepEqual(childLabels(["Viewer"]), ["Review list"]);
+});
+
+test("Operations lists Statements before Documents, and a viewer sees Documents but not Statements", () => {
+  const operations = (roles) => navigationFor(roles).find((group) => group.label === "Operations").items.map((item) => item.label);
+  assert.deepEqual(operations(["Admin"]), ["Shoprite", "Banking", "Stock", "Sell-out", "Statements", "Documents"]);
+  assert.ok(!operations(["Viewer"]).includes("Statements"));
+  assert.ok(operations(["Viewer"]).includes("Documents"));
 });

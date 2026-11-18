@@ -1,0 +1,30 @@
+name: scanner
+description: "PVM Scanner: scans proof-of-delivery papers and uploads one PDF per document."
+publish_to: 'none'
+
+# versionName+versionCode of the APK. Raise both for each release.
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_secure_storage: ^11.2.0
+  google_mlkit_document_scanner: ^0.7.2
+  http: ^1.6.0
+  mobile_scanner: ^7.5.0
+  package_info_plus: ^10.2.2
+  path_provider: ^2.1.6
+  shared_preferences: ^2.5.6
+  uuid: ^4.6.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  shared_preferences_platform_interface: ^2.4.2
+
+flutter:
+  uses-material-design: true

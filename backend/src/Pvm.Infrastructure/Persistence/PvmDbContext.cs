@@ -94,6 +94,14 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<StockSyncRunEntity> StockSyncRuns => Set<StockSyncRunEntity>();
 
+    public DbSet<CapturedDocumentEntity> CapturedDocuments => Set<CapturedDocumentEntity>();
+
+    public DbSet<ScannerDeviceEntity> ScannerDevices => Set<ScannerDeviceEntity>();
+
+    public DbSet<ScannerDeviceSetupCodeEntity> ScannerDeviceSetupCodes => Set<ScannerDeviceSetupCodeEntity>();
+
+    public DbSet<ScannerStaffEntity> ScannerStaff => Set<ScannerStaffEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<InvoiceCandidateEntity>(entity =>
@@ -544,6 +552,77 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
                 .WithMany()
                 .HasForeignKey(comment => comment.ExceptionTaskId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CapturedDocumentEntity>(entity =>
+        {
+            entity.ToTable("captured_documents");
+            entity.HasKey(document => document.Id);
+            entity.HasIndex(document => document.ClientDocumentId).IsUnique();
+            entity.HasIndex(document => document.MatchedReference);
+            entity.Property(document => document.DocumentType).HasMaxLength(32);
+            entity.Property(document => document.State).HasConversion<string>().HasMaxLength(32);
+            entity.Property(document => document.ReviewReason).HasConversion<string>().HasMaxLength(64);
+            entity.Property(document => document.BlobPath).HasMaxLength(512);
+            entity.Property(document => document.Sha256).HasMaxLength(64);
+            entity.Property(document => document.ExtractionJson).HasColumnType("jsonb");
+            entity.Property(document => document.MatchedReference).HasMaxLength(64);
+            entity.Property(document => document.MatchedCustomerName).HasMaxLength(256);
+            entity.Property(document => document.MatchedBy).HasMaxLength(320);
+            entity.Property(document => document.UploadedBy).HasMaxLength(320);
+            entity.Property(document => document.ResolvedBy).HasMaxLength(320);
+            entity.Property(document => document.RejectedBy).HasMaxLength(320);
+            entity.Property(document => document.ReviewNote).HasMaxLength(2048);
+            entity.Property(document => document.ScannerStaffName).HasMaxLength(100);
+            entity.HasOne<ScannerDeviceEntity>()
+                .WithMany()
+                .HasForeignKey(document => document.ScannerDeviceId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ScannerStaffEntity>()
+                .WithMany()
+                .HasForeignKey(document => document.ScannerStaffId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ScannerDeviceEntity>(entity =>
+        {
+            entity.ToTable("scanner_devices");
+            entity.HasKey(device => device.Id);
+            entity.Property(device => device.Name).HasMaxLength(100);
+            entity.Property(device => device.KeyHash).HasMaxLength(64);
+            entity.Property(device => device.CreatedBy).HasMaxLength(320);
+            entity.Property(device => device.RevokedBy).HasMaxLength(320);
+            entity.HasIndex(device => device.KeyHash).IsUnique();
+
+            // Enrol writes a key only while the device is not revoked: the UPDATE carries
+            // "RevokedAt" IS NULL. The unique name among devices that are not revoked, ignoring
+            // case, is the expression index ux_scanner_devices_active_name_lower made in the
+            // AddDocumentCaptureAndScannerDevices migration (EF cannot model an index on lower("Name")).
+            entity.Property(device => device.RevokedAt).IsConcurrencyToken();
+        });
+
+        modelBuilder.Entity<ScannerDeviceSetupCodeEntity>(entity =>
+        {
+            entity.ToTable("scanner_device_setup_codes");
+            entity.HasKey(code => code.Id);
+            entity.Property(code => code.CodeHash).HasMaxLength(64);
+            entity.Property(code => code.CreatedBy).HasMaxLength(320);
+            // Enrol updates the code only while it is unchanged since the read that found it unused
+            // and unexpired: the UPDATE carries "UsedAt" IS NULL AND "ExpiresAt" = <the value read>.
+            entity.Property(code => code.UsedAt).IsConcurrencyToken();
+            entity.Property(code => code.ExpiresAt).IsConcurrencyToken();
+            entity.HasIndex(code => code.CodeHash).IsUnique();
+            entity.HasOne<ScannerDeviceEntity>()
+                .WithMany()
+                .HasForeignKey(code => code.DeviceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ScannerStaffEntity>(entity =>
+        {
+            entity.ToTable("scanner_staff");
+            entity.HasKey(staff => staff.Id);
+            entity.Property(staff => staff.Name).HasMaxLength(100);
         });
 
         ConfigureReporting(modelBuilder);
