@@ -54,6 +54,7 @@ builder.Services.AddAcumaticaInvoiceSource(builder.Configuration);
 builder.Services.AddStockSyncRunReader();
 builder.Services.AddNedbankStatementImport(builder.Configuration);
 builder.Services.AddSellOutImport();
+builder.Services.AddMerchandiserStatements();
 builder.Services.AddInvestecBankFeed(builder.Configuration);
 builder.Services.AddOptions<BankingStatusOptions>()
     .Bind(builder.Configuration.GetSection(BankingStatusOptions.SectionName))
@@ -82,6 +83,7 @@ app.UseAuthorization();
 app.MapInvoiceEndpoints();
 app.MapBankImportEndpoints();
 app.MapSellOutEndpoints();
+app.MapStatementEndpoints();
 app.MapStockSyncEndpoints();
 app.MapSubmissionEndpoints();
 app.MapPurchaseOrderEndpoints();

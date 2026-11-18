@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createUser, updateUserRoles, updateUserStatus } from "../src/api/admin";
 import { importSellOutFile, mapSellOutProduct, previewSellOutFile } from "../src/api/sell-out";
+import { saveStatementSettings } from "../src/api/statements";
 import {
   refreshInvoiceCandidates,
   refreshPurchaseOrders,
@@ -391,4 +392,24 @@ export async function mapSellOutProductAction(formData: FormData) {
   });
   revalidatePath("/sell-out");
   revalidatePath("/sell-out/mapping");
+}
+
+export async function saveStatementSettingsAction(formData: FormData) {
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { saved: false, problems: ["Choose a settings file first."] };
+  }
+
+  let settings: unknown;
+  try {
+    settings = JSON.parse(await file.text());
+  } catch {
+    return { saved: false, problems: ["The file is not a settings file (JSON)."] };
+  }
+
+  const result = await saveStatementSettings(settings);
+  if (result.saved) {
+    revalidatePath("/statements/settings");
+  }
+  return result;
 }
