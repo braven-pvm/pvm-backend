@@ -127,6 +127,22 @@ param sellInEnabled bool = false
 @description('Cron expression for the sell-in load. The default is 02:00 UTC, which is 04:00 in South Africa.')
 param sellInCron string = '0 2 * * *'
 
+@description('Reads the sell-out mailbox and loads the attached retailer files.')
+param sellOutMailEnabled bool = false
+
+@description('The mailbox that receives the sell-out files.')
+param sellOutMailMailbox string = 'reports@pvm.co.za'
+
+@description('The application (client) id of the app registration pvm-sellout-mail.')
+param sellOutMailClientId string = ''
+
+@description('The client secret of the app registration pvm-sellout-mail.')
+@secure()
+param sellOutMailClientSecret string = ''
+
+@description('Cron expression for the sell-out mail job. Every 15 minutes.')
+param sellOutMailCron string = '*/15 * * * *'
+
 param acumaticaEndpointName string = 'Default'
 param acumaticaEndpointVersion string = '24.200.001'
 param acumaticaCustomerAccounts array = []
@@ -158,6 +174,8 @@ var acumaticaInvoiceLookbackJobName = 'job-pvm-invoice-lookback-${suffix}'
 var investecBankFeedJobName = 'job-pvm-investec-feed-${suffix}'
 var stockSyncJobName = 'job-pvm-stock-sync-${suffix}'
 var sellInJobName = 'job-pvm-sell-in-${suffix}'
+var sellOutMailJobName = 'job-pvm-sell-out-mail-${suffix}'
+var hasSellOutMailCredentials = !empty(sellOutMailClientId) && !empty(sellOutMailClientSecret)
 var logName = 'log-pvm-integrations-${suffix}'
 var appInsightsName = 'appi-pvm-integrations-${suffix}'
 var containerAppsEnvironmentName = 'cae-pvm-integrations-${suffix}'
@@ -1415,6 +1433,81 @@ resource sellInJob 'Microsoft.App/jobs@2025-01-01' = if (sellInEnabled && hasAcu
   ]
 }
 
+// The sell-out mail job reads the sell-out mailbox through Microsoft Graph and loads each attached
+// retailer file. An Exchange application access policy limits the app to this one mailbox.
+resource sellOutMailJob 'Microsoft.App/jobs@2025-01-01' = if (sellOutMailEnabled && hasSellOutMailCredentials) {
+  name: sellOutMailJobName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identity.id}': {}
+    }
+  }
+  properties: {
+    environmentId: containerAppsEnvironment.id
+    configuration: {
+      triggerType: 'Schedule'
+      replicaTimeout: 600
+      replicaRetryLimit: 0
+      scheduleTriggerConfig: {
+        cronExpression: sellOutMailCron
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      registries: [
+        {
+          server: acr.properties.loginServer
+          identity: identity.id
+        }
+      ]
+      secrets: concat(commonRuntimeSecrets, [
+        {
+          name: 'selloutmail-clientsecret'
+          value: sellOutMailClientSecret
+        }
+      ])
+    }
+    template: {
+      containers: [
+        {
+          name: sellOutMailJobName
+          image: '${acr.properties.loginServer}/pvm-worker:${workerImageTag}'
+          args: [
+            '--read-sell-out-mailbox'
+          ]
+          env: concat(workerEnvironment, [
+            {
+              name: 'SellOutMail__Enabled'
+              value: 'true'
+            }
+            {
+              name: 'SellOutMail__Mailbox'
+              value: sellOutMailMailbox
+            }
+            {
+              name: 'SellOutMail__ClientId'
+              value: sellOutMailClientId
+            }
+            {
+              name: 'SellOutMail__ClientSecret'
+              secretRef: 'selloutmail-clientsecret'
+            }
+          ])
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    identityAcrPullRole
+  ]
+}
+
 resource operationsActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   name: 'ag-pvm-integrations-${suffix}'
   location: 'global'
@@ -1574,3 +1667,4 @@ output invoiceLookbackJobName string = acumaticaInvoiceLookbackJobName
 output investecBankFeedJobName string = investecBankFeedJobName
 output stockSyncJobName string = stockSyncJobName
 output sellInJobName string = sellInEnabled ? sellInJobName : ''
+output sellOutMailJobName string = sellOutMailEnabled && hasSellOutMailCredentials ? sellOutMailJobName : ''

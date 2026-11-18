@@ -37,6 +37,34 @@ var syncWooCommerceStock = args.Contains(
 var syncSellIn = args.Contains(
     "--sync-sell-in",
     StringComparer.OrdinalIgnoreCase);
+var readSellOutMailbox = args.Contains(
+    "--read-sell-out-mailbox",
+    StringComparer.OrdinalIgnoreCase);
+
+if (readSellOutMailbox)
+{
+    // Loads the retailer files that people send to the sell-out mailbox. One pass, like the sell-in load.
+    builder.Services.AddPayloadArchive(builder.Configuration);
+    builder.Services.AddSellOutImport();
+    builder.Services.AddSellOutMailIntake(builder.Configuration);
+
+    using var mailHost = builder.Build();
+    await using var mailScope = mailHost.Services.CreateAsyncScope();
+    var mailLogger = mailScope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("SellOutMailIntake");
+    try
+    {
+        await mailScope.ServiceProvider.GetRequiredService<SellOutMailIntakeService>().RunAsync(CancellationToken.None);
+    }
+    catch (Exception exception)
+    {
+        // Rethrow so that the Container Apps job reports a failed replica.
+        mailLogger.LogError(exception, "integration.run.failed RunType=sell-out-mail");
+        throw;
+    }
+
+    return;
+}
+
 var refreshProductGtins = args.Contains(
     "--refresh-product-gtins",
     StringComparer.OrdinalIgnoreCase);

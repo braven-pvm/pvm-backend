@@ -62,6 +62,25 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Registers the sell-out mail intake. Assumes <c>AddSellOutImport</c>.
+    /// </summary>
+    public static IServiceCollection AddSellOutMailIntake(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddOptions<SellOutMailOptions>()
+            .Bind(configuration.GetSection(SellOutMailOptions.SectionName))
+            .Validate(o => !string.IsNullOrWhiteSpace(o.Mailbox) && o.Mailbox.Contains('@', StringComparison.Ordinal), "SellOutMail Mailbox must be a mail address.")
+            .Validate(o => o.AllowedSenderDomains.Length > 0, "SellOutMail AllowedSenderDomains needs at least one domain.")
+            .Validate(o => o.MaxMailsPerRun is >= 1 and <= 200, "SellOutMail MaxMailsPerRun must be 1 to 200.");
+        services.AddHttpClient<ISellOutMailbox, GraphSellOutMailbox>(client =>
+        {
+            client.Timeout = TimeSpan.FromMinutes(2);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("PVM-SellOut/1.0");
+        });
+        services.AddScoped<SellOutMailIntakeService>();
+        return services;
+    }
+
+    /// <summary>
     /// Registers the GTIN refresh. Assumes <c>AddAcumaticaInvoiceSource</c> has bound the shared Acumatica options.
     /// </summary>
     public static IServiceCollection AddProductGtinRefresh(this IServiceCollection services)

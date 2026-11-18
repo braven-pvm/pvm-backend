@@ -258,17 +258,35 @@ person confirms.
 
 ### 5.2 Mail
 
-- One mailbox, for example `sellout@<pvm domain>`. A person forwards or sends the
-  retailer file to it.
-- A Container Apps job reads the mailbox every 15 minutes. It uses the same
-  import as the upload, but with no preview: the file loads at once.
-- The job accepts mail only from an allow-list of senders. Mail from any other
-  sender goes to a folder "Refused" and is not read.
-- After the import, the job replies to the sender with the counts and any
-  issues, and moves the mail to a folder "Loaded" or "Failed".
-- How the job reads the mailbox depends on the mail system of PVM. Step 6 asks
-  the owner. With Microsoft 365, the job uses Microsoft Graph with an
-  application access policy that limits it to this one mailbox.
+The owner chose a shared Microsoft 365 mailbox, `reports@pvm.co.za`, on
+2026-11-18.
+
+- A person forwards or sends the retailer file to `reports@pvm.co.za`.
+- The Container Apps job `job-pvm-sell-out-mail` runs the worker with
+  `--read-sell-out-mailbox` every 15 minutes. It uses the same import as the
+  upload, but with no preview: the file loads at once.
+- The job reads the mailbox through Microsoft Graph, as the app registration
+  `pvm-sellout-mail` with the permission `Mail.ReadWrite`. An Exchange
+  application access policy limits the app to this one mailbox. A test on
+  2026-11-18 showed that the app can read `reports@pvm.co.za` and that another
+  mailbox gives `ErrorAccessDenied`.
+- The job trusts a mail only when both of these are true:
+  - The sender address is in `pvm.co.za`.
+  - The header `X-MS-Exchange-Organization-AuthAs` is `Internal`. Exchange
+    Online sets this for a signed-in user of the organisation. It stops a mail
+    from outside that only shows a `pvm.co.za` address.
+- The job opens no mail from another sender. It moves such a mail to the
+  inbox folder "Refused".
+- The job reads the attachments with the extensions `.xls`, `.xlsx`, `.txt` and
+  `.csv`, and leaves out other files, such as images in a signature.
+- After the import, the job moves the mail to the inbox folder "Loaded" or
+  "Failed". A file that was loaded before counts as loaded. The workbench shows
+  each import with its sender, as `person@pvm.co.za (mail)`.
+- The job does not reply to the sender. A reply needs the permission
+  `Mail.Send`, which the app does not have.
+- Only one environment reads the mailbox, because the job moves each mail
+  that it reads. QA reads it now (`sellOutMailEnabled`). Production takes it
+  over later.
 
 ---
 
@@ -280,7 +298,7 @@ person confirms.
 | Infrastructure | `Pvm.Infrastructure/Reporting/SellOut` | The 3 parsers, the import service, EF entities and the migration |
 | API | `Pvm.Api/Features/Reports` | The import endpoints |
 | Worker | `Pvm.Worker` | `--read-sell-out-mailbox` for the mail job |
-| Workbench | `frontend/workbench/app/reports/sell-out` | The upload page and the "Needs mapping" list |
+| Workbench | `frontend/workbench/app/sell-out` | The upload page and the "Needs mapping" list |
 | Infra | `infra/azure` | The mail job, off by default |
 
 The backend has no Excel library. An `.xlsx` file is a zip of XML parts, so a
