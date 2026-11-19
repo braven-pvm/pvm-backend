@@ -169,6 +169,21 @@ public sealed class SellInSyncServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Two_runs_of_the_same_periods_both_succeed()
+    {
+        // The nightly load reads the same periods each night of a month.
+        _source.Set(March, SellInRowParserTests.Row());
+        await RunAsync(March, April);
+        await RunAsync(March, April);
+
+        await using var db = CreateDbContext();
+        var runs = await db.IntegrationRuns.ToListAsync();
+        Assert.Equal(2, runs.Count);
+        Assert.All(runs, run => Assert.Equal(IntegrationRunStatuses.Succeeded, run.Status));
+        Assert.Equal(2, runs.Select(run => run.ScheduleKey).Distinct().Count());
+    }
+
+    [Fact]
     public async Task Each_run_is_logged_and_each_period_is_archived_raw()
     {
         _source.Set(March, SellInRowParserTests.Row(), SellInRowParserTests.Row(type: "PMT", reference: "PM000001"));
