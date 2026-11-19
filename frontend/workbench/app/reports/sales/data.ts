@@ -13,8 +13,10 @@ import {
 } from "../../../src/sales-report";
 
 /*
- * The data of the prototype pages, from the pivot API. Each function asks for one
- * grouping. The pages call them in parallel. Refer to docs/design/sales-report-pages.md.
+ * The data of the prototype pages, from the pivot API. Each function asks for one grouping,
+ * and the pages call them in parallel. The pages ask for few groupings: each one reads two
+ * years of lines. A tree call (open=*) gives several levels in one request.
+ * Refer to docs/design/sales-report-pages.md.
  */
 
 export type Figure = { key: string; label: string; current: number; previous: number };
@@ -24,7 +26,6 @@ export type Grouped = { rows: Figure[]; current: number; previous: number; messa
 function query(state: ReportState, change: Partial<ReportState>) {
   return apiQuery({ ...state, open: [], sort: "value", compare: true, ...change });
 }
-
 
 /** The sales of each value of a dimension in the period, against the same months a year before. */
 export async function byDimension(state: ReportState, dimension: Dimension, measure: Measure = "amount"): Promise<Grouped> {
@@ -42,7 +43,7 @@ export async function byDimension(state: ReportState, dimension: Dimension, meas
 
 /** The total only. */
 export async function total(state: ReportState, measure: Measure = "amount") {
-  const grouped = await byDimension({ ...state, include: state.include }, "rep", measure);
+  const grouped = await byDimension(state, "itemGroup", measure);
   return { current: grouped.current, previous: grouped.previous };
 }
 
@@ -56,7 +57,7 @@ export async function lastTwelveMonths(state: ReportState, dimension: Dimension,
 /** The months of this financial year against last year, for the chart and the month table. */
 export async function financialYear(state: ReportState, today = new Date()) {
   const from = financialYearStart(today);
-  const answer = await getPivot(query(state, { rows: ["rep"], columns: "months", from, to: addMonths(from, 11) }));
+  const answer = await getPivot(query(state, { rows: ["itemGroup"], columns: "months", from, to: addMonths(from, 11) }));
   const pivot = answer.data;
   const thisMonth = monthOf(today);
   return {
@@ -71,52 +72,95 @@ export async function financialYear(state: ReportState, today = new Date()) {
   };
 }
 
-export type CustomerFigure = Figure & { status: CustomerStatus; monthsSinceOrder: number | null; lastTwelve: number[] };
-
-/** The customers with sales in the period or a year before, each with the status of the prototype. */
-export async function customers(state: ReportState, today = new Date()): Promise<{ rows: CustomerFigure[]; current: number; previous: number; message?: string }> {
-  const [grouped, months] = await Promise.all([byDimension(state, "customer"), lastTwelveMonths(state, "customer", today)]);
-  const rows = grouped.rows
-    .filter((row) => row.current !== 0 || row.previous !== 0)
-    .map((row) => {
-      const lastTwelve = months.get(row.key) ?? [];
-      const monthsSinceOrder = monthsSinceLast(lastTwelve);
-      return { ...row, lastTwelve, monthsSinceOrder, status: statusOf(row.current, row.previous, monthsSinceOrder) };
-    });
-  return { rows, current: grouped.current, previous: grouped.previous, message: grouped.message };
-}
-
-/** The label of one key of a dimension in the filter, such as the name of a rep. */
-export async function labelOf(state: ReportState, dimension: Dimension, key: string) {
-  const grouped = await byDimension({ ...state, include: { ...state.include, [dimension]: [key] } }, dimension);
-  return grouped.rows.find((row) => row.key === key)?.label;
-}
-
 /**
- * The label of the parent of each child key, such as the rep of each customer. The pivot opens
- * each parent and gives its children. A parent with an empty key, such as "No rep", stays out.
+ * Two dimensions in one call, such as product groups and their products: the parents, the
+ * children, and the parent of each child.
  */
-export async function parentOf(state: ReportState, parent: Dimension, child: Dimension, parents: Figure[], use: "label" | "key" = "label"): Promise<Map<string, string>> {
-  const keys = parents.map((row) => row.key).filter((key) => key.length > 0);
-  if (keys.length === 0) {
-    return new Map();
-  }
-  const answer = await getPivot(query(state, { rows: [parent, child], columns: "none", open: keys }));
-  const labels = new Map(parents.map((row) => [row.key, row.label]));
-  const result = new Map<string, string>();
+export async function twoLevels(state: ReportState, parent: Dimension, child: Dimension, measure: Measure = "amount") {
+  const answer = await getPivot(query(state, { rows: [parent, child], columns: "none", measure, open: ["*"] }));
+  const parents: Figure[] = [];
+  const children: Figure[] = [];
+  const parentOf = new Map<string, string>();
+  const labels = new Map<string, string>();
   for (const row of answer.data?.rows ?? []) {
-    if (row.level === 1) {
-      const [parentKey, childKey] = [row.key.slice(0, row.key.indexOf("|")), row.key.slice(row.key.indexOf("|") + 1)];
-      result.set(childKey, use === "key" ? parentKey : (labels.get(parentKey) ?? parentKey));
+    const figure = { key: row.key, label: row.label, current: row.total, previous: row.previousTotal ?? 0 };
+    if (row.level === 0) {
+      parents.push(figure);
+      labels.set(row.key, row.label);
+    } else {
+      const at = row.key.indexOf("|");
+      const childKey = row.key.slice(at + 1);
+      children.push({ ...figure, key: childKey });
+      parentOf.set(childKey, row.key.slice(0, at));
     }
   }
-  return result;
+  return { parents, children, parentOf, parentLabel: (key: string) => labels.get(parentOf.get(key) ?? "") ?? "", message: answer.message };
 }
 
-/** "Pharmacy · Rep A" for each customer. */
-export async function customerMeta(state: ReportState, reps: Figure[]): Promise<Map<string, string>> {
-  const channels = await byDimension(state, "channel");
-  const [repOf, channelOf] = await Promise.all([parentOf(state, "rep", "customer", reps), parentOf(state, "channel", "customer", channels.rows)]);
-  const keys = new Set([...repOf.keys(), ...channelOf.keys()]);
-  return new Map([...keys].map((key) => [key, [channelOf.get(key), repOf.get(key)].filter(Boolean).join(" · ")]));
+export type CustomerFigure = Figure & { status: CustomerStatus; monthsSinceOrder: number | null; lastTwelve: number[] };
+
+export type CustomerBundle = {
+  /** The customers with sales in the period or a year before, each with the status of the prototype. */
+  rows: CustomerFigure[];
+  /** The reps, with the sales of their customers. */
+  reps: Figure[];
+  /** The key of the rep of each customer. */
+  repOf: Map<string, string>;
+  /** "Pharmacy · Rep A" for each customer. */
+  meta: Map<string, string>;
+  /** The sales of the last 12 months of each rep: the sum of its customers. */
+  repMonths: Map<string, number[]>;
+  current: number;
+  previous: number;
+  message?: string;
+};
+
+/**
+ * The customers, their reps and their channels in two calls: a tree of rep, channel and
+ * customer (one customer has one rep and one channel), and the last 12 months by customer.
+ */
+export async function customerBundle(state: ReportState, today = new Date()): Promise<CustomerBundle> {
+  const [answer, months] = await Promise.all([
+    getPivot(query(state, { rows: ["rep", "channel", "customer"], columns: "none", open: ["*"] })),
+    lastTwelveMonths(state, "customer", today),
+  ]);
+  const pivot = answer.data;
+  const reps: Figure[] = [];
+  const repLabels = new Map<string, string>();
+  const channelLabels = new Map<string, string>();
+  const rows: CustomerFigure[] = [];
+  const repOf = new Map<string, string>();
+  const meta = new Map<string, string>();
+  const repMonths = new Map<string, number[]>();
+  for (const row of pivot?.rows ?? []) {
+    const parts = row.key.split("|");
+    if (row.level === 0) {
+      reps.push({ key: row.key, label: row.label, current: row.total, previous: row.previousTotal ?? 0 });
+      repLabels.set(row.key, row.label);
+    } else if (row.level === 1) {
+      channelLabels.set(row.key, row.label);
+    } else if (row.total !== 0 || (row.previousTotal ?? 0) !== 0) {
+      const key = parts[2];
+      const lastTwelve = months.get(key) ?? [];
+      const monthsSinceOrder = monthsSinceLast(lastTwelve);
+      const current = row.total;
+      const previous = row.previousTotal ?? 0;
+      rows.push({ key, label: row.label, current, previous, lastTwelve, monthsSinceOrder, status: statusOf(current, previous, monthsSinceOrder) });
+      repOf.set(key, parts[0]);
+      meta.set(key, [channelLabels.get(`${parts[0]}|${parts[1]}`), repLabels.get(parts[0])].filter(Boolean).join(" · "));
+      const sum = repMonths.get(parts[0]) ?? new Array<number>(lastTwelve.length).fill(0);
+      lastTwelve.forEach((value, index) => (sum[index] = (sum[index] ?? 0) + value));
+      repMonths.set(parts[0], sum);
+    }
+  }
+  return {
+    rows,
+    reps,
+    repOf,
+    meta,
+    repMonths,
+    current: pivot?.totals.total ?? 0,
+    previous: pivot?.totals.previousTotal ?? 0,
+    message: answer.message,
+  };
 }

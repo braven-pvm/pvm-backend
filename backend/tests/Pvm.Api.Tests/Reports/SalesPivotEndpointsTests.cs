@@ -46,6 +46,14 @@ public sealed class SalesPivotEndpointsTests
         Assert.Equal(["BAR01", "BAR01|R1"], request.Open!);
     }
 
+    [Fact]
+    public void Open_star_opens_every_level()
+    {
+        var (request, _) = SalesPivotEndpoints.ReadRequest(Query("rows=rep,customer&open=*"), Today);
+
+        Assert.Null(request!.Open);
+    }
+
     [Theory]
     [InlineData("from=2026-13", "Give the months as 2026-03.")]
     [InlineData("from=2027-01&to=2026-03", "The first month must be before the last month.")]

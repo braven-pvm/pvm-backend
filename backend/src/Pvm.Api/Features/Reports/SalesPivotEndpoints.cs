@@ -217,7 +217,9 @@ public static class SalesPivotEndpoints
 
         var compare = query["compare"].ToString() is "1" or "true";
         var sortByLabel = string.Equals(query["sort"], "label", StringComparison.OrdinalIgnoreCase);
-        return (new SalesPivotRequest(filter, rows, columns, compare, List(query, "open").ToList(), sortByLabel), null);
+        // open=* opens every level, so that one request gives a whole tree, such as rep, channel and customer.
+        var open = query["open"].ToString() == "*" ? null : List(query, "open").ToList();
+        return (new SalesPivotRequest(filter, rows, columns, compare, open, sortByLabel), null);
     }
 
     /// <summary>

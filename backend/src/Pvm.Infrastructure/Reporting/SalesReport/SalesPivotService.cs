@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Npgsql;
 using NpgsqlTypes;
 using Pvm.Application.Messaging;
@@ -100,8 +101,17 @@ public sealed record SalesDimensionValue(string Key, string Label, decimal Total
 /// <param name="FirstMonth">The first month with sales, as financial year * 100 + financial month.</param>
 public sealed record SalesPivotMeta(int? FirstMonth, int? LastMonth, DateTimeOffset? DataTo);
 
-public sealed class SalesPivotService(PvmDbContext db)
+public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
 {
+    /// <summary>
+    /// The data changes only with a load, so an answer stays in the cache until the next load
+    /// or for this time. The key has the end of the last load.
+    /// </summary>
+    public static readonly TimeSpan CacheTime = TimeSpan.FromMinutes(30);
+
+    /// <summary>A report query over 2 years of lines can take longer than the default of 30 seconds.</summary>
+    public static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(120);
+
     public const int MaxMonths = 36;
     public const int MaxDepth = 5;
     public const string PathSeparator = "|";
@@ -143,6 +153,15 @@ public sealed class SalesPivotService(PvmDbContext db)
         SalesDimension dimension, SalesPivotFilter filter, string? search, int limit, CancellationToken cancellationToken)
     {
         var include = filter.Include.Where(item => item.Key != dimension).ToDictionary(item => item.Key, item => item.Value);
+        var dataTo = await DataToAsync(cancellationToken);
+        var cacheKey = $"sales-values|{dataTo?.UtcTicks}|{dimension}|{search?.Trim().ToLowerInvariant()}|{limit}|" +
+            RequestKey(new SalesPivotRequest(filter with { Include = include }, [dimension]));
+        if (cache.TryGetValue(cacheKey, out IReadOnlyList<SalesDimensionValue>? cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        db.Database.SetCommandTimeout(CommandTimeout);
         var parameters = new List<NpgsqlParameter>();
         var where = Where(filter with { Include = include }, compare: false, parameters);
         var (key, label) = Sql[dimension];
@@ -162,7 +181,9 @@ public sealed class SalesPivotService(PvmDbContext db)
             order by 3 desc, 2
             limit @limit
             """;
-        return await db.Database.SqlQueryRaw<SalesDimensionValue>(sql, [.. parameters]).ToListAsync(cancellationToken);
+        var values = await db.Database.SqlQueryRaw<SalesDimensionValue>(sql, [.. parameters]).ToListAsync(cancellationToken);
+        cache.Set(cacheKey, (IReadOnlyList<SalesDimensionValue>)values, CacheTime);
+        return values;
     }
 
     /// <summary>The labels of some keys of a dimension, in any month, for the chips of a selection.</summary>
@@ -185,8 +206,34 @@ public sealed class SalesPivotService(PvmDbContext db)
         return await db.Database.SqlQueryRaw<SalesDimensionValue>(sql, parameter).ToListAsync(cancellationToken);
     }
 
-    /// <summary>The pivot: the first level, and the children of each open row.</summary>
+    /// <summary>The pivot: the first level, and the children of each open row. A null Open opens all levels.</summary>
     public async Task<SalesPivot> PivotAsync(SalesPivotRequest request, CancellationToken cancellationToken)
+    {
+        var dataTo = await DataToAsync(cancellationToken);
+        var key = $"sales-pivot|{dataTo?.UtcTicks}|{RequestKey(request)}";
+        if (cache.TryGetValue(key, out SalesPivot? cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        db.Database.SetCommandTimeout(CommandTimeout);
+        var pivot = await BuildPivotAsync(request, dataTo, cancellationToken);
+        cache.Set(key, pivot, CacheTime);
+        return pivot;
+    }
+
+    /// <summary>A stable text of a request, for the cache key.</summary>
+    internal static string RequestKey(SalesPivotRequest request)
+    {
+        var include = string.Join(";", request.Filter.Include
+            .Where(item => item.Value.Count > 0)
+            .OrderBy(item => item.Key)
+            .Select(item => $"{item.Key}={string.Join(",", item.Value.Order(StringComparer.Ordinal))}"));
+        var open = request.Open is null ? "*" : string.Join(",", request.Open.Order(StringComparer.Ordinal));
+        return $"{request.Filter.From}-{request.Filter.To}|{request.Filter.Measure}|{include}|{string.Join(",", request.Rows)}|{request.Columns}|{request.Compare}|{request.SortByLabel}|{open}";
+    }
+
+    private async Task<SalesPivot> BuildPivotAsync(SalesPivotRequest request, DateTimeOffset? dataTo, CancellationToken cancellationToken)
     {
         var columns = Columns(request.Filter, request.Columns);
         var open = request.Open is null ? null : request.Open.ToHashSet(StringComparer.Ordinal);
@@ -237,7 +284,7 @@ public sealed class SalesPivotService(PvmDbContext db)
             columns,
             rows,
             new SalesPivotTotals(total.Values, total.Total, total.Previous, total.PreviousTotal),
-            await DataToAsync(cancellationToken));
+            dataTo);
     }
 
     /// <summary>The pivot with all levels open, as CSV.</summary>

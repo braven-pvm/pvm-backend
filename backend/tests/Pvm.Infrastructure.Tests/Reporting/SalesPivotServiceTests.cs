@@ -1,7 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
+using Pvm.Application.Messaging;
 using Pvm.Domain.Reporting;
 using Pvm.Infrastructure.Persistence;
 using Pvm.Infrastructure.Persistence.Entities;
+using Pvm.Infrastructure.Reporting;
 using Pvm.Infrastructure.Reporting.SalesReport;
 using Testcontainers.PostgreSql;
 
@@ -78,7 +81,7 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
     {
         await using var db = CreateDbContext();
 
-        var pivot = await new SalesPivotService(db).PivotAsync(
+        var pivot = await Service(db).PivotAsync(
             Request(Year2027(), [SalesDimension.Rep, SalesDimension.Customer, SalesDimension.Product]), CancellationToken.None);
 
         Assert.Equal(12, pivot.Columns.Count);
@@ -98,7 +101,7 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
     {
         await using var db = CreateDbContext();
 
-        var pivot = await new SalesPivotService(db).PivotAsync(
+        var pivot = await Service(db).PivotAsync(
             Request(Year2027(), [SalesDimension.Product, SalesDimension.Rep, SalesDimension.Customer], ["BAR01", "BAR01|R1"]), CancellationToken.None);
 
         Assert.Equal(
@@ -113,7 +116,7 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
     {
         await using var db = CreateDbContext();
 
-        var pivot = await new SalesPivotService(db).PivotAsync(
+        var pivot = await Service(db).PivotAsync(
             Request(Year2027(), [SalesDimension.Rep]) with { SortByLabel = true }, CancellationToken.None);
 
         Assert.Equal(["Rep One", "Rep Two"], pivot.Rows.Select(row => row.Label));
@@ -123,7 +126,7 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
     public async Task Each_dimension_keeps_the_selected_values_and_the_dimensions_combine()
     {
         await using var db = CreateDbContext();
-        var service = new SalesPivotService(db);
+        var service = Service(db);
 
         async Task<decimal> Total(Dictionary<SalesDimension, IReadOnlyList<string>> include) =>
             (await service.PivotAsync(Request(Year2027(include), [SalesDimension.Rep]), CancellationToken.None)).Totals.Total;
@@ -141,7 +144,7 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
     {
         await using var db = CreateDbContext();
 
-        var pivot = await new SalesPivotService(db).PivotAsync(
+        var pivot = await Service(db).PivotAsync(
             Request(new SalesPivotFilter(202701, 202702, All), [SalesDimension.Rep], compare: true), CancellationToken.None);
 
         var repOne = pivot.Rows.Single(row => row.Key == "R1");
@@ -158,7 +161,7 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
     {
         await using var db = CreateDbContext();
 
-        var pivot = await new SalesPivotService(db).PivotAsync(
+        var pivot = await Service(db).PivotAsync(
             Request(Year2027(measure: SalesPivotMeasure.Customers), [SalesDimension.Rep]), CancellationToken.None);
 
         var repOne = pivot.Rows.Single(row => row.Key == "R1");
@@ -173,7 +176,7 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
     public async Task Columns_can_be_years_or_none()
     {
         await using var db = CreateDbContext();
-        var service = new SalesPivotService(db);
+        var service = Service(db);
 
         var years = await service.PivotAsync(
             Request(new SalesPivotFilter(202601, 202712, All), [SalesDimension.Rep], columns: SalesPivotColumns.Years), CancellationToken.None);
@@ -189,7 +192,7 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
     public async Task The_values_of_a_dimension_ignore_its_own_selection_but_keep_the_others()
     {
         await using var db = CreateDbContext();
-        var service = new SalesPivotService(db);
+        var service = Service(db);
         var filter = Year2027(new Dictionary<SalesDimension, IReadOnlyList<string>> { [SalesDimension.Customer] = ["C1"], [SalesDimension.Rep] = ["R1"] });
 
         var customers = await service.ValuesAsync(SalesDimension.Customer, filter, null, 100, CancellationToken.None);
@@ -204,9 +207,55 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
     {
         await using var db = CreateDbContext();
 
-        var labels = await new SalesPivotService(db).LabelsAsync(SalesDimension.Customer, ["P1", "C1", "NONE"], CancellationToken.None);
+        var labels = await Service(db).LabelsAsync(SalesDimension.Customer, ["P1", "C1", "NONE"], CancellationToken.None);
 
         Assert.Equal([("P1", "PHARMACY ONE"), ("C1", "STORE ONE")], labels.Select(value => (value.Key, value.Label)));
+    }
+
+    [Fact]
+    public async Task A_null_open_gives_every_level()
+    {
+        await using var db = CreateDbContext();
+
+        var pivot = await Service(db).PivotAsync(Request(Year2027(), [SalesDimension.Rep, SalesDimension.Customer]) with { Open = null }, CancellationToken.None);
+
+        Assert.Equal(
+            [(0, "R2"), (1, "R2|P1"), (0, "R1"), (1, "R1|C1"), (1, "R1|C2")],
+            pivot.Rows.Select(row => (row.Level, row.Key)));
+    }
+
+    [Fact]
+    public async Task A_second_request_comes_from_the_cache_until_the_next_load()
+    {
+        await using var db = CreateDbContext();
+        var service = Service(db);
+        var request = Request(Year2027(), [SalesDimension.Rep]);
+        var first = await service.PivotAsync(request, CancellationToken.None);
+
+        db.SellInLines.Add(Line("P1", "BAR01", 2027, 2, 1000m, 1m));
+        await db.SaveChangesAsync();
+        var cached = await service.PivotAsync(request, CancellationToken.None);
+
+        db.IntegrationRuns.Add(new IntegrationRunEntity
+        {
+            Id = Guid.NewGuid(),
+            RunType = SellInSyncService.RunType,
+            Trigger = "manual",
+            InitiatedBy = "test",
+            EnvironmentName = "test",
+            CorrelationId = "test",
+            Status = IntegrationRunStatuses.Succeeded,
+            CreatedAt = Now,
+            UpdatedAt = Now,
+            StartedAt = Now,
+            CompletedAt = Now,
+        });
+        await db.SaveChangesAsync();
+        var fresh = await service.PivotAsync(request, CancellationToken.None);
+
+        Assert.Same(first, cached);
+        Assert.Equal(370m, cached.Totals.Total);
+        Assert.Equal(1370m, fresh.Totals.Total);
     }
 
     [Fact]
@@ -214,7 +263,7 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
     {
         await using var db = CreateDbContext();
 
-        var csv = await new SalesPivotService(db).CsvAsync(
+        var csv = await Service(db).CsvAsync(
             Request(new SalesPivotFilter(202701, 202702, All), [SalesDimension.Rep, SalesDimension.Customer]), CancellationToken.None);
 
         var lines = csv.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
@@ -230,7 +279,7 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
     {
         await using var db = CreateDbContext();
 
-        var page = await new SalesPivotService(db).LinesAsync(
+        var page = await Service(db).LinesAsync(
             Year2027(new Dictionary<SalesDimension, IReadOnlyList<string>> { [SalesDimension.Rep] = ["R2"] }), 1, 100, CancellationToken.None);
 
         Assert.Equal(1, page.TotalLines);
@@ -242,7 +291,7 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
     {
         await using var db = CreateDbContext();
 
-        var meta = await new SalesPivotService(db).MetaAsync(CancellationToken.None);
+        var meta = await Service(db).MetaAsync(CancellationToken.None);
 
         Assert.Equal((202601, 202702), (meta.FirstMonth, meta.LastMonth));
     }
@@ -275,6 +324,8 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
         Assert.Equal(SavedFilterResult.Done, await service.DeleteAsync(mine.Id, owner, CancellationToken.None));
         Assert.Equal(SavedFilterResult.NotFound, await service.DeleteAsync(mine.Id, owner, CancellationToken.None));
     }
+
+    private static SalesPivotService Service(PvmDbContext db) => new(db, new MemoryCache(new MemoryCacheOptions()));
 
     private PvmDbContext CreateDbContext() => new(
         new DbContextOptionsBuilder<PvmDbContext>().UseNpgsql(_postgres.GetConnectionString()).Options);

@@ -75,6 +75,7 @@ public static class ServiceCollectionExtensions
     {
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<SalesReport.SalesReportService>();
+        services.AddMemoryCache();
         services.AddScoped<SalesReport.SalesPivotService>();
         services.AddScoped<SalesReport.SalesReportSavedFilterService>();
         return services;

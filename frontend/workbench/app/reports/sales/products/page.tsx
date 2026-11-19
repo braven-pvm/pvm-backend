@@ -1,6 +1,6 @@
 import { formatFigure } from "../../../../src/sales-report";
 import { Delta, Notice, Panel, StatTile, TileGrid } from "../../../../src/ui";
-import { byDimension, lastTwelveMonths, parentOf } from "../data";
+import { byDimension, lastTwelveMonths, twoLevels } from "../data";
 import { drillHref, readContext, SalesFrame, sectionHref } from "../frame";
 import { basePath, requireReportUser, single, type Search } from "../parts";
 import { FigureTable, figureValues, MoreLink, pathKey, readOrder, short, sortRows, sparkColumn } from "../views";
@@ -22,14 +22,21 @@ export default async function SalesProductsPage({ searchParams }: { searchParams
   let data;
   try {
     const withoutGroups = { ...state, include: { ...state.include, itemGroup: [] } };
-    const [groups, products, units, buyers, months] = await Promise.all([
+    const [groups, tree, units, buyers, months] = await Promise.all([
       byDimension(withoutGroups, "itemGroup"),
-      byDimension(state, "product"),
+      twoLevels(state, "itemGroup", "product"),
       byDimension(state, "product", "quantity"),
       byDimension(state, "product", "customers"),
       lastTwelveMonths(state, "product"),
     ]);
-    data = { groups, products, units, buyers, months, groupOf: await parentOf(state, "itemGroup", "product", groups.rows) };
+    data = {
+      groups,
+      products: { rows: tree.children, message: tree.message },
+      units,
+      buyers,
+      months,
+      groupOf: new Map(tree.children.map((row) => [row.key, tree.parentLabel(row.key)])),
+    };
   } catch {
     data = undefined;
   }

@@ -1,5 +1,5 @@
 import { Columns, EmptyState, FilterChips, Notice, Panel, StatTile, TabNav, TileGrid } from "../../../../../src/ui";
-import { byDimension, customerMeta, customers, financialYear } from "../../data";
+import { byDimension, customerBundle, financialYear, twoLevels } from "../../data";
 import { drillHref, readContext, SalesFrame, sectionHref } from "../../frame";
 import { basePath, requireReportUser, single, type Search } from "../../parts";
 import { against, breakdownTabs, FigureTable, keyOf, lastOrderText, pathKey, readOrder, short, YearChart } from "../../views";
@@ -27,16 +27,23 @@ export default async function SalesCustomerPage({ params, searchParams }: { para
   let data;
   try {
     const withoutCustomer = { ...state, include: { ...state.include, customer: [] } };
-    const [customerRows, products, units, groups, allGroups, reps, year] = await Promise.all([
-      customers(state),
-      byDimension(state, "product"),
+    const [bundle, tree, units, allGroups, year] = await Promise.all([
+      customerBundle(state),
+      twoLevels(state, "itemGroup", "product"),
       byDimension(state, "product", "quantity"),
-      byDimension(state, "itemGroup"),
       byDimension(withoutCustomer, "itemGroup"),
-      byDimension(state, "rep"),
       financialYear(state),
     ]);
-    data = { customer: customerRows.rows.find((row) => row.key === key), products, units, groups, allGroups, meta: await customerMeta(state, reps.rows), year, message: products.message };
+    data = {
+      customer: bundle.rows.find((row) => row.key === key),
+      products: { rows: tree.children, current: bundle.current, previous: bundle.previous },
+      units,
+      groups: { rows: tree.parents },
+      allGroups,
+      meta: bundle.meta,
+      year,
+      message: tree.message,
+    };
   } catch {
     data = undefined;
   }
