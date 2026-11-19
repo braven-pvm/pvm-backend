@@ -177,6 +177,25 @@ GET /api/reports/sales/pivot?rows=rep,customer,product&from=2026-03&to=2026-11&r
 - The SQL groups by grouping sets, so each level is one query, and only the
   children of open rows come back.
 
+### 4.2 Pages on the prototype
+
+Source: the owner, 2026-11-19 14:32, after the first pivot pages: "the changes I
+asked for should be made on top of that not replace it completely". The pages
+follow the approved prototype (artifact `8N9HSbu6wkYaGA1GY6VB9H`), and the
+requests of 4.1 go on top of it.
+
+| Prototype | The page now |
+| --- | --- |
+| Overview, Reps, Customers and Products tabs | The same tabs with real data, and one more tab, Pivot |
+| The pages of one rep, one customer and one product | The same pages. Each has a breakdown: a rep by customers, products or product groups; a customer by products or product groups; a product by customers, reps or customer groups |
+| Filter bar: period, rep, product group, channel chips | Each filter takes many values. "More filters" adds customers, customer groups, provinces, products, warehouses and reps at the sale. The period also takes custom months |
+| Download Excel | The CSV export of the view. Saved filters show next to it |
+| A click on a row opens its page | The click keeps the earlier steps in the URL (`trail=rep:R01\|product:P05`). The page shows only those keys, and chips show the steps |
+
+The status of a customer follows the prototype: Growing is up more than 10%,
+Declining is down more than 10%, At risk has no order in the last 2 months, Lost
+has no order in the last 4 months, and New had no sales a year before.
+
 ---
 
 ## 5. New parts in `src/ui`

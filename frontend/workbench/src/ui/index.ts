@@ -9,6 +9,7 @@ export { Button, ButtonLink, buttonClass, type ButtonVariant } from "./button";
 export { CodeBlock } from "./code-block";
 export { ColumnChart, type ChartSeries } from "./column-chart";
 export { ConfirmDialog } from "./confirm-dialog";
+export { Delta } from "./delta";
 export { DataTable, type Column, type SortDirection } from "./data-table";
 export { EmptyState } from "./empty-state";
 export {
@@ -41,6 +42,7 @@ export { PdfFrame } from "./pdf-frame";
 export { PivotGrid, type PivotRow } from "./pivot-grid";
 export { QrCode } from "./qr-code";
 export { RecordNav } from "./record-nav";
+export { Sparkline } from "./sparkline";
 export { Spinner } from "./spinner";
 export { Stack, type Space } from "./stack";
 export { StatTile, TileGrid } from "./stat-tile";

@@ -1,0 +1,20 @@
+.delta {
+  align-items: center;
+  display: inline-flex;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-bold);
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.delta[data-tone="up"] {
+  color: var(--color-success);
+}
+
+.delta[data-tone="down"] {
+  color: var(--color-error);
+}
+
+.delta[data-tone="flat"] {
+  color: var(--color-text-weak);
+}

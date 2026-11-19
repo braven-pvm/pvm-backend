@@ -1,0 +1,17 @@
+.spark {
+  display: block;
+}
+
+.area {
+  fill: var(--color-brand-fill);
+}
+
+.line {
+  fill: none;
+  stroke: var(--color-brand);
+  stroke-width: 1.5;
+}
+
+.dot {
+  fill: var(--color-brand);
+}

@@ -10,6 +10,7 @@ import {
   ColumnChart,
   ConfirmDialog,
   DataTable,
+  Delta,
   EmptyState,
   FileField,
   FilterChips,
@@ -26,6 +27,7 @@ import {
   PivotGrid,
   RadioGroup,
   SelectField,
+  Sparkline,
   Spinner,
   Stack,
   StatTile,
@@ -429,6 +431,14 @@ export default function UiKitPage() {
               ]}
               format={(value) => `R ${Math.round(value)} k`}
             />
+          </Panel>
+          <Panel title="Sparkline and Delta" description="The last 12 months in a table row, and the change against last year. Example data.">
+            <Stack direction="row" wrap align="center" gap="m">
+              <Sparkline values={[12, 14, 13, 15, 17, 16, 18, 21, 19, 22, 24, 23]} label="Example sales of the last 12 months" />
+              <Delta current={112} previous={100} />
+              <Delta current={88} previous={100} />
+              <Delta current={50} previous={0} />
+            </Stack>
           </Panel>
           <Panel flush title="PivotGrid" description="Report rows in levels that open with a link. The first column and the headers stay in view.">
             <PivotGrid

@@ -1,3 +1,5 @@
+import Link from "next/link";
+import type { ReactNode } from "react";
 import styles from "./bar-list.module.css";
 
 export type Bar = {
@@ -7,6 +9,10 @@ export type Bar = {
   display: string;
   /** Mark a bar that is below its target, so it reads without colour too. */
   low?: boolean;
+  /** Shown after the value, such as the change against last year. */
+  change?: ReactNode;
+  /** Opens the detail behind the bar. The label becomes the link. */
+  href?: string;
 };
 
 type BarListProps = {
@@ -30,7 +36,13 @@ export function BarList({ label, bars, max, axis }: BarListProps) {
       <ul className={styles.list}>
         {bars.map((bar) => (
           <li className={styles.row} key={bar.label}>
-            <span className={styles.label}>{bar.label}</span>
+            {bar.href ? (
+              <Link className={`${styles.label} ${styles.link}`} href={bar.href}>
+                {bar.label}
+              </Link>
+            ) : (
+              <span className={styles.label}>{bar.label}</span>
+            )}
             <span className={styles.track} aria-hidden="true">
               <span
                 className={styles.fill}
@@ -41,6 +53,7 @@ export function BarList({ label, bars, max, axis }: BarListProps) {
             <span className={styles.value}>
               {bar.display}
               {bar.low ? <span className={styles.lowMark}> Low</span> : null}
+              {bar.change ? <> {bar.change}</> : null}
             </span>
           </li>
         ))}

@@ -13,10 +13,10 @@ import {
   type Dimension,
   type Measure,
   type ReportState,
-} from "../../../src/sales-report";
-import { Button, CheckboxField, MultiSelect, OrderPicker, Panel, SelectField, Spinner, Stack, TextField, type MultiSelectOption } from "../../../src/ui";
-import { loadValuesAction } from "./actions";
-import { reportHref } from "./links";
+} from "../../../../src/sales-report";
+import { Button, CheckboxField, MultiSelect, OrderPicker, Panel, SelectField, Spinner, Stack, TextField, type MultiSelectOption } from "../../../../src/ui";
+import { loadValuesAction } from "../actions";
+import { reportHref } from "../links";
 
 type Preset = { id: string; label: string; from: string; to: string };
 
