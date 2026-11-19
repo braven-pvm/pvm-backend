@@ -10,6 +10,7 @@ import 'package:scanner/device/device_store.dart';
 import 'package:scanner/device/setup_code.dart';
 import 'package:scanner/queue/upload_queue.dart';
 import 'package:scanner/scanner/document_scanner.dart';
+import 'package:scanner/screens/home_screen.dart';
 import 'package:scanner/screens/review_screen.dart';
 import 'package:scanner/settings/app_settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,6 +19,7 @@ import 'package:shared_preferences_platform_interface/shared_preferences_async_p
 
 const _pod = DocumentType(code: 'POD', displayName: 'Proof of delivery');
 const _general = DocumentType(code: 'GENERAL', displayName: 'General document');
+const _invoice = DocumentType(code: 'INVOICE', displayName: 'Supplier invoice');
 
 class _Store implements DeviceStore {
   @override
@@ -42,16 +44,20 @@ class _NoEnroller implements Enroller {
   Future<EnrolOutcome> enrol(SetupCode code) async => const EnrolRefused(EnrolMessages.invalidCode);
 }
 
-/// The configured types; every upload is accepted.
+/// The configured types; each upload answers with the next scripted outcome, then accepts.
 class _Client implements DeviceClient {
   _Client(this.types);
 
-  final List<DocumentType> types;
+  List<DocumentType> types;
+  final outcomes = <UploadOutcome>[];
   final uploads = <({String documentType, String? title, String? note})>[];
+  var configCalls = 0;
 
   @override
-  Future<DeviceConfig> config() async =>
-      DeviceConfig(deviceName: 'Dispatch phone 1', documentTypes: types, staff: const []);
+  Future<DeviceConfig> config() async {
+    configCalls++;
+    return DeviceConfig(deviceName: 'Dispatch phone 1', documentTypes: types, staff: const []);
+  }
 
   @override
   Future<UploadOutcome> upload({
@@ -65,6 +71,9 @@ class _Client implements DeviceClient {
     File? thumbnail,
   }) async {
     uploads.add((documentType: documentType, title: title, note: note));
+    if (outcomes.isNotEmpty) {
+      return outcomes.removeAt(0);
+    }
     return UploadAccepted(documentId: 'doc-${uploads.length}', state: 'Received');
   }
 }
@@ -86,14 +95,21 @@ void main() {
   late _Scanner scanner;
   late DeviceSession session;
   late _Client client;
+  late StreamController<void> network;
+  var buzzes = 0;
 
   setUp(() {
     SharedPreferencesAsyncPlatform.instance = InMemorySharedPreferencesAsync.empty();
     root = Directory.systemTemp.createTempSync('scan_flow_test');
     scanner = _Scanner();
+    network = StreamController<void>.broadcast();
+    buzzes = 0;
   });
 
-  tearDown(() => root.deleteSync(recursive: true));
+  tearDown(() {
+    network.close();
+    root.deleteSync(recursive: true);
+  });
 
   // Real file IO runs outside the fake clock: give it time, then let the widgets catch up.
   Future<void> settle(WidgetTester tester, [bool Function()? done]) async {
@@ -113,7 +129,8 @@ void main() {
     return ScannedDocument(pdf: pdf, pageCount: pages);
   }
 
-  Future<void> startApp(WidgetTester tester, List<DocumentType> types) async {
+  /// [retryWaitsForever]: the fake clock never ends a retry wait; only a wake does.
+  Future<void> startApp(WidgetTester tester, List<DocumentType> types, {bool retryWaitsForever = false}) async {
     client = _Client(types);
     final settings = AppSettings(SharedPreferencesAsync());
     session = DeviceSession(
@@ -122,10 +139,16 @@ void main() {
       settings: settings,
       queueDirectory: () async => Directory('${root.path}/upload_queue'),
       clientFor: (_) => client,
-      delay: (_) async {},
+      delay: retryWaitsForever ? (_) => Completer<void>().future : (_) async {},
     );
     await tester.pumpWidget(ScannerApp(
-      services: AppServices(session: session, scanner: scanner, settings: settings),
+      services: AppServices(
+        session: session,
+        scanner: scanner,
+        settings: settings,
+        networkChanges: network.stream,
+        confirmQueued: () async => buzzes++,
+      ),
     ));
     await settle(tester, () => session.phase == SessionPhase.ready && session.config != null);
     await settle(tester);
@@ -145,20 +168,20 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('the_start_screen_shows_the_configured_types_and_the_empty_state', (tester) async {
+  testWidgets('the_start_screen_shows_the_types_and_the_upload_status', (tester) async {
     await startApp(tester, const [_pod, _general]);
 
     expect(find.text('Proof of delivery'), findsOneWidget);
     expect(find.text('General document'), findsOneWidget);
-    expect(find.text('No scans yet. Choose a document type to start.'), findsOneWidget);
+    expect(find.text(HomeScreen.allSentText), findsOneWidget);
+    expect(find.text('Sent today: 0'), findsOneWidget);
     expect(find.byTooltip('Settings'), findsOneWidget);
     // Two types: the person chooses; the camera does not open by itself.
     expect(scanner.calls, 0);
     await closeApp(tester);
   });
 
-  testWidgets('with_only_one_type_the_start_screen_has_no_other_type_and_the_scanner_opens_at_once',
-      (tester) async {
+  testWidgets('with_only_one_type_the_scanner_opens_at_once', (tester) async {
     await startApp(tester, const [_pod]);
 
     expect(find.text('General document'), findsNothing);
@@ -167,7 +190,43 @@ void main() {
     await closeApp(tester);
   });
 
-  testWidgets('send_queues_the_scan_with_its_fields_and_opens_the_scanner_again', (tester) async {
+  testWidgets('proof_of_delivery_queues_each_scan_without_a_review_and_reopens_the_scanner', (tester) async {
+    await startApp(tester, const [_pod, _general]);
+    scanner.script
+      ..add(await document(tester, 'pod-1'))
+      ..add(await document(tester, 'pod-2', pages: 2))
+      ..add(await document(tester, 'pod-3'));
+
+    await tester.tap(find.text('Proof of delivery'));
+    await settle(tester, () => scanner.calls == 4 && client.uploads.length == 3 && queued().isEmpty);
+    await settle(tester);
+
+    // Three scans, then the person closed the scanner: four openings, no review screen.
+    expect(scanner.calls, 4);
+    expect(find.byType(ReviewScreen), findsNothing);
+    expect(client.uploads.map((upload) => upload.documentType), ['POD', 'POD', 'POD']);
+    expect(client.uploads.every((upload) => upload.title == null && upload.note == null), isTrue);
+    expect(buzzes, 3);
+    // Sent and gone from the phone; only the counter is left.
+    expect(queued(), isEmpty);
+    expect(find.text('Sent today: 3'), findsOneWidget);
+    expect(find.text('Proof of delivery'), findsOneWidget);
+    await closeApp(tester);
+  });
+
+  testWidgets('another_type_without_a_title_also_skips_the_review', (tester) async {
+    await startApp(tester, const [_pod, _invoice]);
+    scanner.script.add(await document(tester, 'invoice'));
+
+    await tester.tap(find.text('Supplier invoice'));
+    await settle(tester, () => scanner.calls == 2 && client.uploads.isNotEmpty);
+
+    expect(find.byType(ReviewScreen), findsNothing);
+    expect(client.uploads.single.documentType, 'INVOICE');
+    await closeApp(tester);
+  });
+
+  testWidgets('general_next_queues_the_scan_with_title_and_note_and_reopens_the_scanner', (tester) async {
     await startApp(tester, const [_pod, _general]);
     scanner.script.add(await document(tester, 'lease', pages: 3));
 
@@ -177,62 +236,56 @@ void main() {
     expect(find.text('3 pages'), findsOneWidget);
     expect(find.text('Title (optional)'), findsOneWidget);
     expect(find.text('Note (optional)'), findsOneWidget);
+    // One button only.
+    expect(find.text('Send'), findsNothing);
+    expect(find.text('Send and finish'), findsNothing);
+    expect(find.text('Scan again'), findsNothing);
     await tester.enterText(find.widgetWithText(TextField, 'Title (optional)'), 'Lease unit 4');
     await tester.enterText(find.widgetWithText(TextField, 'Note (optional)'), 'Signed copy');
-    await reveal(tester, find.text('Send'));
-    await tester.tap(find.text('Send'));
-    await settle(tester, () => scanner.calls == 2 && queued().isNotEmpty);
+    await reveal(tester, find.text(ReviewScreen.nextLabel));
+    await tester.tap(find.text(ReviewScreen.nextLabel));
+    await settle(tester, () => scanner.calls == 2 && client.uploads.isNotEmpty);
     await settle(tester);
 
     // The scanner opened again for the next paper; the person closed it.
     expect(scanner.calls, 2);
     expect(find.byType(ReviewScreen), findsNothing);
-    final item = queued().single;
-    expect(item.documentType, 'GENERAL');
-    expect(item.title, 'Lease unit 4');
-    expect(item.userNote, 'Signed copy');
-    expect(find.text('Lease unit 4'), findsOneWidget);
-    expect(find.text('No scans yet. Choose a document type to start.'), findsNothing);
+    final upload = client.uploads.single;
+    expect(upload.documentType, 'GENERAL');
+    expect(upload.title, 'Lease unit 4');
+    expect(upload.note, 'Signed copy');
+    expect(buzzes, 1);
     expect(FocusManager.instance.primaryFocus?.context?.widget, isNot(isA<EditableText>()));
     await closeApp(tester);
   });
 
-  testWidgets('scan_again_discards_the_scan_and_finish_sends_and_goes_back_to_the_start', (tester) async {
+  testWidgets('back_on_the_general_review_screen_still_queues_the_scan_and_stops', (tester) async {
     await startApp(tester, const [_pod, _general]);
-    final first = await document(tester, 'first');
     scanner.script
-      ..add(first)
-      ..add(await document(tester, 'second', pages: 2));
+      ..add(await document(tester, 'first'))
+      ..add(await document(tester, 'second'));
 
-    await tester.tap(find.text('Proof of delivery'));
+    await tester.tap(find.text('General document'));
     await settle(tester, () => find.byType(ReviewScreen).evaluate().isNotEmpty);
-    // Proof of delivery has a note, no title.
-    expect(find.text('Title (optional)'), findsNothing);
-    expect(find.text('Note (optional)'), findsOneWidget);
-    expect(find.text('1 page'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, 'Title (optional)'), 'Kept anyway');
 
-    await reveal(tester, find.text('Scan again'));
-    await tester.tap(find.text('Scan again'));
-    await settle(tester, () => find.text('2 pages').evaluate().isNotEmpty);
-    await settle(tester); // The first review screen's exit animation.
-    expect(scanner.calls, 2);
-    expect(await tester.runAsync(first.pdf.exists), isFalse);
-
-    await reveal(tester, find.text('Send and finish'));
-    await tester.tap(find.text('Send and finish'));
-    await settle(tester, () => queued().isNotEmpty && queued().single.state == QueuedDocument.received);
+    await tester.tap(find.byType(BackButton));
+    await settle(tester, () => client.uploads.isNotEmpty);
     await settle(tester);
 
-    // Back on the start screen, without opening the scanner again.
-    expect(scanner.calls, 2);
     expect(find.byType(ReviewScreen), findsNothing);
+    expect(scanner.calls, 1);
+    expect(client.uploads.single.title, 'Kept anyway');
     expect(find.text('General document'), findsOneWidget);
-    final item = queued().single;
-    expect(item.documentType, 'POD');
-    expect(item.pageCount, 2);
-    expect(item.title, isNull);
-    expect(client.uploads.single.title, isNull);
-    expect(find.text('Sent'), findsOneWidget);
+
+    // The phone's own back key does the same.
+    await tester.tap(find.text('General document'));
+    await settle(tester, () => find.byType(ReviewScreen).evaluate().isNotEmpty);
+    await tester.binding.handlePopRoute();
+    await settle(tester, () => client.uploads.length == 2);
+    await settle(tester);
+    expect(find.byType(ReviewScreen), findsNothing);
+    expect(scanner.calls, 2);
     await closeApp(tester);
   });
 
@@ -245,7 +298,80 @@ void main() {
 
     expect(find.byType(ReviewScreen), findsNothing);
     expect(queued(), isEmpty);
-    expect(find.text('No scans yet. Choose a document type to start.'), findsOneWidget);
+    expect(client.uploads, isEmpty);
+    expect(find.text(HomeScreen.allSentText), findsOneWidget);
+    await closeApp(tester);
+  });
+
+  testWidgets('a_network_error_shows_waiting_for_network_and_a_network_change_sends_at_once', (tester) async {
+    await startApp(tester, const [_pod, _general], retryWaitsForever: true);
+    client.outcomes.add(const UploadRetryLater('No connection to the server: Network is unreachable'));
+    scanner.script.add(await document(tester, 'offline'));
+
+    await tester.tap(find.text('Proof of delivery'));
+    await settle(tester, () => client.uploads.length == 1 && session.queue!.status.value == QueueStatus.retrying);
+    await settle(tester);
+
+    expect(find.text(HomeScreen.retryingText), findsOneWidget);
+    expect(find.text('1 waiting'), findsOneWidget);
+    // A transport problem has no buttons: the app tries again by itself.
+    expect(find.text('Try again'), findsNothing);
+    expect(find.text('Remove'), findsNothing);
+
+    network.add(null); // Wi-Fi or mobile data came back.
+    await settle(tester, () => client.uploads.length == 2 && queued().isEmpty);
+    await settle(tester);
+
+    expect(find.text(HomeScreen.retryingText), findsNothing);
+    expect(find.text('Sent today: 1'), findsOneWidget);
+    await closeApp(tester);
+  });
+
+  testWidgets('coming_to_the_front_sends_at_once_and_loads_the_types_again', (tester) async {
+    await startApp(tester, const [_pod, _invoice], retryWaitsForever: true);
+    client.outcomes.add(const UploadRetryLater('The server had a problem (HTTP 503).'));
+    scanner.script.add(await document(tester, 'later'));
+    await tester.tap(find.text('Proof of delivery'));
+    await settle(tester, () => client.uploads.length == 1 && session.queue!.status.value == QueueStatus.retrying);
+    expect(find.text('General document'), findsNothing);
+    final configCalls = client.configCalls;
+
+    // An admin adds a type while the app is in the background.
+    client.types = const [_pod, _invoice, _general];
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await settle(tester, () => client.uploads.length == 2 && find.text('General document').evaluate().isNotEmpty);
+    await settle(tester);
+
+    expect(client.configCalls, greaterThan(configCalls));
+    expect(find.text('General document'), findsOneWidget);
+    expect(queued(), isEmpty);
+    await closeApp(tester);
+  });
+
+  testWidgets('a_rejected_scan_is_a_problem_with_its_reason_and_remove_after_confirmation', (tester) async {
+    await startApp(tester, const [_pod, _general]);
+    client.outcomes.add(const UploadRejected('The server did not accept this document. The file is not a PDF.'));
+    scanner.script.add(await document(tester, 'bad'));
+
+    await tester.tap(find.text('Proof of delivery'));
+    await settle(tester, () => queued().isNotEmpty && queued().single.state == QueuedDocument.failed);
+    await settle(tester);
+
+    expect(find.text('Problem'), findsOneWidget);
+    expect(find.text('The server did not accept this document. The file is not a PDF.'), findsOneWidget);
+    await reveal(tester, find.text('Remove'));
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    expect(find.text('Remove this scan?'), findsOneWidget);
+    await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Remove')));
+    await settle(tester, () => queued().isEmpty);
+    await settle(tester);
+
+    expect(find.text('Problem'), findsNothing);
+    expect(find.text(HomeScreen.allSentText), findsOneWidget);
     await closeApp(tester);
   });
 
@@ -265,13 +391,11 @@ void main() {
     await settle(tester, () => find.byType(ReviewScreen).evaluate().isNotEmpty);
     expect(tester.takeException(), isNull);
 
-    await reveal(tester, find.text('Send and finish'));
-    await tester.tap(find.text('Send and finish'));
-    await settle(tester, () => queued().isNotEmpty);
+    await reveal(tester, find.text(ReviewScreen.nextLabel));
+    await tester.tap(find.text(ReviewScreen.nextLabel));
+    await settle(tester, () => client.uploads.isNotEmpty && scanner.calls == 2);
     await settle(tester);
     expect(tester.takeException(), isNull);
-    await reveal(tester, find.text('Untitled'));
-    expect(find.text('Untitled'), findsOneWidget);
     await closeApp(tester);
   });
 }

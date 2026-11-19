@@ -148,10 +148,58 @@ enum QueueHold {
   deviceReset,
 }
 
-/// Default retry delay: 5 s, 10 s, 20 s, ... up to 5 minutes.
+/// What the queue is doing now, for the start screen.
+enum QueueStatus {
+  /// Nothing to send, or held.
+  idle,
+
+  /// An upload is running.
+  sending,
+
+  /// The last attempt hit a network or server problem; the queue tries again by itself.
+  retrying,
+}
+
+/// How many scans the backend confirmed on one local date, and when the last one was confirmed.
+/// Nothing else of a sent scan is kept on the phone.
+@immutable
+class SentCount {
+  const SentCount({this.date, this.count = 0, this.lastSentAt});
+
+  /// The local date of [count], as yyyy-mm-dd; null before the first confirmed scan.
+  final String? date;
+  final int count;
+  final DateTime? lastSentAt;
+
+  static String dateOf(DateTime time) {
+    final local = time.toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)}';
+  }
+
+  /// The scans confirmed on the local date of [now]; 0 on a new day.
+  int today(DateTime now) => date == dateOf(now) ? count : 0;
+
+  /// One more confirmed scan at [now].
+  SentCount add(DateTime now) => SentCount(date: dateOf(now), count: today(now) + 1, lastSentAt: now);
+
+  Map<String, Object?> toJson() => {
+        'date': date,
+        'count': count,
+        if (lastSentAt != null) 'lastSentAt': lastSentAt!.toUtc().toIso8601String(),
+      };
+
+  factory SentCount.fromJson(Map<String, dynamic> json) => SentCount(
+        date: json['date'] as String?,
+        count: json['count'] as int? ?? 0,
+        lastSentAt: json['lastSentAt'] is String ? DateTime.parse(json['lastSentAt'] as String).toLocal() : null,
+      );
+}
+
+/// Default retry delay after the [attempt]th failure in a row: 2 s, 4 s, 8 s, ... up to 30 s.
 Duration defaultBackoff(int attempt) {
-  final seconds = 5 * math.pow(2, math.max(0, attempt - 1)).toInt();
-  return Duration(seconds: math.min(seconds, 300));
+  final exponent = math.min(math.max(0, attempt - 1), 5);
+  return Duration(seconds: math.min(2 << exponent, 30));
 }
 
 /// A persistent upload queue.
@@ -159,15 +207,19 @@ Duration defaultBackoff(int attempt) {
 /// Each PDF is copied into `directory/pdfs/<clientDocumentId>.pdf` and the item list is kept in
 /// `directory/queue.json` (the previous good copy in `queue.json.bak`), so nothing is lost when
 /// the app stops. Saves run one at a time. Items upload one at a time; an item that failed and
-/// may succeed later goes behind the other waiting items and is retried with backoff and the
-/// same client document ID. The local PDF is deleted only after the receipt is saved. A rejected
-/// upload (400 or 413) is marked [QueuedDocument.failed] and keeps its PDF. A 401 holds the queue
-/// ([QueueHold.deviceRevoked]); the items and PDFs stay for the next enrolment.
+/// may succeed later goes behind the other waiting items and is retried by itself with backoff
+/// (2 s, 4 s, 8 s ... 30 s, for as long as the queue runs) and the same client document ID;
+/// [retryNow] ends a wait at once. When the backend confirms an item (200 or 201), the receipt is
+/// saved first; only then are its PDF, its thumbnail and its row deleted, and [sent] counts it.
+/// A rejected upload (400 or 413) is marked [QueuedDocument.failed] and keeps its PDF. A 401
+/// holds the queue ([QueueHold.deviceRevoked]); the items and PDFs stay for the next enrolment.
 class UploadQueue {
-  UploadQueue._(this._directory, this._uploader, this._backoff, this._delay, this._items);
+  UploadQueue._(this._directory, this._uploader, this._backoff, this._delay, this._clock, this._items, SentCount sent)
+      : _sent = ValueNotifier(sent);
 
   static const _stateFile = 'queue.json';
   static const _backupFile = 'queue.json.bak';
+  static const _sentFile = 'sent.json';
   static const _pdfFolder = 'pdfs';
   static const _thumbnailFolder = 'thumbs';
   static final _guid = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
@@ -176,10 +228,16 @@ class UploadQueue {
   final DocumentUploader _uploader;
   final Duration Function(int attempt) _backoff;
   final Future<void> Function(Duration) _delay;
+  final DateTime Function() _clock;
   final List<QueuedDocument> _items;
+  final ValueNotifier<SentCount> _sent;
 
   final _changes = StreamController<List<QueuedDocument>>.broadcast();
   final _hold = ValueNotifier<QueueHold?>(null);
+  final _status = ValueNotifier<QueueStatus>(QueueStatus.idle);
+
+  /// Network or server failures in a row; sets the next retry delay. A success or a wake ends it.
+  var _failuresInARow = 0;
   var _started = false;
   var _closed = false;
   Future<void>? _loop;
@@ -193,13 +251,15 @@ class UploadQueue {
   ///   GUID, so the backend can still recognise a second copy;
   /// - an item left uploading by a stopped app is waiting again;
   /// - a waiting item whose PDF is gone after an attempt was sent earlier (the receipt was not
-  ///   saved); it shows as received with the note "Sent earlier";
-  /// - received items from an earlier run are dropped.
+  ///   saved, the PDF went anyway): it is dropped;
+  /// - received items (the receipt was saved, the app stopped before it deleted the files) are
+  ///   dropped, and their PDF and thumbnail deleted.
   static Future<UploadQueue> open({
     required Directory directory,
     required DocumentUploader uploader,
     Duration Function(int attempt) backoff = defaultBackoff,
     Future<void> Function(Duration)? delay,
+    DateTime Function()? clock,
     String orphanDocumentType = 'POD',
   }) async {
     final pdfFolder = Directory('${directory.path}/$_pdfFolder');
@@ -222,30 +282,65 @@ class UploadQueue {
     final items = <QueuedDocument>[];
     for (final stored in saved) {
       if (stored.state == QueuedDocument.received) {
+        // Confirmed by the backend: nothing of it stays. Before the orphan check, so its PDF is
+        // not taken back as a new scan.
+        await _deleteQuietly(_pdfPath(directory, stored.clientDocumentId));
         continue;
       }
       var item = stored.state == QueuedDocument.uploading ? stored.copyWith(state: QueuedDocument.waiting) : stored;
       if (item.state == QueuedDocument.waiting && !await _pdfPath(directory, item.clientDocumentId).exists()) {
-        item = item.attempts > 0
-            ? item.copyWith(state: QueuedDocument.received, note: 'Sent earlier')
-            : item.copyWith(
-                state: QueuedDocument.failed,
-                lastError: 'The scan file is missing on this phone. Scan the paper again.',
-              );
+        if (item.attempts > 0) {
+          continue; // Sent earlier; the receipt was not saved. Its thumbnail goes below.
+        }
+        item = item.copyWith(
+          state: QueuedDocument.failed,
+          lastError: 'The scan file is missing on this phone. Scan the paper again.',
+        );
       }
       items.add(item);
     }
 
     await _adoptOrphans(directory, pdfFolder, items, orphanDocumentType);
     await _dropUnusedThumbnails(directory, items);
+    final sent = await _readSent(File('${directory.path}/$_sentFile'));
 
-    final queue = UploadQueue._(directory, uploader, backoff, delay ?? Future<void>.delayed, items);
+    final queue = UploadQueue._(
+      directory,
+      uploader,
+      backoff,
+      delay ?? Future<void>.delayed,
+      clock ?? DateTime.now,
+      items,
+      sent,
+    );
     try {
       await queue._save();
     } on FileSystemException {
       // The next save tries again; the items are in memory.
     }
     return queue;
+  }
+
+  static Future<void> _deleteQuietly(File file) async {
+    try {
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } on FileSystemException {
+      // The next start tries again.
+    }
+  }
+
+  /// The sent counter, or zero when the file is missing or unreadable.
+  static Future<SentCount> _readSent(File file) async {
+    try {
+      if (await file.exists()) {
+        return SentCount.fromJson(jsonDecode(await file.readAsString()) as Map<String, dynamic>);
+      }
+    } on Object {
+      // A bad counter file only costs the count.
+    }
+    return const SentCount();
   }
 
   static File _pdfPath(Directory directory, String clientDocumentId) =>
@@ -364,6 +459,16 @@ class UploadQueue {
 
   /// Set while the queue waits for a new enrolment.
   ValueListenable<QueueHold?> get hold => _hold;
+
+  /// Sending, retrying by itself, or idle.
+  ValueListenable<QueueStatus> get status => _status;
+
+  /// The scans the backend confirmed today, and the time of the last one; kept across restarts.
+  ValueListenable<SentCount> get sent => _sent;
+
+  /// Items not yet confirmed and not failed: waiting or being sent.
+  int get waitingCount =>
+      _items.where((item) => item.state == QueuedDocument.waiting || item.state == QueuedDocument.uploading).length;
 
   /// Completes when the queue has nothing it can upload now (empty, held, or closed).
   Future<void> get whenIdle => _loop ?? Future<void>.value();
@@ -505,8 +610,12 @@ class UploadQueue {
     _kick();
   }
 
-  /// Ends the current wait and tries the next upload now.
-  void retryNow() => _kick();
+  /// Ends the current wait and tries the next upload now, with the backoff from the start: the
+  /// network came back, or the app came to the front.
+  void retryNow() {
+    _failuresInARow = 0;
+    _kick();
+  }
 
   /// Stops the queue: nothing new starts, a running upload finishes and its result is saved,
   /// then the queue saves nothing more.
@@ -538,7 +647,10 @@ class UploadQueue {
       return;
     }
 
-    _loop = _run().whenComplete(() => _loop = null);
+    _loop = _run().whenComplete(() {
+      _loop = null;
+      _status.value = QueueStatus.idle;
+    });
   }
 
   Future<void> _run() async {
@@ -548,6 +660,8 @@ class UploadQueue {
         return;
       }
 
+      // While a network problem lasts, the screen keeps saying so, also during the next attempt.
+      _status.value = _failuresInARow > 0 ? QueueStatus.retrying : QueueStatus.sending;
       final item = _items[index].copyWith(state: QueuedDocument.uploading);
       await _replace(item);
 
@@ -570,15 +684,13 @@ class UploadQueue {
 
       switch (outcome) {
         case UploadAccepted(:final documentId):
-          // Save the receipt first; the PDF goes only once the receipt is on disk.
+          _failuresInARow = 0;
+          // Save the receipt first; the files and the row go only once the receipt is on disk.
           if (await _replace(item.copyWith(state: QueuedDocument.received, documentId: documentId))) {
-            try {
-              await pdfOf(item).delete();
-            } on FileSystemException {
-              // Already gone.
-            }
+            await _forget(item);
           }
         case UploadRejected(:final reason):
+          _failuresInARow = 0;
           await _replace(item.copyWith(state: QueuedDocument.failed, attempts: item.attempts + 1, lastError: reason));
         case UploadDeviceRevoked():
           // Set the hold first, so the loop stops before anything else starts; then save.
@@ -590,10 +702,40 @@ class UploadQueue {
           _items.removeWhere((existing) => existing.clientDocumentId == item.clientDocumentId);
           _items.add(item.copyWith(state: QueuedDocument.waiting, attempts: attempts, lastError: reason));
           await _saveQuietly();
-          if (!_closed) {
-            await _wait(_backoff(attempts));
+          _failuresInARow++;
+          _status.value = QueueStatus.retrying;
+          if (!_closed && _hold.value == null) {
+            await _wait(_backoff(_failuresInARow));
           }
       }
+    }
+  }
+
+  /// After the saved receipt: counts the scan, deletes its PDF and thumbnail, then its row. A
+  /// stop in between is finished on the next start (received rows are dropped with their files).
+  Future<void> _forget(QueuedDocument item) async {
+    await _countSent();
+    await _deleteQuietly(pdfOf(item));
+    await _deleteThumbnail(item);
+    _items.removeWhere((existing) => existing.clientDocumentId == item.clientDocumentId);
+    await _saveQuietly();
+  }
+
+  Future<void> _countSent() async {
+    final sent = _sent.value.add(_clock());
+    _sent.value = sent;
+    final json = jsonEncode(sent.toJson());
+    final write = _saveChain.then((_) async {
+      final file = File('${_directory.path}/$_sentFile');
+      final temporary = File('${_directory.path}/$_sentFile.tmp');
+      await temporary.writeAsString(json, flush: true);
+      await temporary.rename(file.path);
+    });
+    _saveChain = write.then((_) {}, onError: (Object _) {});
+    try {
+      await write;
+    } on Object {
+      // Only the count is lost; the scan is on the server.
     }
   }
 

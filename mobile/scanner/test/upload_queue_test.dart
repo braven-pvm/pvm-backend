@@ -63,6 +63,14 @@ void main() {
     root.deleteSync(recursive: true);
   });
 
+  /// Lets the queue's real file IO run until [done].
+  Future<void> waitFor(bool Function() done) async {
+    for (var i = 0; i < 500 && !done(); i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(done(), isTrue);
+  }
+
   File scannedPdf([String name = 'scan.pdf']) {
     final file = File('${root.path}/$name');
     file.writeAsBytesSync('%PDF-1.7 test'.codeUnits);
@@ -73,15 +81,19 @@ void main() {
     DocumentUploader uploader, {
     List<Duration>? delays,
     void Function(UploadQueue queue)? onDelay,
+    Future<void> Function(Duration)? delay,
+    DateTime Function()? clock,
   }) async {
     late UploadQueue queue;
     queue = await UploadQueue.open(
       directory: queueDirectory,
       uploader: uploader,
-      delay: (duration) async {
-        delays?.add(duration);
-        onDelay?.call(queue);
-      },
+      clock: clock,
+      delay: delay ??
+          (duration) async {
+            delays?.add(duration);
+            onDelay?.call(queue);
+          },
     );
     return queue;
   }
@@ -106,32 +118,113 @@ void main() {
     await second.close();
   });
 
-  test('upload_success_marks_received_and_deletes_local_pdf', () async {
+  test('a_confirmed_upload_deletes_the_pdf_the_thumbnail_and_the_row_and_counts_it', () async {
     final uploader = FakeUploader([const UploadAccepted(documentId: 'doc-1', state: 'Received')]);
-    final queue = await openQueue(uploader);
+    final now = DateTime(2026, 11, 19, 14, 2);
+    final queue = await openQueue(uploader, clock: () => now);
     final source = scannedPdf();
 
-    final queued = await queue.enqueue(source, 'POD', 1);
+    final queued = await queue.enqueue(source, 'POD', 1, thumbnail: Uint8List.fromList([0xFF, 0xD8, 1]));
     final pdf = queue.pdfOf(queued);
+    final thumbnail = queue.thumbnailOf(queued)!;
+    expect(thumbnail.existsSync(), isTrue);
+    expect(queue.sent.value.today(now), 0);
     queue.start();
     await queue.whenIdle;
 
-    final item = queue.current.single;
-    expect(item.state, QueuedDocument.received);
-    expect(item.documentId, 'doc-1');
     expect(uploader.calls.single.fileExisted, isTrue);
+    // Nothing of the scan stays on the phone: no row, no PDF, no thumbnail.
+    expect(queue.current, isEmpty);
     expect(pdf.existsSync(), isFalse);
+    expect(thumbnail.existsSync(), isFalse);
+    expect(jsonDecode(File('${queueDirectory.path}/queue.json').readAsStringSync()), isEmpty);
+    expect(Directory('${queueDirectory.path}/pdfs').listSync(), isEmpty);
+    // Only the counter is kept.
+    expect(queue.sent.value.today(now), 1);
+    expect(queue.sent.value.lastSentAt, now);
     await queue.close();
   });
 
-  test('upload_failure_retries_with_backoff_and_keeps_pdf', () async {
+  test('the_sent_today_counter_is_kept_across_a_restart_and_resets_on_a_new_local_date', () async {
+    var now = DateTime(2026, 11, 19, 23, 50);
+    final uploader = FakeUploader([const UploadAccepted(documentId: 'doc', state: 'Received')]);
+    final first = await openQueue(uploader, clock: () => now);
+    first.start();
+    await first.enqueue(scannedPdf('a.pdf'), 'POD', 1);
+    await first.whenIdle;
+    await first.enqueue(scannedPdf('b.pdf'), 'POD', 1);
+    await first.whenIdle;
+    expect(first.sent.value.today(now), 2);
+    await first.close();
+
+    final second = await openQueue(uploader, clock: () => now);
+    expect(second.sent.value.today(now), 2);
+    expect(second.sent.value.lastSentAt, now);
+
+    // Past midnight (local time): a new day starts at 0, the last sent time stays.
+    now = DateTime(2026, 11, 20, 0, 5);
+    expect(second.sent.value.today(now), 0);
+    second.start();
+    await second.enqueue(scannedPdf('c.pdf'), 'POD', 1);
+    await second.whenIdle;
+    expect(second.sent.value.today(now), 1);
+    expect(second.sent.value.lastSentAt, now);
+    await second.close();
+
+    final third = await openQueue(uploader, clock: () => now);
+    expect(third.sent.value.today(now), 1);
+    await third.close();
+  });
+
+  test('received_rows_in_an_old_queue_file_are_removed_with_their_files_on_start', () async {
+    queueDirectory.createSync(recursive: true);
+    Directory('${queueDirectory.path}/pdfs').createSync();
+    Directory('${queueDirectory.path}/thumbs').createSync();
+    const sent = '3f2b1c4d-0000-4000-8000-0000000000a1';
+    const waiting = '3f2b1c4d-0000-4000-8000-0000000000a2';
+    // An older app saved the receipt but stopped before it deleted the files.
+    File('${queueDirectory.path}/pdfs/$sent.pdf').writeAsStringSync('%PDF-1.7');
+    File('${queueDirectory.path}/thumbs/$sent.jpg').writeAsBytesSync([0xFF, 0xD8]);
+    File('${queueDirectory.path}/pdfs/$waiting.pdf').writeAsStringSync('%PDF-1.7');
+    File('${queueDirectory.path}/queue.json').writeAsStringSync(jsonEncode([
+      {
+        'clientDocumentId': sent,
+        'documentType': 'POD',
+        'pageCount': 1,
+        'state': 'received',
+        'createdAt': '2026-11-17T08:00:00.000Z',
+        'attempts': 1,
+        'documentId': 'doc-1',
+        'thumbnail': true,
+      },
+      {
+        'clientDocumentId': waiting,
+        'documentType': 'POD',
+        'pageCount': 1,
+        'state': 'waiting',
+        'createdAt': '2026-11-17T08:01:00.000Z',
+        'attempts': 0,
+      },
+    ]));
+
+    final queue = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
+
+    // The received row is gone, and its PDF is not taken back as a new scan.
+    expect(queue.current.map((item) => item.clientDocumentId), [waiting]);
+    expect(File('${queueDirectory.path}/pdfs/$sent.pdf').existsSync(), isFalse);
+    expect(File('${queueDirectory.path}/thumbs/$sent.jpg').existsSync(), isFalse);
+    expect(File('${queueDirectory.path}/pdfs/$waiting.pdf').existsSync(), isTrue);
+    await queue.close();
+  });
+
+  test('network_errors_retry_by_themselves_after_2_4_8_s_capped_at_30_s_and_keep_the_pdf', () async {
     final uploader = FakeUploader([const UploadRetryLater('The network is not available.')]);
     final delays = <Duration>[];
     final queue = await openQueue(
       uploader,
       delays: delays,
       onDelay: (queue) {
-        if (delays.length == 3) {
+        if (delays.length == 8) {
           queue.close();
         }
       },
@@ -141,15 +234,54 @@ void main() {
     queue.start();
     await queue.whenIdle;
 
-    expect(uploader.calls, hasLength(3));
-    expect(delays, hasLength(3));
-    expect(delays[1], greaterThan(delays[0]));
-    expect(delays[2], greaterThan(delays[1]));
+    expect(uploader.calls, hasLength(8));
+    expect(delays.map((delay) => delay.inSeconds), [2, 4, 8, 16, 30, 30, 30, 30]);
     final item = queue.current.single;
     expect(item.state, QueuedDocument.waiting);
-    expect(item.attempts, 3);
+    expect(item.attempts, 8);
     expect(item.lastError, 'The network is not available.');
     expect(queue.pdfOf(queued).existsSync(), isTrue);
+  });
+
+  test('the_default_backoff_is_2_4_8_s_capped_at_30_s', () {
+    expect([for (var attempt = 1; attempt <= 7; attempt++) defaultBackoff(attempt).inSeconds], [2, 4, 8, 16, 30, 30, 30]);
+    expect(defaultBackoff(400).inSeconds, 30);
+  });
+
+  test('a_wake_ends_the_retry_wait_at_once_and_starts_the_backoff_again', () async {
+    final uploader = FakeUploader([
+      const UploadRetryLater('No connection to the server.'),
+      const UploadRetryLater('No connection to the server.'),
+      const UploadRetryLater('No connection to the server.'),
+      const UploadAccepted(documentId: 'doc', state: 'Received'),
+    ]);
+    final delays = <Duration>[];
+    // The fake clock never moves: only a wake ends a wait.
+    final queue = await openQueue(uploader, delay: (duration) {
+      delays.add(duration);
+      return Completer<void>().future;
+    });
+
+    await queue.enqueue(scannedPdf(), 'POD', 1);
+    queue.start();
+    await waitFor(() => delays.length == 1);
+    expect(uploader.calls, hasLength(1));
+    expect(queue.status.value, QueueStatus.retrying);
+    expect(queue.current.single.lastError, 'No connection to the server.');
+
+    queue.retryNow(); // The network came back.
+    await waitFor(() => delays.length == 2);
+    expect(uploader.calls, hasLength(2));
+    expect(delays.map((delay) => delay.inSeconds), [2, 2]);
+
+    queue.retryNow();
+    await waitFor(() => delays.length == 3);
+    queue.retryNow();
+    await queue.whenIdle;
+    expect(uploader.calls, hasLength(4));
+    expect(queue.current, isEmpty);
+    expect(queue.status.value, QueueStatus.idle);
+    await queue.close();
   });
 
   test('retry_sends_same_clientDocumentId', () async {
@@ -167,7 +299,7 @@ void main() {
     expect(uploader.calls[0].clientDocumentId, queued.clientDocumentId);
     expect(uploader.calls[1].clientDocumentId, queued.clientDocumentId);
     expect(uploader.calls[1].pageCount, 3);
-    expect(queue.current.single.state, QueuedDocument.received);
+    expect(queue.current, isEmpty);
     await queue.close();
   });
 
@@ -222,7 +354,8 @@ void main() {
     await queue.whenIdle;
 
     expect(queue.hold.value, isNull);
-    expect(queue.current.map((item) => item.state), everyElement(QueuedDocument.received));
+    expect(queue.current, isEmpty);
+    expect(uploader.calls, hasLength(3));
     await queue.close();
   });
 
@@ -318,15 +451,10 @@ void main() {
     expect(call.title, 'Lease for unit 4');
     expect(call.note, 'Signed copy');
     expect(call.thumbnail, thumbnail);
-    // The list keeps showing the thumbnail of a sent scan until the next start.
-    expect(second.thumbnailOf(second.current.single), isNotNull);
-    await second.close();
-
-    // Received items are dropped on the next start, and their thumbnails with them.
-    final third = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
-    expect(third.current, isEmpty);
+    // Sent: the row and its thumbnail are gone at once.
+    expect(second.current, isEmpty);
     expect(Directory('${queueDirectory.path}/thumbs').listSync(), isEmpty);
-    await third.close();
+    await second.close();
   });
 
   test('a_title_is_not_kept_or_sent_for_proof_of_delivery', () async {
@@ -371,7 +499,7 @@ void main() {
     await queue.retry(queued.clientDocumentId);
     await queue.whenIdle;
 
-    expect(queue.current.single.state, QueuedDocument.received);
+    expect(queue.current, isEmpty);
     expect(uploader.calls.map((call) => call.clientDocumentId), [queued.clientDocumentId, queued.clientDocumentId]);
     await queue.close();
   });
@@ -400,8 +528,6 @@ void main() {
 
     expect(maxActive, 1);
     expect(order, [first.clientDocumentId, second.clientDocumentId]);
-    final newestFirst = await queue.items.first;
-    expect(newestFirst.first.clientDocumentId, second.clientDocumentId);
     await queue.close();
   });
 
@@ -423,7 +549,7 @@ void main() {
 
     expect(calls, 2);
     expect(delays, hasLength(1));
-    expect(queue.current.single.state, QueuedDocument.received);
+    expect(queue.current, isEmpty);
     await queue.close();
   });
 
@@ -440,10 +566,10 @@ void main() {
 
     expect(enqueued, hasLength(20));
     expect(uploader.calls, hasLength(20));
-    expect(queue.current.where((item) => item.state == QueuedDocument.received), hasLength(20));
+    expect(queue.current, isEmpty);
+    expect(queue.sent.value.today(DateTime.now()), 20);
     final saved = jsonDecode(File('${queueDirectory.path}/queue.json').readAsStringSync()) as List<dynamic>;
-    expect(saved, hasLength(20));
-    expect(saved.every((entry) => (entry as Map<String, dynamic>)['state'] == QueuedDocument.received), isTrue);
+    expect(saved, isEmpty);
 
     final reopened = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
     expect(reopened.current, isEmpty);
@@ -496,7 +622,7 @@ void main() {
     await second.close();
   });
 
-  test('a_waiting_item_whose_pdf_is_gone_after_an_attempt_is_received_unconfirmed', () async {
+  test('a_waiting_item_whose_pdf_is_gone_after_an_attempt_is_dropped_as_sent_earlier', () async {
     final first = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
     final queued = await first.enqueue(scannedPdf(), 'POD', 1);
     await first.close();
@@ -507,8 +633,7 @@ void main() {
 
     final second = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
 
-    expect(second.current.single.state, QueuedDocument.received);
-    expect(second.current.single.note, 'Sent earlier');
+    expect(second.current, isEmpty);
     await second.close();
   });
 
@@ -530,8 +655,6 @@ void main() {
     await queue.whenIdle;
 
     expect(order, [first.clientDocumentId, second.clientDocumentId, first.clientDocumentId]);
-    final newestFirst = await queue.items.first;
-    expect(newestFirst.map((item) => item.clientDocumentId), [second.clientDocumentId, first.clientDocumentId]);
     await queue.close();
   });
 
@@ -551,7 +674,8 @@ void main() {
     await closing;
     final stateFile = File('${queueDirectory.path}/queue.json');
     final savedAtClose = stateFile.readAsStringSync();
-    expect(savedAtClose, contains(QueuedDocument.received));
+    expect(jsonDecode(savedAtClose), isEmpty);
+    expect(queue.sent.value.today(DateTime.now()), 1);
 
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(stateFile.readAsStringSync(), savedAtClose);
