@@ -24,10 +24,10 @@ const _invoice = DocumentType(code: 'INVOICE', displayName: 'Supplier invoice');
 class _Store implements DeviceStore {
   @override
   Future<DeviceCredentials?> read() async => DeviceCredentials(
-        apiBaseUri: Uri.parse('https://api.example.test'),
-        deviceKey: 'pvmd_key',
-        deviceName: 'Dispatch phone 1',
-      );
+    apiBaseUri: Uri.parse('https://api.example.test'),
+    deviceKey: 'pvmd_key',
+    deviceName: 'Dispatch phone 1',
+  );
 
   @override
   Future<void> write(DeviceCredentials value) async {}
@@ -143,16 +143,18 @@ void main() {
       clientFor: (_) => client,
       delay: retryWaitsForever ? (_) => Completer<void>().future : (_) async {},
     );
-    await tester.pumpWidget(ScannerApp(
-      services: AppServices(
-        session: session,
-        scanner: scanner,
-        settings: settings,
-        networkChanges: network.stream,
-        confirmQueued: () async => buzzes++,
-        clock: () => now,
+    await tester.pumpWidget(
+      ScannerApp(
+        services: AppServices(
+          session: session,
+          scanner: scanner,
+          settings: settings,
+          networkChanges: network.stream,
+          confirmQueued: () async => buzzes++,
+          clock: () => now,
+        ),
       ),
-    ));
+    );
     await settle(tester, () => session.phase == SessionPhase.ready && session.config != null);
     await settle(tester);
   }
@@ -179,6 +181,19 @@ void main() {
     expect(find.text(HomeScreen.allSentText), findsOneWidget);
     expect(find.text('Sent today: 0'), findsOneWidget);
     expect(find.byTooltip('Settings'), findsOneWidget);
+    // The phone's name heads the screen.
+    expect(find.text('Dispatch phone 1'), findsOneWidget);
+    // The first type is the main action; the others are outlined.
+    expect(find.widgetWithText(FilledButton, 'Proof of delivery'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'General document'), findsOneWidget);
+    expect(find.text(HomeScreen.hintOf('POD')!), findsOneWidget);
+    // The type buttons sit below the status, at the bottom of the screen (thumb reach).
+    final screen = tester.getSize(find.byType(HomeScreen));
+    expect(tester.getTopLeft(find.text('Proof of delivery')).dy, greaterThan(screen.height / 2));
+    expect(
+      tester.getTopLeft(find.text(HomeScreen.allSentText)).dy,
+      lessThan(tester.getTopLeft(find.text('Proof of delivery')).dy),
+    );
     // Two types: the person chooses; the camera does not open by itself.
     expect(scanner.calls, 0);
     await closeApp(tester);
@@ -434,8 +449,11 @@ void main() {
     await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Remove')));
     await settle(tester, () => queued().length == 1);
     await settle(tester);
-    await tester.scrollUntilVisible(find.text('1 scan not sent — see below'), -80,
-        scrollable: find.byType(Scrollable).last);
+    await tester.scrollUntilVisible(
+      find.text('1 scan not sent — see below'),
+      -80,
+      scrollable: find.byType(Scrollable).last,
+    );
     expect(find.text('1 scan not sent — see below'), findsOneWidget);
     expect(find.text(HomeScreen.allSentText), findsNothing);
     await closeApp(tester);
