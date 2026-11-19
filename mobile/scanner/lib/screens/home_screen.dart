@@ -50,6 +50,7 @@ class HomeScreen extends StatefulWidget {
   static const allSentText = 'All scans sent';
   static const retryingText = 'Waiting for network — will retry';
   static const sendingText = 'Sending…';
+  static const noStaffText = 'Choose name';
 
   /// The short line under a type button, for the types the app knows.
   static String? hintOf(String code) => switch (code) {
@@ -369,7 +370,7 @@ class _HomeScreenState extends State<HomeScreen> {
             SliverToBoxAdapter(
               child: _WhoRow(
                 deviceName: _deviceName,
-                staffName: showStaff ? (_staff?.name ?? 'Choose name') : null,
+                staffName: showStaff ? (_staff?.name ?? HomeScreen.noStaffText) : null,
                 onChange: showStaff && !_scanning ? _changeStaff : null,
               ),
             ),
@@ -466,8 +467,9 @@ class _TypeButton extends StatelessWidget {
               if (hint != null)
                 Text(
                   hint!,
+                  // The main button's hint follows the button's own text colour, also when disabled.
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: main ? theme.colorScheme.onPrimary : theme.colorScheme.onSurfaceVariant,
+                    color: main || onPressed == null ? null : theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
             ],
@@ -598,6 +600,9 @@ class _UploadStatus extends StatelessWidget {
 class _WhoRow extends StatelessWidget {
   const _WhoRow({required this.deviceName, required this.staffName, required this.onChange});
 
+  /// Between the phone name and the staff name.
+  static const separator = '  ·  ';
+
   final String deviceName;
   final String? staffName;
   final VoidCallback? onChange;
@@ -606,18 +611,23 @@ class _WhoRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final style = theme.textTheme.titleMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant);
-    final parts = [
-      if (deviceName.isNotEmpty) Text(deviceName, style: style, overflow: TextOverflow.ellipsis),
-      if (staffName != null)
-        Text(
-          staffName!,
-          style: style?.copyWith(color: theme.colorScheme.onSurface, fontWeight: FontWeight.w600),
-          overflow: TextOverflow.ellipsis,
-        ),
-    ];
-    if (parts.isEmpty) {
+    final staffStyle = style?.copyWith(color: theme.colorScheme.onSurface, fontWeight: FontWeight.w600);
+    if (deviceName.isEmpty && staffName == null) {
       return const SizedBox.shrink();
     }
+    // One text, so the two names share the whole row and are cut only when the row is full.
+    final names = Text.rich(
+      TextSpan(
+        style: style,
+        children: [
+          if (deviceName.isNotEmpty) TextSpan(text: deviceName),
+          if (deviceName.isNotEmpty && staffName != null) const TextSpan(text: separator),
+          if (staffName != null) TextSpan(text: staffName, style: staffStyle),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
     return InkWell(
       onTap: onChange,
       child: Padding(
@@ -628,9 +638,7 @@ class _WhoRow extends StatelessWidget {
             children: [
               Icon(Icons.smartphone, size: 24, color: theme.colorScheme.onSurfaceVariant),
               const SizedBox(width: 8),
-              Flexible(child: parts.first),
-              for (final part in parts.skip(1)) ...[Text('  ·  ', style: style), Flexible(child: part)],
-              const Spacer(),
+              Expanded(child: names),
               if (onChange != null) TextButton(onPressed: onChange, child: const Text('Change')),
             ],
           ),
