@@ -678,6 +678,30 @@ changed after the last refresh of the workbook. The other customer is not in
 the workbook and has no rep. The owner accepted this parity table on
 2026-11-18.
 
+### Check of the report API, 2026-11-19
+
+Goal R5, step 6. The report API (`GET /api/reports/sales/by-rep`) on
+production sell-in, against the sheet `SalesData` of the workbook. The
+workbook totals use the pivot columns `RepName`, `FinYear2` and `FinMonth`.
+The check covers 20 full months, March 2025 to October 2026. November 2026 is
+left out, because the workbook was refreshed before the month ended.
+
+| Check | Result |
+| --- | --- |
+| Totals for each month and rep | 399 of 407 to the cent |
+| Monthly totals | 13 of 20 to the cent. FY2027 March to October all equal |
+| Totals for each customer and month | 10 of 22 239 differ |
+| Difference over 20 months | The API is 0.289 % below the workbook |
+
+One export customer in the United States explains 99 % of the
+difference. The workbook's SQL source has its FY2026 sales. Company PVM in
+Acumatica production has none. The owner decided on 2026-11-19 that the report
+leaves these sales out: it shows company PVM only. One customer has a new
+name, so its sales move between two names. Three small lines make up the rest.
+
+The column `FinYear` of the workbook is not the financial year of the pivots.
+Use `FinYear2` for a check.
+
 ## 7b. What goals R1 to R4 built
 
 | Goal | Slices | What it built | Pull requests | Check |
