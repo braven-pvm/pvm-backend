@@ -1,5 +1,5 @@
 import type { InvoiceCandidate } from "../../src/api/documents";
-import { acumaticaInvoiceUrl, formatDocumentState } from "../../src/documents";
+import { acumaticaAttachLabel, acumaticaInvoiceUrl, formatDocumentState } from "../../src/documents";
 import { formatDate } from "../../src/formatters.mjs";
 import { StatusBadge, type Column } from "../../src/ui";
 
@@ -25,15 +25,30 @@ export function AcumaticaInvoice({ reference, baseUrl }: { reference: string; ba
   );
 }
 
-/** Where the PDF stands in Acumatica, for a filed document. */
-export function acumaticaLabel(document: { state: string; acumaticaAttachPending: boolean; acumaticaAttachedAt: string | null }) {
-  if (document.state !== "Filed") {
+/**
+ * "Linked to INV190096" for a filed document, the invoice a link to Acumatica
+ * when the setting is there. The attach state follows only in Write mode
+ * (design 6.13). Null when the document is not filed to an invoice.
+ */
+export function InvoiceLink({
+  document,
+  mode,
+  baseUrl,
+}: {
+  document: { state: string; matchedReference: string | null; acumaticaAttachPending: boolean; acumaticaAttachedAt: string | null };
+  mode: string | null | undefined;
+  baseUrl: string | undefined;
+}) {
+  if (document.state !== "Filed" || !document.matchedReference) {
     return null;
   }
-  if (document.acumaticaAttachedAt) {
-    return "Attached";
-  }
-  return document.acumaticaAttachPending ? "Waiting to attach" : "Not attached";
+  const attach = acumaticaAttachLabel(document, mode);
+  return (
+    <>
+      Linked to <AcumaticaInvoice reference={document.matchedReference} baseUrl={baseUrl} />
+      {attach ? ` · ${attach}` : null}
+    </>
+  );
 }
 
 /** The customer of an invoice, with the parent or ship-to when Acumatica has one. */

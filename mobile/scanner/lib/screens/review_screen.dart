@@ -2,19 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../scanner/document_scanner.dart';
 
-/// What the person chose on the review screen.
+/// What the person chose on the review screen. Either way the scan is kept and sent.
 enum ReviewAction {
-  /// Send this scan and open the scanner for the next paper.
-  send,
+  /// "Next": keep this scan and open the scanner for the next paper.
+  next,
 
-  /// Send this scan and go back to the start screen.
-  finish,
-
-  /// Throw this scan away and open the scanner again.
-  scanAgain,
-
-  /// Throw this scan away and go back to the start screen (the back key, then "Delete it").
-  discard,
+  /// Back (the arrow or the phone's back key): keep this scan and go back to the start screen.
+  /// The scan was taken, so nobody loses it by pressing back; a bad scan is deleted in the
+  /// workbench.
+  stop,
 }
 
 class ReviewResult {
@@ -25,19 +21,20 @@ class ReviewResult {
   final String? note;
 }
 
-/// After the scanner: page 1, the page count, the optional fields, and Send. Nothing has to be
-/// typed. Closes with a [ReviewResult].
+/// After the scanner, for general documents: page 1, the page count, the optional title and note,
+/// and one large "Next". Nothing has to be typed. Closes with a [ReviewResult].
 class ReviewScreen extends StatefulWidget {
   const ReviewScreen({super.key, required this.document, required this.typeName, required this.withTitle});
 
   final ScannedDocument document;
   final String typeName;
 
-  /// General documents have a title; proof of delivery only a note.
+  /// General documents have a title.
   final bool withTitle;
 
   static const titleLabel = 'Title (optional)';
   static const noteLabel = 'Note (optional)';
+  static const nextLabel = 'Next';
 
   @override
   State<ReviewScreen> createState() => _ReviewScreenState();
@@ -46,6 +43,7 @@ class ReviewScreen extends StatefulWidget {
 class _ReviewScreenState extends State<ReviewScreen> {
   final _title = TextEditingController();
   final _note = TextEditingController();
+  var _closed = false;
 
   @override
   void dispose() {
@@ -55,38 +53,16 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   void _close(ReviewAction action) {
+    if (_closed) {
+      return;
+    }
+    _closed = true;
     FocusScope.of(context).unfocus();
     Navigator.of(context).pop(ReviewResult(
       action,
       title: widget.withTitle ? _title.text : null,
       note: _note.text,
     ));
-  }
-
-  /// The back key: a scan is never thrown away without asking.
-  Future<void> _onBack() async {
-    final action = await showDialog<ReviewAction>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Send this scan?'),
-        content: const Text('If you delete it, it is not sent.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(ReviewAction.discard),
-            child: const Text('Delete it'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(minimumSize: const Size(96, 48)),
-            onPressed: () => Navigator.of(context).pop(ReviewAction.finish),
-            child: const Text('Send'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted || action == null) {
-      return;
-    }
-    _close(action);
   }
 
   @override
@@ -99,12 +75,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) {
-          _onBack();
+          _close(ReviewAction.stop);
         }
       },
       child: Scaffold(
         appBar: AppBar(
-          automaticallyImplyLeading: false,
+          leading: BackButton(onPressed: () => _close(ReviewAction.stop)),
           title: Text(widget.typeName),
         ),
         body: SafeArea(
@@ -145,21 +121,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
               const SizedBox(height: 16),
               FilledButton.icon(
                 style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(80)),
-                onPressed: () => _close(ReviewAction.send),
-                icon: const Icon(Icons.send, size: 32),
-                label: const Text('Send', style: TextStyle(fontSize: 24)),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () => _close(ReviewAction.finish),
-                icon: const Icon(Icons.done_all, size: 28),
-                label: const Text('Send and finish'),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () => _close(ReviewAction.scanAgain),
-                icon: const Icon(Icons.refresh, size: 28),
-                label: const Text('Scan again'),
+                onPressed: () => _close(ReviewAction.next),
+                icon: const Icon(Icons.arrow_forward, size: 32),
+                label: const Text(ReviewScreen.nextLabel, style: TextStyle(fontSize: 24)),
               ),
             ],
           ),

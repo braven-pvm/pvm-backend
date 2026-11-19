@@ -46,25 +46,30 @@ next setup code.
 
 ## Scan flow
 
-The flow follows design 6.12 ("Phone app flow").
+Built for one person scanning 50 papers in a row (version 1.2.0): one tap per paper, uploads in
+the background.
 
 1. The start screen shows the staff name with **Change** (when the config has staff names), one
-   large button per document type from the config (**Proof of delivery**, **General
-   document**), the recent scans, and the Settings icon. With only one type the scanner opens at
-   once. If the config has staff names, the app asks **Who is scanning?** first, unless the
-   remembered name is still on the list.
+   large button per document type from the config, the upload status, and the Settings icon.
+   With only one type the scanner opens at once. If the config has staff names, the app asks
+   **Who is scanning?** first, unless the remembered name is still on the list.
 2. The ML Kit scanner finds the paper edges and captures the page; the user can adjust the
    corners, add pages (up to 20), and taps Done. It returns one PDF and a JPEG of each page.
-3. The review screen shows page 1, the page count, and optional fields: **Title (optional)**
-   (general documents) and **Note (optional)** (both types). Nothing has to be typed.
-   - **Send** queues the scan and opens the scanner again for the same type.
-   - **Send and finish** queues the scan and goes back to the start screen.
-   - **Scan again** deletes this scan and opens the scanner again.
-   - The back key asks "Send this scan?" (Send, or Delete it).
-4. The list shows each scan, newest first, with a thumbnail, type, title ("Untitled" for a
-   general document without one), time, and its state: Waiting, Sending, Sent, or Problem with
-   the reason and **Try again**. A scan that becomes Sent gives a short vibration and a check
-   mark. On the first start: "No scans yet. Choose a document type to start."
+3. **Proof of delivery** (and any type other than General): no review screen. The scan is queued
+   at once, a short vibration confirms it, and the scanner opens again for the next paper. The
+   scanner's own Done is the only tap per paper. Closing the scanner (its X or the back key)
+   returns to the start screen.
+4. **General document**: the review screen shows page 1, the page count, **Title (optional)** and
+   **Note (optional)**, and one large **Next**, which queues the scan and opens the scanner again.
+   The back arrow and the back key also queue the scan (with what was typed) and return to the
+   start screen: nobody loses a scan by pressing back. A bad scan is deleted in the workbench.
+5. The upload status shows **All scans sent**, **Sending…**, or **Waiting for network — will
+   retry** with the number waiting; **Sent today: N** (per local date, kept across restarts) and
+   the last sent time; and, under **Not sent**, only the scans the server refused (400 or 413)
+   with the reason, **Try again** and **Remove** (after a confirmation). Network problems never
+   need a tap.
+6. The app loads the types and staff names (`GET /api/device/config`) at start, after enrolment
+   and each time it comes to the front, so a new type appears without reopening the app.
 
 The queue item keeps the title (general only, at most 120 characters), the note (at most 1000),
 and a thumbnail of page 1 (480 px on the long side, JPEG quality 70, at most 200 KB). They go
@@ -74,31 +79,39 @@ with the upload as the optional fields `title`, `note` and `thumbnail`. If the s
 ## Upload queue
 
 - Files: `<app documents>/upload_queue/queue.json` (the item list; the previous good copy in
-  `queue.json.bak`) and `<app documents>/upload_queue/pdfs/<clientDocumentId>.pdf`. The queue
-  survives an app restart. Saves run one at a time (temporary file, then rename).
+  `queue.json.bak`), `pdfs/<clientDocumentId>.pdf`, `thumbs/<clientDocumentId>.jpg` and
+  `sent.json` (the "Sent today" count and the last sent time). The queue survives an app restart.
+  Saves run one at a time (temporary file, then rename).
 - A new scan: the PDF is copied into the queue folder, the item is saved, and only then is the
   scanner's original deleted.
-- Recovery at start: an unreadable `queue.json` is replaced by `queue.json.bak`; without a good
-  backup, every PDF in `pdfs/` that no item references becomes a waiting item (type POD, page
-  count read from the PDF, its GUID file name kept as the client document ID). A waiting item
-  whose PDF is gone after an upload attempt shows as Received, "Sent earlier". If the start
-  still fails, the app shows "The app could not start" with "Try again".
 - One upload at a time, oldest first, to `POST /api/device/documents` with `file`,
   `clientDocumentId` (a GUID made on the phone), `documentType`, `pageCount`, and `staffId` when
   a name was chosen for that scan.
-- 200 or 201 (the status alone counts): the item is saved as Received, then the local PDF is
-  deleted.
-- Network error, timeout, 403 or 5xx: the item waits and is retried after 5 s, 10 s, 20 s, ...
-  up to 5 minutes, always with the same `clientDocumentId`, so the backend ignores a second copy.
-  The item goes behind the other waiting items, so one bad item does not block the rest. The
-  queue also retries when the app comes back to the foreground.
+- 200 or 201 (the status alone counts): the item is first saved as Received (the receipt). Only
+  then are its PDF, its thumbnail and its row deleted and the scan counted. Nothing of a
+  confirmed scan stays on the phone.
+- Network error, timeout, 403, 429 or 5xx: the queue retries by itself, for as long as the app
+  runs, after 2 s, 4 s, 8 s, 16 s, then every 30 s (failures in a row; a success starts again at
+  2 s), always with the same `clientDocumentId`, so the backend ignores a second copy. The item
+  goes behind the other waiting items, so one bad item does not block the rest. A wait ends at
+  once when Wi-Fi or mobile data becomes available (`connectivity_plus`) and when the app comes
+  to the front.
 - 400 or 413: the item is Failed with a plain-language reason and keeps its PDF. The user can
-  remove a failed item, after a confirmation. The backend accepts PDFs up to 15 MB
+  try again or remove it, after a confirmation. The backend accepts PDFs up to 15 MB
   (`DocumentCapture:MaxUploadBytes`, 15728640 bytes); a larger scan answers 413, so scan a long
   delivery note as more than one document.
 - A 400 about `staffId` (the name was turned off while the scan waited) is sent once more
   without the name, so the document is not lost.
 - 401: see Setup above. The item stays Waiting with its attempt count unchanged.
+- Recovery at start: an unreadable `queue.json` is replaced by `queue.json.bak`; without a good
+  backup, every PDF in `pdfs/` that no item references becomes a waiting item (type POD, page
+  count read from the PDF, its GUID file name kept as the client document ID). Received rows left
+  by a stop between the receipt and the clean-up are dropped with their PDF and thumbnail. A
+  waiting item whose PDF is gone after an upload attempt is dropped (sent earlier). If the start
+  still fails, the app shows "The app could not start" with "Try again".
+- No upload while the app is closed: there is no background (WorkManager) task, because the
+  queue has a single writer and the app and a background task run in the same Android process,
+  where no lock is reliable enough. Open the app to send what waits.
 
 ## Build
 
@@ -129,6 +142,7 @@ does not yet (`infra/azure/main.parameters.prod.json`).
 | `flutter_secure_storage` | 11.2.x | The device key, API address and device name in Android encrypted storage (AES-GCM, key wrapped by the Android Keystore). |
 | `shared_preferences` | 2.5.x | Document type, staff choice, last device config. Nothing secret. |
 | `http` | 1.6.x | The API client. |
+| `connectivity_plus` | 7.3.x | Wakes the upload queue when Wi-Fi or mobile data comes back. |
 
 ## Release signing
 
@@ -165,6 +179,7 @@ git-ignored (`mobile/scanner/.gitignore` and `android/.gitignore`).
 | `lib/device/device_store.dart` | The device key, API address and name in encrypted storage. |
 | `lib/device/device_session.dart` | Enrolment, the queue with the device key, config, revoke (401) and reset. |
 | `lib/device/staff.dart` | Whether to ask "Who is scanning?". |
+| `lib/device/network.dart`, `lib/device/vibration.dart` | Network-back events; the short buzz per queued scan (channel `pvm.scanner/vibrate` in `MainActivity.kt`). |
 | `lib/api/device_api.dart` | Enrol client and device API client (config, upload); outcomes. |
 | `lib/queue/upload_queue.dart` | The persistent upload queue. |
 | `lib/scanner/` | `DocumentScanner` interface, the ML Kit implementation, and the thumbnail helper. A different edge detector for some paper shapes goes behind the same interface. |

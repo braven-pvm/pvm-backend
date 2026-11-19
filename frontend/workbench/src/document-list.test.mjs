@@ -240,3 +240,15 @@ test("after a delete from General scans, the General scans list opens with the n
     "/documents/general?q=eskom&documentStatus=Document+deleted.",
   );
 });
+
+test("the Documents search walks a mixed list: a general scan keeps the search context and its type filter", async () => {
+  const context = parseListContext(new URLSearchParams("list=search&type=GENERAL&page=2"));
+  assert.deepEqual(context, { kind: "search", filters: { type: "GENERAL" }, page: 2 });
+  assert.equal(listHref(context), "/documents?type=GENERAL&page=2");
+  assert.equal(listLabel(context), "Documents");
+  assert.equal(documentHref("g1", { kind: "search", filters: {}, page: 1 }), "/documents/g1?list=search");
+
+  const mixed = { items: [{ id: "pod1" }, { id: "general1" }, { id: "pod2" }], pageSize: 50, total: 3 };
+  const neighbours = await findNeighbours("general1", 1, async () => mixed);
+  assert.deepEqual(neighbours, { previous: { id: "pod1", page: 1 }, next: { id: "pod2", page: 1 }, position: 2, total: 3 });
+});

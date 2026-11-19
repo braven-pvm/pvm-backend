@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'device/device_session.dart';
+import 'device/vibration.dart';
 import 'scanner/document_scanner.dart';
 import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
@@ -11,11 +12,27 @@ import 'settings/app_settings.dart';
 
 /// The app's long-lived services.
 class AppServices {
-  const AppServices({required this.session, required this.scanner, required this.settings});
+  const AppServices({
+    required this.session,
+    required this.scanner,
+    required this.settings,
+    this.networkChanges,
+    this.confirmQueued = vibrateOnce,
+    this.clock = DateTime.now,
+  });
 
   final DeviceSession session;
   final DocumentScanner scanner;
   final AppSettings settings;
+
+  /// An event each time Wi-Fi or mobile data becomes available: the queue tries again at once.
+  final Stream<void>? networkChanges;
+
+  /// The short buzz after each queued scan.
+  final Future<void> Function() confirmQueued;
+
+  /// The time; a test sets it.
+  final DateTime Function() clock;
 }
 
 class ScannerApp extends StatelessWidget {
@@ -72,7 +89,13 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
+  /// The scanner is its own activity, so every scanned paper is a resume: the config loads again
+  /// on resume at most this often (always at start and after enrolment).
+  static const configRefreshInterval = Duration(minutes: 5);
+
   SessionPhase? _shownPhase = SessionPhase.starting;
+  StreamSubscription<void>? _network;
+  DateTime? _configLoadedAt;
 
   DeviceSession get _session => widget.services.session;
 
@@ -81,6 +104,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _session.addListener(_onSessionChanged);
+    // The network is back: send now, without waiting for the retry delay.
+    _network = widget.services.networkChanges?.listen((_) => _session.queue?.retryNow());
     // After the first frame: the session's notifications rebuild this widget and its navigator.
     WidgetsBinding.instance.addPostFrameCallback((_) => _session.start());
   }
@@ -89,15 +114,27 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _session.removeListener(_onSessionChanged);
+    _network?.cancel();
     _session.close();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    // Back in front: send what waits at once, and load the types and names again (an admin may
+    // have added a type while the app was in the background).
+    if (state == AppLifecycleState.resumed && _session.phase == SessionPhase.ready) {
       _session.queue?.retryNow();
+      final loadedAt = _configLoadedAt;
+      if (loadedAt == null || !widget.services.clock().isBefore(loadedAt.add(configRefreshInterval))) {
+        _refreshConfig();
+      }
     }
+  }
+
+  void _refreshConfig() {
+    _configLoadedAt = widget.services.clock();
+    unawaited(_session.refreshConfig());
   }
 
   void _onSessionChanged() {
@@ -112,7 +149,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       Navigator.of(context).popUntil((route) => route.isFirst);
     }
     if (phase == SessionPhase.ready) {
-      unawaited(_session.refreshConfig());
+      _refreshConfig();
     }
     setState(() {});
   }
@@ -146,6 +183,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           scanner: widget.services.scanner,
           settings: widget.services.settings,
           onOpenSettings: _openSettings,
+          confirmQueued: widget.services.confirmQueued,
         );
     }
   }

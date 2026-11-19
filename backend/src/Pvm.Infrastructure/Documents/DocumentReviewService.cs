@@ -67,8 +67,43 @@ public enum DeleteOutcome
     Processing,
 }
 
-/// <param name="BlobDeleteFailed">The row is gone but the PDF could not be removed from storage; it is logged with its path.</param>
-public sealed record DeleteResult(DeleteOutcome Outcome, bool BlobDeleteFailed = false);
+/// <param name="PdfDeleteFailed">The row is gone but the PDF could not be removed from storage; it is logged with its path.</param>
+/// <param name="ThumbnailDeleteFailed">The row is gone but the preview image could not be removed from storage; it is logged with its path.</param>
+public sealed record DeleteResult(DeleteOutcome Outcome, bool PdfDeleteFailed = false, bool ThumbnailDeleteFailed = false)
+{
+    /// <summary>Some file stayed behind in storage.</summary>
+    public bool BlobDeleteFailed => PdfDeleteFailed || ThumbnailDeleteFailed;
+}
+
+public enum ChangeInvoiceOutcome
+{
+    Changed,
+    NotFound,
+
+    /// <summary>A general document: it is never linked to an invoice.</summary>
+    NotAPod,
+
+    /// <summary>The document is not Filed.</summary>
+    NotFiled,
+
+    /// <summary>The PDF already reached Acumatica; the link can no longer change here.</summary>
+    Attached,
+
+    /// <summary>Acumatica has no invoice with exactly that reference that is not voided or cancelled.</summary>
+    InvoiceNotFound,
+
+    /// <summary>The document is already linked to that invoice.</summary>
+    SameInvoice,
+
+    /// <summary>Someone changed the invoice of the document between the read and the write.</summary>
+    ChangedMeanwhile,
+}
+
+/// <param name="PreviousReference">The invoice the document was linked to before the change.</param>
+public sealed record ChangeInvoiceResult(
+    ChangeInvoiceOutcome Outcome,
+    InvoiceCandidate? Invoice = null,
+    string? PreviousReference = null);
 
 /// <summary>
 /// A person's resolution of a document on the review list (design 6.8): file it to an invoice
@@ -502,31 +537,172 @@ public sealed class DocumentReviewService(
             document.State,
             user);
 
-        var blobDeleteFailed = false;
-        foreach (var path in new[] { document.BlobPath, document.ThumbnailBlobPath })
-        {
-            if (path is null)
-            {
-                continue;
-            }
+        var pdfDeleteFailed = !await TryDeleteBlobAsync(documentId, document.BlobPath);
+        var thumbnailDeleteFailed = document.ThumbnailBlobPath is { } thumbnail && !await TryDeleteBlobAsync(documentId, thumbnail);
+        return new DeleteResult(DeleteOutcome.Deleted, pdfDeleteFailed, thumbnailDeleteFailed);
+    }
 
-            try
-            {
-                await documentStore.DeleteAsync(path, CancellationToken.None);
-            }
-            catch (Exception exception)
-            {
-                // The row and its audit event are gone for good; the file is left behind. Never roll back.
-                logger.LogError(
-                    exception,
-                    "document.delete.blob-failed DocumentId={DocumentId} BlobPath={BlobPath}",
-                    documentId,
-                    path);
-                blobDeleteFailed = true;
-            }
+    /// <summary>Removes one file of a deleted document; false (and logged) when storage refuses.</summary>
+    private async Task<bool> TryDeleteBlobAsync(Guid documentId, string path)
+    {
+        try
+        {
+            await documentStore.DeleteAsync(path, CancellationToken.None);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            // The row and its audit event are gone for good; the file is left behind. Never roll back.
+            logger.LogError(
+                exception,
+                "document.delete.blob-failed DocumentId={DocumentId} BlobPath={BlobPath}",
+                documentId,
+                path);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The change-invoice rule (design 6.13), for one row as it is: <see cref="ChangeInvoiceOutcome.Changed"/>
+    /// means a change is allowed. Only a Filed proof of delivery whose PDF is not attached in Acumatica.
+    /// The detail endpoint shows it as <c>canChangeInvoice</c>.
+    /// </summary>
+    public static ChangeInvoiceOutcome ChangeInvoiceCheck(string documentType, DocumentState state, DateTimeOffset? acumaticaAttachedAt)
+    {
+        if (DocumentTypeCodes.IsGeneral(documentType))
+        {
+            return ChangeInvoiceOutcome.NotAPod;
         }
 
-        return new DeleteResult(DeleteOutcome.Deleted, BlobDeleteFailed: blobDeleteFailed);
+        if (state != DocumentState.Filed)
+        {
+            return ChangeInvoiceOutcome.NotFiled;
+        }
+
+        return acumaticaAttachedAt is null ? ChangeInvoiceOutcome.Changed : ChangeInvoiceOutcome.Attached;
+    }
+
+    /// <summary>
+    /// Links a filed proof of delivery to another invoice (design 6.13). Only while the PDF is not
+    /// attached in Acumatica; nothing is written to Acumatica, and the pending attachment stays as it
+    /// is, so a later attach uses the new invoice. The invoice must be found by an exact reference.
+    /// The write is conditional on the row still being Filed, unattached and linked to the invoice
+    /// this request read, and an audit event is written in the same transaction.
+    /// </summary>
+    public async Task<ChangeInvoiceResult> ChangeInvoiceAsync(
+        Guid documentId,
+        string invoiceReference,
+        string? reason,
+        string user,
+        CancellationToken cancellationToken)
+    {
+        var current = await dbContext.CapturedDocuments
+            .AsNoTracking()
+            .Where(item => item.Id == documentId)
+            .Select(item => new { item.DocumentType, item.State, item.AcumaticaAttachedAt, item.MatchedReference, item.MatchedCustomerName })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (current is null)
+        {
+            return new ChangeInvoiceResult(ChangeInvoiceOutcome.NotFound);
+        }
+
+        var check = ChangeInvoiceCheck(current.DocumentType, current.State, current.AcumaticaAttachedAt);
+        if (check is not ChangeInvoiceOutcome.Changed)
+        {
+            return new ChangeInvoiceResult(check, PreviousReference: current.MatchedReference);
+        }
+
+        var oldReference = current.MatchedReference;
+        if (string.Equals(invoiceReference.Trim(), oldReference, StringComparison.OrdinalIgnoreCase))
+        {
+            return new ChangeInvoiceResult(ChangeInvoiceOutcome.SameInvoice, PreviousReference: oldReference);
+        }
+
+        // Only an exact reference counts, as for file-to.
+        var invoice = await acumatica.GetInvoiceAsync(invoiceReference, cancellationToken);
+        if (invoice is null)
+        {
+            return new ChangeInvoiceResult(ChangeInvoiceOutcome.InvoiceNotFound, PreviousReference: oldReference);
+        }
+
+        if (string.Equals(invoice.ReferenceNumber, oldReference, StringComparison.OrdinalIgnoreCase))
+        {
+            return new ChangeInvoiceResult(ChangeInvoiceOutcome.SameInvoice, invoice, oldReference);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var matchedBy = MatchedByUser(user);
+        await using (var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken))
+        {
+            var updated = await dbContext.CapturedDocuments
+                .Where(item => item.Id == documentId
+                    && item.DocumentType != DocumentTypeCodes.General
+                    && item.State == DocumentState.Filed
+                    && item.AcumaticaAttachedAt == null
+                    && item.MatchedReference == oldReference)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(item => item.MatchedReference, invoice.ReferenceNumber)
+                        .SetProperty(item => item.MatchedCustomerName, invoice.CustomerName)
+                        .SetProperty(item => item.MatchedBy, matchedBy)
+                        .SetProperty(item => item.ResolvedBy, user)
+                        .SetProperty(item => item.ResolvedAt, now)
+                        .SetProperty(item => item.UpdatedAt, now),
+                    cancellationToken);
+            if (updated == 0)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                var latest = await dbContext.CapturedDocuments
+                    .AsNoTracking()
+                    .Where(item => item.Id == documentId)
+                    .Select(item => new { item.DocumentType, item.State, item.AcumaticaAttachedAt })
+                    .SingleOrDefaultAsync(cancellationToken);
+                var outcome = latest is null
+                    ? ChangeInvoiceOutcome.NotFound
+                    : ChangeInvoiceCheck(latest.DocumentType, latest.State, latest.AcumaticaAttachedAt);
+                logger.LogWarning(
+                    "document.change-invoice.superseded DocumentId={DocumentId} Outcome={Outcome}",
+                    documentId,
+                    outcome);
+                // Still filed and unattached: someone linked it to another invoice meanwhile.
+                return new ChangeInvoiceResult(
+                    outcome is ChangeInvoiceOutcome.Changed ? ChangeInvoiceOutcome.ChangedMeanwhile : outcome,
+                    PreviousReference: oldReference);
+            }
+
+            dbContext.AuditEvents.Add(new AuditEventEntity
+            {
+                Id = Guid.NewGuid(),
+                EntityType = "CapturedDocument",
+                EntityId = documentId.ToString("D"),
+                Action = "document-invoice-changed",
+                Actor = user,
+                DetailsJson = JsonSerializer.Serialize(
+                    new
+                    {
+                        documentId,
+                        oldInvoice = oldReference,
+                        oldCustomerName = current.MatchedCustomerName,
+                        newInvoice = invoice.ReferenceNumber,
+                        newCustomerName = invoice.CustomerName,
+                        reason,
+                        changedBy = user,
+                        changedAt = now,
+                    },
+                    AuditJsonOptions),
+                CreatedAt = now,
+            });
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        logger.LogInformation(
+            "document.invoice-changed DocumentId={DocumentId} OldReference={OldReference} NewReference={NewReference} ChangedBy={ChangedBy}",
+            documentId,
+            oldReference,
+            invoice.ReferenceNumber,
+            user);
+        return new ChangeInvoiceResult(ChangeInvoiceOutcome.Changed, invoice, oldReference);
     }
 
     private async Task<DeleteOutcome> CurrentDeleteCheckAsync(

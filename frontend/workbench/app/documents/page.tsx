@@ -1,9 +1,17 @@
 import { acumaticaBaseUrl, getDocumentTypes, searchDocuments, type DocumentSearchItem } from "../../src/api/documents";
 import { requireWorkbenchUser } from "../../src/auth/session";
 import { documentHref } from "../../src/document-list";
-import { buildDocumentSearchQuery, documentStates, documentTypeLabel, formatReviewReason, uploaderText, type DocumentSearchFilters } from "../../src/documents";
+import {
+  buildDocumentSearchQuery,
+  deleteWarningTitle,
+  documentStates,
+  documentTypeLabel,
+  formatReviewReason,
+  uploaderText,
+  type DocumentSearchFilters,
+} from "../../src/documents";
 import { formatDateTime } from "../../src/formatters.mjs";
-import { isGeneralDocument } from "../../src/general-documents";
+import { documentRowTitle, isGeneralDocument, noteLine } from "../../src/general-documents";
 import {
   ButtonLink,
   DataTable,
@@ -16,7 +24,7 @@ import {
   TextField,
   type Column,
 } from "../../src/ui";
-import { AcumaticaInvoice, DocumentStateBadge, acumaticaLabel } from "./document-parts";
+import { DocumentStateBadge, InvoiceLink } from "./document-parts";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Documents" };
@@ -29,32 +37,33 @@ type SearchParams = {
   from?: string;
   to?: string;
   page?: string;
-  /** After a delete: the result notice, and a storage warning when the PDF stayed behind. */
+  /** After a delete: the result notice, and a storage warning when a file stayed behind. */
   documentStatus?: string;
   documentWarning?: string;
+  /** "pdf" or "thumbnail": the file the warning is about. */
+  documentWarningFile?: string;
   documentError?: string;
 };
 
-// The state comes right after the invoice: on a phone the table scrolls sideways.
-// The first cell links to the document page; the Acumatica link sits in its own column.
-function columnsFor(acumaticaUrl: string | undefined): Column<DocumentSearchItem>[] {
+// All types in one list (design 6.13). The state comes right after the first cell: on a phone
+// the table scrolls sideways. The first cell links to the document page: a POD's invoice, or a
+// general scan's title. "Details" says "Linked to INV…", why a POD needs review, or a scan's note.
+function columnsFor(acumaticaUrl: string | undefined, mode: string | undefined): Column<DocumentSearchItem>[] {
   return [
-    { key: "invoice", header: "Invoice", render: (row) => row.matchedReference ?? "Not filed", mono: true },
+    { key: "document", header: "Invoice or title", render: (row) => documentRowTitle(row) },
     { key: "state", header: "State", render: (row) => <DocumentStateBadge state={row.state} /> },
     { key: "client", header: "Client", render: (row) => row.matchedCustomerName ?? "—" },
     {
       key: "detail",
-      header: "Acumatica or reason",
+      header: "Details",
       render: (row) => {
-        const attach = acumaticaLabel(row);
-        if (attach && row.matchedReference) {
-          return (
-            <>
-              <AcumaticaInvoice reference={row.matchedReference} baseUrl={acumaticaUrl} /> · {attach}
-            </>
-          );
+        if (isGeneralDocument(row.documentType)) {
+          return noteLine(row.note) ?? "—";
         }
-        return attach ?? formatReviewReason(row.reviewReason, row.state) ?? "—";
+        if (row.state === "Filed" && row.matchedReference) {
+          return <InvoiceLink document={row} mode={mode} baseUrl={acumaticaUrl} />;
+        }
+        return formatReviewReason(row.reviewReason, row.state) ?? "—";
       },
       weak: true,
     },
@@ -76,9 +85,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
     to: params.to,
   };
   const page = Math.max(Number(params.page) || 1, 1);
-  const [result, allTypes] = await Promise.all([searchDocuments({ ...filters, page }), getDocumentTypes()]);
-  // General scans have their own page; this search is for the delivery documents.
-  const types = allTypes.filter((type) => !isGeneralDocument(type.code));
+  const [result, types] = await Promise.all([searchDocuments({ ...filters, page }), getDocumentTypes()]);
 
   const href = (changes: Partial<DocumentSearchFilters>) => {
     const query = buildDocumentSearchQuery({ ...filters, ...changes }, { forApi: false });
@@ -98,7 +105,8 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
     <ListPage
       header={{
         title: "Documents",
-        description: "Delivery documents scanned at the office. Search by invoice number when a client asks about a delivery.",
+        description:
+          "Every scanned document: proofs of delivery and general scans. Search by invoice number when a client asks about a delivery.",
         actions: <ButtonLink href="/documents/review">Open the review list</ButtonLink>,
       }}
       notice={
@@ -111,7 +119,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
             ) : null}
             {params.documentStatus ? <Notice tone="success" title={params.documentStatus} live /> : null}
             {params.documentWarning ? (
-              <Notice tone="warning" title="The PDF is still in storage">
+              <Notice tone="warning" title={deleteWarningTitle(params.documentWarningFile)}>
                 {params.documentWarning}
               </Notice>
             ) : null}
@@ -160,7 +168,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
       table={
         <DataTable
           caption="Documents"
-          columns={columnsFor(acumaticaBaseUrl())}
+          columns={columnsFor(acumaticaBaseUrl(), result.acumaticaAttachMode)}
           rows={result.items}
           rowKey={(row) => row.id}
           // The link carries the search, so the document page can go back to it and step through it.
@@ -169,11 +177,11 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
             anyFilter ? (
               <EmptyState
                 title="No documents match this search"
-                description="Check the invoice number. It must be the full number."
+                description="Check the invoice number. It must be the full number. To find a general scan by its words, use General scans."
                 action={<ButtonLink href="/documents">Show all documents</ButtonLink>}
               />
             ) : (
-              <EmptyState title="No documents yet" description="Documents appear here when a driver scans a delivery note." />
+              <EmptyState title="No documents yet" description="Documents appear here when someone scans a delivery note or a general document." />
             )
           }
         />

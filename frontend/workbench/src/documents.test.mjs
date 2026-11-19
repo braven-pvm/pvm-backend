@@ -21,6 +21,13 @@ import {
   showDeleteAction,
   unconfirmedMessage,
   uploaderText,
+  acumaticaAttachLabel,
+  changeInvoiceErrorMessage,
+  deleteWarningTitle,
+  invoiceChangedMessage,
+  linkedToText,
+  readByVisionTitle,
+  showChangeInvoiceAction,
 } from "./documents.ts";
 
 test("each document state has a plain label", () => {
@@ -262,4 +269,51 @@ test("deleteErrorMessage explains the other answers", () => {
 test("the delete notice and the unconfirmed delete message", () => {
   assert.equal(documentDeletedMessage, "Document deleted.");
   assert.equal(unconfirmedMessage("deleted"), "We could not confirm whether the document was deleted. Reload the page to see its state.");
+});
+
+test("a filed POD reads Linked to its invoice", () => {
+  assert.equal(linkedToText("INV190096"), "Linked to INV190096");
+  assert.equal(invoiceChangedMessage("INV001240"), "Linked to INV001240.");
+});
+
+test("the Acumatica attach state shows only in Write mode, for a filed document", () => {
+  const pending = { state: "Filed", acumaticaAttachPending: true, acumaticaAttachedAt: null };
+  const attached = { state: "Filed", acumaticaAttachPending: false, acumaticaAttachedAt: "2026-11-19T08:00:00Z" };
+  assert.equal(acumaticaAttachLabel(pending, "Shadow"), null);
+  assert.equal(acumaticaAttachLabel(attached, "Shadow"), null);
+  assert.equal(acumaticaAttachLabel(pending, undefined), null);
+  assert.equal(acumaticaAttachLabel(pending, "Write"), "Waiting to attach");
+  assert.equal(acumaticaAttachLabel(attached, "Write"), "Attached");
+  assert.equal(acumaticaAttachLabel({ ...pending, acumaticaAttachPending: false }, "Write"), "Not attached");
+  assert.equal(acumaticaAttachLabel({ ...pending, state: "NeedsReview" }, "Write"), null);
+});
+
+test("Change invoice follows the backend's canChangeInvoice, for Admin and Operator only", () => {
+  assert.equal(showChangeInvoiceAction({ canChangeInvoice: true }, true), true);
+  assert.equal(showChangeInvoiceAction({ canChangeInvoice: true }, false), false);
+  assert.equal(showChangeInvoiceAction({ canChangeInvoice: false }, true), false);
+  assert.equal(showChangeInvoiceAction({}, true), false);
+});
+
+test("change-invoice errors tell the user what happened", () => {
+  assert.match(changeInvoiceErrorMessage(409, "document-attached", "INV1"), /already attached .* Acumatica/);
+  assert.match(changeInvoiceErrorMessage(409, "document-not-filed", "INV1"), /no longer filed/);
+  assert.match(changeInvoiceErrorMessage(409, "document-changed", "INV1"), /Someone else changed/);
+  assert.match(changeInvoiceErrorMessage(409, "not-a-pod", "INV1"), /general document/);
+  assert.match(changeInvoiceErrorMessage(400, "invoice-not-found", "INV1"), /Invoice INV1 was not found/);
+  assert.match(changeInvoiceErrorMessage(400, "same-invoice", "INV1"), /already linked to INV1/);
+  assert.match(changeInvoiceErrorMessage(400, null, "INV1"), /at most 500 characters/);
+  assert.match(changeInvoiceErrorMessage(403, null, "INV1"), /permission/);
+  assert.match(changeInvoiceErrorMessage(500, null, "INV1"), /error 500.*Nothing changed/);
+  assert.equal(unconfirmedMessage("linked to the new invoice"), "We could not confirm whether the document was linked to the new invoice. Reload the page to see its state.");
+});
+
+test("the delete warning title names the file that stayed in storage", () => {
+  assert.equal(deleteWarningTitle("thumbnail"), "The preview image is still in storage");
+  assert.equal(deleteWarningTitle("pdf"), "The PDF is still in storage");
+  assert.equal(deleteWarningTitle(undefined), "The PDF is still in storage");
+});
+
+test("what was read from a general scan is headed Read by Vision", () => {
+  assert.equal(readByVisionTitle, "Read by Vision");
 });

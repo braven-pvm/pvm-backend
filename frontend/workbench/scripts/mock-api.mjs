@@ -311,18 +311,20 @@ function documentRecord(id, state, reviewReason, options) {
     acumaticaAttachMode: "Shadow",
     // The backend's delete rule (design 6.11): unfiled, not attached, and not freshly processing.
     canDelete: state === "NeedsReview" || state === "Failed" || ((state === "Received" || state === "Processing") && (options.stuck ?? false)),
+    // The change-invoice rule (design 6.13): a filed POD whose PDF is not attached.
+    canChangeInvoice: state === "Filed" && options.attachedMinutesAgo === undefined,
   };
 }
 
-const searchFields = ["id", "documentType", "state", "reviewReason", "matchedReference", "matchedCustomerName", "matchedBy", "acumaticaAttachPending", "acumaticaAttachedAt", "pageCount", "uploadedBy", "scannerDeviceName", "scannerStaffName", "uploadedAt", "resolvedBy", "resolvedAt", "rejectedAt"];
+const searchFields = ["id", "documentType", "state", "reviewReason", "matchedReference", "matchedCustomerName", "matchedBy", "acumaticaAttachPending", "acumaticaAttachedAt", "pageCount", "uploadedBy", "scannerDeviceName", "scannerStaffName", "uploadedAt", "resolvedBy", "resolvedAt", "rejectedAt", "title", "autoTitle", "note", "hasThumbnail"];
 const searchItem = (item) => Object.fromEntries(searchFields.map((field) => [field, item[field]]));
 
 function searchDocuments(url) {
   const invoice = url.searchParams.get("invoice")?.toUpperCase();
   const client = url.searchParams.get("client")?.toLowerCase();
   const state = url.searchParams.get("state")?.toLowerCase();
-  // Like the API: without a type, the delivery documents (POD) only.
-  const type = url.searchParams.get("type")?.toUpperCase() || "POD";
+  // Like the API: without a type, every type (design 6.13).
+  const type = url.searchParams.get("type")?.toUpperCase();
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
   const items = (empty ? [] : allDocuments())
@@ -334,7 +336,7 @@ function searchDocuments(url) {
     .filter((item) => !to || Date.parse(item.uploadedAt) < Date.parse(to))
     .sort((a, b) => Date.parse(b.uploadedAt) - Date.parse(a.uploadedAt))
     .map(searchItem);
-  return { items, page: 1, pageSize: 50, total: items.length };
+  return { items, page: 1, pageSize: 50, total: items.length, acumaticaAttachMode: "Shadow" };
 }
 
 function reviewList() {
@@ -431,6 +433,7 @@ function generalRecord(id, options) {
     scannerStaffId: scannerStaff.find((staff) => staff.name === options.staff)?.id ?? null,
     // The general delete rule: Filed or Failed, or stuck. A fresh one is still being read.
     canDelete: state === "Filed" || state === "Failed",
+    canChangeInvoice: false,
   };
 }
 
@@ -658,11 +661,29 @@ const routes = {
     if (!reason || reason.length > 500) return problem(400, "'reason' is required, at most 500 characters.");
     if (item.acumaticaAttachedAt) return problem(409, "The PDF is already attached to the invoice in Acumatica; the document cannot be deleted.", "document-attached");
     if (item.documentType === "GENERAL") {
-      return item.canDelete ? { documentId: id, deleted: true, warning: null } : problem(409, "The document was uploaded recently and is still processing. Wait until processing ends.", "document-processing");
+      if (!item.canDelete) return problem(409, "The document was uploaded recently and is still processing. Wait until processing ends.", "document-processing");
+      // The faded scan shows the warning when only its preview image stays in storage.
+      return id.endsWith("0004")
+        ? { documentId: id, deleted: true, warning: "The scan is deleted. Its preview image could not be removed from storage.", warningFile: "thumbnail" }
+        : { documentId: id, deleted: true, warning: null, warningFile: null };
     }
     if (item.state === "Filed" || id.endsWith("0004")) return problem(409, "The document is filed. Send it back to review first.", "document-filed");
     if (!item.canDelete) return problem(409, "The document was uploaded recently and is still processing. Wait until processing ends.", "document-processing");
     return { documentId: id, deleted: true, warning: null };
+  },
+  // Change invoice (design 6.13): like the API's rule; mock writes change nothing.
+  "POST /api/documents/:id/change-invoice": (id, context) => {
+    const item = allDocuments().find((document) => document.id === id);
+    if (!item) return problem(404, "The document was not found.");
+    const reference = String(context.json?.invoiceReference ?? "").trim();
+    if (!reference) return problem(400, "'invoiceReference' is required, at most 64 characters.");
+    if (item.documentType === "GENERAL") return problem(409, "Only a proof of delivery is linked to an invoice.", "not-a-pod");
+    if (item.state !== "Filed") return problem(409, "The document is not filed.", "document-not-filed");
+    if (item.acumaticaAttachedAt) return problem(409, "The PDF is already attached to the invoice in Acumatica.", "document-attached");
+    if (reference.toUpperCase() === item.matchedReference?.toUpperCase()) return problem(400, `The document is already linked to ${item.matchedReference}.`, "same-invoice");
+    const invoice = invoicePool.find((candidate) => candidate.referenceNumber.toLowerCase() === reference.toLowerCase());
+    if (!invoice) return problem(400, `Acumatica has no invoice with the reference '${reference}'.`, "invoice-not-found");
+    return { documentId: id, state: "Filed", previousReference: item.matchedReference, matchedReference: invoice.referenceNumber, matchedCustomerName: invoice.customerName };
   },
   "POST /api/documents/:id/reject": (id, context) => {
     const item = documents.find((document) => document.id === id);

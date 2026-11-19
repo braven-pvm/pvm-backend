@@ -7,7 +7,16 @@ import {
   noteLine,
   phoneAndStaff,
   untitledScan,
+  documentRowTitle,
 } from "./general-documents.ts";
+
+test("a row of the Documents list is named by its invoice, or a general scan by its title", () => {
+  assert.equal(documentRowTitle({ documentType: "POD", matchedReference: "INV190096" }), "INV190096");
+  assert.equal(documentRowTitle({ documentType: "POD", matchedReference: null }), "Not filed");
+  assert.equal(documentRowTitle({ documentType: "GENERAL", title: " Fleet licence ", autoTitle: "Licence disc" }), "Fleet licence");
+  assert.equal(documentRowTitle({ documentType: "general", title: null, autoTitle: "Licence disc" }), "Licence disc");
+  assert.equal(documentRowTitle({ documentType: "GENERAL", title: null, autoTitle: null }), untitledScan);
+});
 
 test("the title is the typed one, else Claude's, else Untitled scan", () => {
   assert.equal(generalTitle({ title: "Fleet licence", autoTitle: "Vehicle licence disc" }), "Fleet licence");

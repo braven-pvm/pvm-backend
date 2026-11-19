@@ -13,9 +13,22 @@ export function isGeneralDocument(documentType: string | null | undefined): bool
   return documentType?.toUpperCase() === generalDocumentType;
 }
 
-/** The title typed on the phone, else the one Claude read, else "Untitled scan". */
+/** The title typed on the phone, else the one Vision read, else "Untitled scan". */
 export function generalTitle(document: { title?: string | null; autoTitle?: string | null }): string {
   return document.title?.trim() || document.autoTitle?.trim() || untitledScan;
+}
+
+/**
+ * The first cell of a Documents list row (design 6.13): a POD's invoice, or
+ * "Not filed"; a general scan's title.
+ */
+export function documentRowTitle(row: {
+  documentType: string;
+  matchedReference?: string | null;
+  title?: string | null;
+  autoTitle?: string | null;
+}): string {
+  return isGeneralDocument(row.documentType) ? generalTitle(row) : row.matchedReference ?? "Not filed";
 }
 
 /** The note on one line, cut to `max` characters with an ellipsis. Null when there is none. */

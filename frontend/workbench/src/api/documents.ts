@@ -29,6 +29,17 @@ export type DocumentSearchItem = {
   resolvedBy: string | null;
   resolvedAt: string | null;
   rejectedAt: string | null;
+  /** A general document: typed on the phone, and the title Vision read (design 6.13). */
+  title?: string | null;
+  autoTitle?: string | null;
+  note?: string | null;
+  hasThumbnail?: boolean;
+};
+
+/** The Documents search: every type unless a type is asked for, and the attach mode in force. */
+export type DocumentSearchPage = DocumentPage<DocumentSearchItem> & {
+  /** "Shadow" or "Write". The list shows an attach state only in Write mode. */
+  acumaticaAttachMode?: string;
 };
 
 export type ReviewListItem = {
@@ -95,10 +106,12 @@ export type DocumentDetail = {
   acumaticaAttachMode?: string;
   /** The backend's delete rule for this document as it is now (design 6.11). Missing means no. */
   canDelete?: boolean;
+  /** The backend's change-invoice rule: a filed POD not attached in Acumatica (design 6.13). Missing means no. */
+  canChangeInvoice?: boolean;
   /** Typed on the phone: the title (general documents only) and the note. */
   title?: string | null;
   note?: string | null;
-  /** What Claude read from a general document (design 6.12). */
+  /** What Vision read from a general document (design 6.12). */
   autoTitle?: string | null;
   summary?: string | null;
   /** yyyy-mm-dd, printed on the paper. */
@@ -145,7 +158,10 @@ export async function getDocumentTypes(): Promise<DocumentType[]> {
   } catch (error) {
     console.warn("documents.types.unavailable", { error: String(error) });
   }
-  return [{ code: "POD", displayName: "Proof of delivery" }];
+  return [
+    { code: "POD", displayName: "Proof of delivery" },
+    { code: "GENERAL", displayName: "General document" },
+  ];
 }
 
 /**
@@ -169,7 +185,7 @@ async function getJson<T>(path: string, what: string): Promise<T> {
   return response.json();
 }
 
-export function searchDocuments(filters: DocumentSearchFilters): Promise<DocumentPage<DocumentSearchItem>> {
+export function searchDocuments(filters: DocumentSearchFilters): Promise<DocumentSearchPage> {
   const query = buildDocumentSearchQuery(filters);
   return getJson(`/api/documents${query ? `?${query}` : ""}`, "documents");
 }
@@ -251,8 +267,32 @@ export function processDocumentAgain(id: string): Promise<ApiResult<unknown>> {
 }
 
 export type DeleteDocumentResult =
-  | { ok: true; warning: string | null }
+  /** warningFile: "pdf" or "thumbnail", the file that stayed in storage. */
+  | { ok: true; warning: string | null; warningFile: string | null }
   | { ok: false; status: number; code: string | null };
+
+export type ChangeInvoiceResult = { ok: true } | { ok: false; status: number; code: string | null };
+
+/** Links a filed POD to another invoice; nothing is written to Acumatica. Refusals carry a stable `code`. */
+export async function changeDocumentInvoice(id: string, invoiceReference: string, reason: string | null): Promise<ChangeInvoiceResult> {
+  const headers = await getApiAuthHeaders();
+  const response = await timedFetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(id)}/change-invoice`, {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({ invoiceReference, reason }),
+    cache: "no-store",
+  });
+  if (response.ok) {
+    return { ok: true };
+  }
+  let body: { code?: unknown } | null = null;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+  return { ok: false, status: response.status, code: typeof body?.code === "string" ? body.code : null };
+}
 
 /** Deletes an unfiled document and its PDF for good. A 409 carries a stable `code`. */
 export async function deleteDocument(id: string, reason: string): Promise<DeleteDocumentResult> {
@@ -263,7 +303,7 @@ export async function deleteDocument(id: string, reason: string): Promise<Delete
     body: JSON.stringify({ reason }),
     cache: "no-store",
   });
-  let body: { code?: unknown; warning?: unknown } | null = null;
+  let body: { code?: unknown; warning?: unknown; warningFile?: unknown } | null = null;
   try {
     body = await response.json();
   } catch {
@@ -272,7 +312,11 @@ export async function deleteDocument(id: string, reason: string): Promise<Delete
   if (!response.ok) {
     return { ok: false, status: response.status, code: typeof body?.code === "string" ? body.code : null };
   }
-  return { ok: true, warning: typeof body?.warning === "string" ? body.warning : null };
+  return {
+    ok: true,
+    warning: typeof body?.warning === "string" ? body.warning : null,
+    warningFile: typeof body?.warningFile === "string" ? body.warningFile : null,
+  };
 }
 
 /** The first-page JPEG, as the backend streams it. For the workbench's own thumbnail route only. */

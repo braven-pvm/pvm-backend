@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../api/device_api.dart';
 import '../device/device_session.dart';
 import '../device/staff.dart';
+import '../device/vibration.dart';
 import '../queue/upload_queue.dart';
 import '../scanner/document_scanner.dart';
 import '../scanner/thumbnail.dart';
@@ -14,10 +15,14 @@ import '../settings/app_settings.dart';
 import 'review_screen.dart';
 import 'staff_picker_screen.dart';
 
-/// The start screen (design 6.12): who is scanning, one large button per document type, and the
-/// recent scans with their state. A type opens the scanner; after each scan the review screen
-/// asks for Send, and Send opens the scanner again for the same type. With only one type the
-/// scanner opens at once, as before.
+/// The start screen: who is scanning, one large button per document type, and the uploads at a
+/// glance (waiting, sending or waiting for the network, problems, sent today).
+///
+/// A type opens the scanner. Proof of delivery (and every type without a title) has no review:
+/// each scan is queued at once, a short buzz confirms it, and the scanner opens again, so the
+/// scanner's own Done is the only tap per paper. A general document shows the review screen
+/// with the optional title and note and one "Next". Closing the scanner returns here. With only
+/// one type the scanner opens at once.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
@@ -27,6 +32,7 @@ class HomeScreen extends StatefulWidget {
     required this.settings,
     required this.onOpenSettings,
     this.thumbnailer = thumbnailOfFile,
+    this.confirmQueued = vibrateOnce,
   });
 
   final DeviceSession session;
@@ -38,7 +44,12 @@ class HomeScreen extends StatefulWidget {
   /// Makes the upload thumbnail from the first page image.
   final Future<Uint8List?> Function(File? firstPage) thumbnailer;
 
-  static const emptyText = 'No scans yet. Choose a document type to start.';
+  /// The short buzz after each queued scan.
+  final Future<void> Function() confirmQueued;
+
+  static const allSentText = 'All scans sent';
+  static const retryingText = 'Waiting for network — will retry';
+  static const sendingText = 'Sending…';
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -49,8 +60,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   StreamSubscription<List<QueuedDocument>>? _subscription;
   List<QueuedDocument> _items = const [];
-  final _states = <String, String>{};
-  final _justSent = <String>{};
   StaffMember? _staff;
   var _scanning = false;
 
@@ -77,23 +86,15 @@ class _HomeScreenState extends State<HomeScreen> {
   List<StaffMember> get _staffList => widget.session.config?.staff ?? const <StaffMember>[];
 
   void _onItems(List<QueuedDocument> items) {
-    var sentNow = false;
-    for (final item in items) {
-      final before = _states[item.clientDocumentId];
-      if (item.state == QueuedDocument.received && before != null && before != QueuedDocument.received) {
-        _justSent.add(item.clientDocumentId);
-        sentNow = true;
-      }
-      _states[item.clientDocumentId] = item.state;
+    if (mounted) {
+      setState(() => _items = items);
     }
-    if (sentNow) {
-      unawaited(HapticFeedback.mediumImpact());
-    }
-    setState(() => _items = items);
   }
 
+  /// A new config (start, coming to the front, enrolment): the type buttons and the name follow.
   void _onConfigChanged() {
     if (mounted) {
+      setState(() {});
       _loadStaff();
     }
   }
@@ -181,8 +182,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool get _ready => mounted && widget.session.phase == SessionPhase.ready;
 
-  /// Scanner, review, Send, and the scanner again, until the person closes the scanner or
-  /// chooses "Send and finish".
+  /// Scanner, queue, scanner again, until the person closes the scanner (or, for a general
+  /// document, goes back from the review screen).
   Future<void> _scanFlow(DocumentType type) async {
     if (_scanning) {
       return;
@@ -193,6 +194,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
       await widget.settings.setDocumentType(type.code);
+      final withReview = type.code == QueuedDocument.generalType;
       // The queue of this screen. On a revoke or reset the session holds it but keeps it open, so
       // a scan that ends after this screen is gone is still saved, with the type and name it was
       // taken under; it uploads after the next enrolment.
@@ -201,7 +203,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final staffId = _staff?.id;
         final document = await widget.scanner.scan();
         if (document == null) {
-          break;
+          break; // The scanner's X or back: the start screen.
         }
         final thumbnail = widget.thumbnailer(document.firstPage);
 
@@ -211,36 +213,24 @@ class _HomeScreenState extends State<HomeScreen> {
           break;
         }
 
+        if (!withReview) {
+          await _keep(queue, document, type.code, staffId, thumbnail: await thumbnail);
+          continue;
+        }
+
         if (!context.mounted) {
           break;
         }
         final result = await Navigator.of(context).push<ReviewResult>(
           MaterialPageRoute(
-            builder: (context) => ReviewScreen(
-              document: document,
-              typeName: type.displayName,
-              withTitle: type.code == QueuedDocument.generalType,
-            ),
+            builder: (context) => ReviewScreen(document: document, typeName: type.displayName, withTitle: true),
           ),
         );
-
-        switch (result?.action) {
-          case ReviewAction.scanAgain:
-            await document.discard();
-          case ReviewAction.discard:
-            await document.discard();
-            return;
-          case ReviewAction.send:
-            await _keep(queue, document, type.code, staffId,
-                title: result!.title, note: result.note, thumbnail: await thumbnail);
-          case ReviewAction.finish:
-            await _keep(queue, document, type.code, staffId,
-                title: result!.title, note: result.note, thumbnail: await thumbnail);
-            return;
-          case null:
-            // The review screen was closed by the app (the phone was removed): never lose a scan.
-            await _keep(queue, document, type.code, staffId, thumbnail: await thumbnail);
-            return;
+        // Every way out keeps the scan. Null: the app closed the screen (the phone was removed).
+        await _keep(queue, document, type.code, staffId,
+            title: result?.title, note: result?.note, thumbnail: await thumbnail);
+        if (result?.action != ReviewAction.next) {
+          break;
         }
       }
     } on ScannerException catch (error) {
@@ -273,6 +263,11 @@ class _HomeScreenState extends State<HomeScreen> {
       thumbnail: thumbnail,
     );
     await document.deleteImages();
+    try {
+      await widget.confirmQueued();
+    } on Object {
+      // A buzz never stops the next scan.
+    }
   }
 
   Future<void> _showMessage(String title, String message) async {
@@ -319,6 +314,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final showStaff = _staffList.isNotEmpty;
+    final problems = [for (final item in _items) if (item.state == QueuedDocument.failed) item];
+    final waiting = _items
+        .where((item) => item.state == QueuedDocument.waiting || item.state == QueuedDocument.uploading)
+        .toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -339,7 +338,7 @@ class _HomeScreenState extends State<HomeScreen> {
             if (showStaff)
               _StaffRow(name: _staff?.name ?? 'Not chosen', onChange: _scanning ? null : _changeStaff),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -361,37 +360,147 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: Text('Recent scans', style: theme.textTheme.titleLarge),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _UploadStatus(queue: widget.queue, waiting: waiting.length, problems: problems.length),
             ),
-            const Divider(height: 1),
-            if (_items.isEmpty)
+            if (problems.isNotEmpty) ...[
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-                child: Column(
-                  children: [
-                    Icon(Icons.inbox_outlined, size: 56, color: theme.colorScheme.outline),
-                    const SizedBox(height: 12),
-                    Text(HomeScreen.emptyText, textAlign: TextAlign.center, style: theme.textTheme.titleMedium),
-                  ],
-                ),
-              )
-            else
-              for (final item in _items) ...[
-                _ScanTile(
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+                child: Text('Not sent', style: theme.textTheme.titleLarge),
+              ),
+              const Divider(height: 1),
+              for (final item in problems) ...[
+                _ProblemTile(
                   key: ValueKey(item.clientDocumentId),
                   item: item,
                   thumbnail: widget.queue.thumbnailOf(item),
                   typeName: _typeName(item.documentType),
-                  justSent: _justSent.contains(item.clientDocumentId),
                   onTryAgain: () => widget.queue.retry(item.clientDocumentId),
                   onRemove: () => _confirmRemove(item),
                 ),
                 const Divider(height: 1),
               ],
+            ],
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Waiting, sending or waiting for the network; and the scans sent today.
+class _UploadStatus extends StatelessWidget {
+  const _UploadStatus({required this.queue, required this.waiting, required this.problems});
+
+  final UploadQueue queue;
+  final int waiting;
+
+  /// Scans the server refused (400 or 413), listed under "Not sent".
+  final int problems;
+
+  static String notSentText(int count) => count == 1 ? '1 scan not sent — see below' : '$count scans not sent — see below';
+
+  static String _clock(DateTime time) {
+    final local = time.toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    final clock = '${two(local.hour)}:${two(local.minute)}';
+    final now = DateTime.now();
+    if (local.year == now.year && local.month == now.month && local.day == now.day) {
+      return clock;
+    }
+    return '${local.day}/${local.month} $clock';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ValueListenableBuilder<QueueStatus>(
+      valueListenable: queue.status,
+      builder: (context, status, _) {
+        final (Widget icon, String text, Color color) = switch (status) {
+          _ when waiting == 0 && problems == 0 => (
+              Icon(Icons.check_circle, size: 32, color: Colors.green.shade800),
+              HomeScreen.allSentText,
+              Colors.green.shade800,
+            ),
+          _ when waiting == 0 => (
+              Icon(Icons.warning_amber_rounded, size: 32, color: theme.colorScheme.error),
+              notSentText(problems),
+              theme.colorScheme.error,
+            ),
+          QueueStatus.retrying => (
+              Icon(Icons.wifi_off, size: 32, color: theme.colorScheme.tertiary),
+              HomeScreen.retryingText,
+              theme.colorScheme.onSurface,
+            ),
+          QueueStatus.sending => (
+              const SizedBox.square(dimension: 28, child: CircularProgressIndicator(strokeWidth: 3)),
+              HomeScreen.sendingText,
+              theme.colorScheme.primary,
+            ),
+          QueueStatus.idle => (
+              Icon(Icons.schedule, size: 32, color: theme.colorScheme.outline),
+              'Waiting to send',
+              theme.colorScheme.onSurface,
+            ),
+        };
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  SizedBox(width: 36, child: Center(child: icon)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      text,
+                      style: theme.textTheme.titleLarge?.copyWith(color: color, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+              if (waiting > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 48, top: 2),
+                  child: Text('$waiting waiting', style: theme.textTheme.titleMedium),
+                ),
+              if (waiting > 0 && problems > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 48, top: 2),
+                  child: Text(
+                    notSentText(problems),
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(color: theme.colorScheme.error, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              const Divider(height: 24),
+              ValueListenableBuilder<SentCount>(
+                valueListenable: queue.sent,
+                builder: (context, sent, _) {
+                  final last = sent.lastSentAt;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Sent today: ${sent.today(DateTime.now())}',
+                        style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      if (last != null) Text('Last sent ${_clock(last)}', style: theme.textTheme.bodyLarge),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -430,13 +539,14 @@ class _StaffRow extends StatelessWidget {
   }
 }
 
-class _ScanTile extends StatelessWidget {
-  const _ScanTile({
+/// A scan the server refused (400 or 413): the reason, Try again and Remove. Transport problems
+/// never show here; the queue retries those by itself.
+class _ProblemTile extends StatelessWidget {
+  const _ProblemTile({
     super.key,
     required this.item,
     required this.thumbnail,
     required this.typeName,
-    required this.justSent,
     required this.onTryAgain,
     required this.onRemove,
   });
@@ -444,62 +554,21 @@ class _ScanTile extends StatelessWidget {
   final QueuedDocument item;
   final File? thumbnail;
   final String typeName;
-  final bool justSent;
   final VoidCallback onTryAgain;
   final VoidCallback onRemove;
 
   static String _time(DateTime time) {
     final local = time.toLocal();
-    final now = DateTime.now();
     String two(int value) => value.toString().padLeft(2, '0');
-    final clock = '${two(local.hour)}:${two(local.minute)}';
-    if (local.year == now.year && local.month == now.month && local.day == now.day) {
-      return clock;
-    }
-    return '${local.day}/${local.month} $clock';
-  }
-
-  String get _title {
-    if (item.title != null) {
-      return item.title!;
-    }
-    return item.documentType == QueuedDocument.generalType ? 'Untitled' : typeName;
+    return '${local.day}/${local.month} ${two(local.hour)}:${two(local.minute)}';
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final pages = item.pageCount == 1 ? '1 page' : '${item.pageCount} pages';
-    final title = _title;
+    final title = item.title ?? (item.documentType == QueuedDocument.generalType ? 'Untitled' : typeName);
     final details = [if (title != typeName) typeName, pages, _time(item.createdAt)].join(' · ');
-    final sentColor = Colors.green.shade800;
-
-    final (Widget icon, String label, Color color) = switch (item.state) {
-      QueuedDocument.uploading => (
-          const SizedBox.square(dimension: 24, child: CircularProgressIndicator(strokeWidth: 3)),
-          'Sending',
-          theme.colorScheme.primary,
-        ),
-      QueuedDocument.received => (
-          _SentCheck(animate: justSent, color: sentColor),
-          'Sent',
-          sentColor,
-        ),
-      QueuedDocument.failed => (
-          Icon(Icons.error, size: 28, color: theme.colorScheme.error),
-          'Problem',
-          theme.colorScheme.error,
-        ),
-      _ => (
-          Icon(Icons.schedule, size: 28, color: theme.colorScheme.outline),
-          'Waiting',
-          theme.colorScheme.onSurfaceVariant,
-        ),
-    };
-
-    final failed = item.state == QueuedDocument.failed;
-    final retrying = item.state == QueuedDocument.waiting && item.attempts > 0;
-    final reason = failed || retrying ? item.lastError : null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -522,43 +591,37 @@ class _ScanTile extends StatelessWidget {
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    SizedBox(width: 32, child: Center(child: icon)),
+                    Icon(Icons.error, size: 28, color: theme.colorScheme.error),
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
-                        retrying ? 'Waiting – will try again' : label,
-                        style: theme.textTheme.titleMedium?.copyWith(color: color, fontWeight: FontWeight.w600),
+                        'Problem',
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(color: theme.colorScheme.error, fontWeight: FontWeight.w600),
                       ),
                     ),
                   ],
                 ),
-                if (reason != null)
+                if (item.lastError != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child: Text(reason, style: theme.textTheme.bodyMedium),
+                    child: Text(item.lastError!, style: theme.textTheme.bodyMedium),
                   ),
-                if (item.note != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(item.note!, style: theme.textTheme.bodyMedium),
-                  ),
-                if (failed || retrying)
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      TextButton.icon(
-                        onPressed: onTryAgain,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Try again'),
-                      ),
-                      if (failed)
-                        TextButton.icon(
-                          onPressed: onRemove,
-                          icon: const Icon(Icons.delete_outline),
-                          label: const Text('Remove'),
-                        ),
-                    ],
-                  ),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    TextButton.icon(
+                      onPressed: onTryAgain,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Try again'),
+                    ),
+                    TextButton.icon(
+                      onPressed: onRemove,
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('Remove'),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -595,29 +658,6 @@ class _Thumbnail extends StatelessWidget {
                 errorBuilder: (_, _, _) => placeholder,
               ),
       ),
-    );
-  }
-}
-
-/// The check mark of a sent scan; it pops in when the scan was sent just now.
-class _SentCheck extends StatelessWidget {
-  const _SentCheck({required this.animate, required this.color});
-
-  final bool animate;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final check = Icon(Icons.check_circle, size: 28, color: color);
-    if (!animate) {
-      return check;
-    }
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 600),
-      curve: Curves.elasticOut,
-      builder: (context, value, child) => Transform.scale(scale: value, child: child),
-      child: check,
     );
   }
 }

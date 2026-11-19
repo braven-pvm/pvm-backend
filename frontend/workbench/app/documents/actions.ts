@@ -2,9 +2,20 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { deleteDocument, fileDocumentTo, getReviewList, processDocumentAgain, rejectDocument, returnDocumentToReview } from "../../src/api/documents";
+import {
+  changeDocumentInvoice,
+  deleteDocument,
+  fileDocumentTo,
+  getReviewList,
+  processDocumentAgain,
+  rejectDocument,
+  returnDocumentToReview,
+} from "../../src/api/documents";
 import { afterActionHref, documentHref, findNeighbours, listHref, parseListContext, type ListContext, type ListNeighbour } from "../../src/document-list";
 import {
+  changeInvoiceErrorMessage,
+  invoiceChangedMessage,
+  maxChangeReasonLength,
   deleteErrorMessage,
   documentDeletedMessage,
   fileToErrorMessage,
@@ -194,6 +205,34 @@ export async function deleteDocumentAction(formData: FormData) {
   const notice: Record<string, string> = { documentStatus: documentDeletedMessage };
   if (result.warning) {
     notice.documentWarning = result.warning;
+    if (result.warningFile) {
+      notice.documentWarningFile = result.warningFile;
+    }
   }
   succeed(id, context, notice, "list", next);
+}
+
+/**
+ * Links a filed POD to another invoice (design 6.13). The page stays, without
+ * the search, and says "Linked to <new>."
+ */
+export async function changeInvoiceAction(formData: FormData) {
+  const id = documentId(formData);
+  const context = listContext(formData);
+  const invoiceReference = text(formData, "invoiceReference");
+  const reason = text(formData, "reason");
+  if (!invoiceReference || invoiceReference.length > 64 || reason.length > maxChangeReasonLength) {
+    fail(id, context, changeInvoiceErrorMessage(400, null, invoiceReference || "(none)"));
+  }
+
+  let result: Awaited<ReturnType<typeof changeDocumentInvoice>>;
+  try {
+    result = await changeDocumentInvoice(id, invoiceReference, reason || null);
+  } catch {
+    fail(id, context, unconfirmedMessage("linked to the new invoice"));
+  }
+  if (!result.ok) {
+    fail(id, context, changeInvoiceErrorMessage(result.status, result.code, invoiceReference));
+  }
+  succeed(id, context, { documentStatus: invoiceChangedMessage(invoiceReference) }, "stay");
 }
