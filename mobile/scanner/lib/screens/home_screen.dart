@@ -361,7 +361,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _UploadStatus(queue: widget.queue, waiting: waiting.length),
+              child: _UploadStatus(queue: widget.queue, waiting: waiting.length, problems: problems.length),
             ),
             if (problems.isNotEmpty) ...[
               Padding(
@@ -390,10 +390,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
 /// Waiting, sending or waiting for the network; and the scans sent today.
 class _UploadStatus extends StatelessWidget {
-  const _UploadStatus({required this.queue, required this.waiting});
+  const _UploadStatus({required this.queue, required this.waiting, required this.problems});
 
   final UploadQueue queue;
   final int waiting;
+
+  /// Scans the server refused (400 or 413), listed under "Not sent".
+  final int problems;
+
+  static String notSentText(int count) => count == 1 ? '1 scan not sent — see below' : '$count scans not sent — see below';
 
   static String _clock(DateTime time) {
     final local = time.toLocal();
@@ -413,10 +418,15 @@ class _UploadStatus extends StatelessWidget {
       valueListenable: queue.status,
       builder: (context, status, _) {
         final (Widget icon, String text, Color color) = switch (status) {
-          _ when waiting == 0 => (
+          _ when waiting == 0 && problems == 0 => (
               Icon(Icons.check_circle, size: 32, color: Colors.green.shade800),
               HomeScreen.allSentText,
               Colors.green.shade800,
+            ),
+          _ when waiting == 0 => (
+              Icon(Icons.warning_amber_rounded, size: 32, color: theme.colorScheme.error),
+              notSentText(problems),
+              theme.colorScheme.error,
             ),
           QueueStatus.retrying => (
               Icon(Icons.wifi_off, size: 32, color: theme.colorScheme.tertiary),
@@ -460,6 +470,15 @@ class _UploadStatus extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(left: 48, top: 2),
                   child: Text('$waiting waiting', style: theme.textTheme.titleMedium),
+                ),
+              if (waiting > 0 && problems > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 48, top: 2),
+                  child: Text(
+                    notSentText(problems),
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(color: theme.colorScheme.error, fontWeight: FontWeight.w600),
+                  ),
                 ),
               const Divider(height: 24),
               ValueListenableBuilder<SentCount>(

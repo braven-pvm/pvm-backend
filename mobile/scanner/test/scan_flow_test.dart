@@ -97,6 +97,7 @@ void main() {
   late _Client client;
   late StreamController<void> network;
   var buzzes = 0;
+  late DateTime now;
 
   setUp(() {
     SharedPreferencesAsyncPlatform.instance = InMemorySharedPreferencesAsync.empty();
@@ -104,6 +105,7 @@ void main() {
     scanner = _Scanner();
     network = StreamController<void>.broadcast();
     buzzes = 0;
+    now = DateTime(2026, 11, 19, 9);
   });
 
   tearDown(() {
@@ -148,6 +150,7 @@ void main() {
         settings: settings,
         networkChanges: network.stream,
         confirmQueued: () async => buzzes++,
+        clock: () => now,
       ),
     ));
     await settle(tester, () => session.phase == SessionPhase.ready && session.config != null);
@@ -336,8 +339,9 @@ void main() {
     expect(find.text('General document'), findsNothing);
     final configCalls = client.configCalls;
 
-    // An admin adds a type while the app is in the background.
+    // An admin adds a type while the app is in the background; the last load is 5 minutes old.
     client.types = const [_pod, _invoice, _general];
+    now = now.add(const Duration(minutes: 5));
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
@@ -372,6 +376,68 @@ void main() {
 
     expect(find.text('Problem'), findsNothing);
     expect(find.text(HomeScreen.allSentText), findsOneWidget);
+    await closeApp(tester);
+  });
+
+  testWidgets('coming_back_from_the_scanner_loads_the_config_at_most_once_every_5_minutes', (tester) async {
+    await startApp(tester, const [_pod, _invoice]);
+    final afterStart = client.configCalls;
+    expect(afterStart, greaterThanOrEqualTo(1));
+
+    void comeToTheFront() {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    }
+
+    // The scanner is its own activity: every paper is a resume. Within 5 minutes, no new load.
+    for (var i = 0; i < 10; i++) {
+      now = now.add(const Duration(seconds: 25));
+      comeToTheFront();
+      await settle(tester);
+    }
+    expect(client.configCalls, afterStart);
+
+    now = DateTime(2026, 11, 19, 9, 5); // 5 minutes after the start.
+    comeToTheFront();
+    await settle(tester, () => client.configCalls == afterStart + 1);
+    expect(client.configCalls, afterStart + 1);
+
+    now = now.add(const Duration(minutes: 4, seconds: 59));
+    comeToTheFront();
+    await settle(tester);
+    expect(client.configCalls, afterStart + 1);
+    await closeApp(tester);
+  });
+
+  testWidgets('the_status_never_says_all_sent_while_a_refused_scan_is_on_the_phone', (tester) async {
+    await startApp(tester, const [_pod, _general]);
+    client.outcomes
+      ..add(const UploadRejected('The document is too large to send.'))
+      ..add(const UploadRejected('The document is too large to send.'));
+    scanner.script
+      ..add(await document(tester, 'big-1'))
+      ..add(await document(tester, 'big-2'));
+
+    await tester.tap(find.text('Proof of delivery'));
+    await settle(tester, () => queued().length == 2 && queued().every((item) => item.state == QueuedDocument.failed));
+    await settle(tester);
+
+    expect(find.text(HomeScreen.allSentText), findsNothing);
+    expect(find.text('2 scans not sent — see below'), findsOneWidget);
+
+    // One removed: one left, still not "all sent".
+    await reveal(tester, find.text('Remove').first);
+    await tester.tap(find.text('Remove').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Remove')));
+    await settle(tester, () => queued().length == 1);
+    await settle(tester);
+    await tester.scrollUntilVisible(find.text('1 scan not sent — see below'), -80,
+        scrollable: find.byType(Scrollable).last);
+    expect(find.text('1 scan not sent — see below'), findsOneWidget);
+    expect(find.text(HomeScreen.allSentText), findsNothing);
     await closeApp(tester);
   });
 
