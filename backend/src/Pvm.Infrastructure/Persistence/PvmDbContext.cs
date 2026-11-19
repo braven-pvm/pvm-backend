@@ -68,6 +68,8 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
 
     public DbSet<SellInReportLine> SellInReportLines => Set<SellInReportLine>();
 
+    public DbSet<SalesReportSavedFilterEntity> SalesReportSavedFilters => Set<SalesReportSavedFilterEntity>();
+
     public DbSet<SellInExcludedLine> SellInExcludedLines => Set<SellInExcludedLine>();
 
     public DbSet<SellOutImportEntity> SellOutImports => Set<SellOutImportEntity>();
@@ -715,6 +717,16 @@ public sealed class PvmDbContext(DbContextOptions<PvmDbContext> options) : DbCon
         });
 
         // Views, made in the migration AddSellInWorkbookRules. Their SQL is in SellInReportViews.
+        modelBuilder.Entity<SalesReportSavedFilterEntity>(entity =>
+        {
+            entity.ToTable("sales_report_saved_filters", schema);
+            entity.HasKey(filter => filter.Id);
+            entity.Property(filter => filter.Name).HasMaxLength(100);
+            entity.Property(filter => filter.Query).HasMaxLength(4000);
+            entity.Property(filter => filter.OwnerName).HasMaxLength(320);
+            entity.HasIndex(filter => new { filter.OwnerUserId, filter.Name }).IsUnique();
+        });
+
         modelBuilder.Entity<SellInReportLine>(entity =>
         {
             entity.ToView(SellInReportViews.ReportLinesView, schema);

@@ -129,6 +129,54 @@ The answer:
   line on the page.
 - The endpoints need the role Admin or Operator. They only read.
 
+### 4.1 Pivot
+
+Source: the owner, 2026-11-19, after the sales team saw the prototype. The
+sales team asks for these items:
+
+1. The pages show real data.
+2. A person selects many values of each dimension, such as a range of shops
+   and some reps, and the selections combine.
+3. A person saves a filter by name and recalls it.
+4. The drill-down works in any order: rep, then customer or product, or
+   product, then customer.
+
+The pivot endpoints do these items. The grid endpoints above stay as they are,
+because the check against the workbook (`docs/design/reports-analysis.md`) used
+them.
+
+```
+GET /api/reports/sales/pivot?rows=rep,customer,product&from=2026-03&to=2026-11&rep=R01,R02&customer=C1,C2&compare=1&open=R01,R01|C1
+```
+
+| Parameter | Values | Default |
+| --- | --- | --- |
+| `rows` | 1 to 5 dimensions, in the order of the drill-down | `rep,customer,product` |
+| `from`, `to` | calendar months, at most 36 | the financial year to date |
+| `rep`, `repAtSale`, `channel`, `customerGroup`, `customer`, `province`, `itemGroup`, `product`, `warehouse` | the keys to keep, with commas, or the parameter more than one time | all |
+| `measure` | `amount`, `quantity`, `customers` (distinct customers at each level) | `amount` |
+| `columns` | `months`, `years`, `none` | `months` |
+| `compare` | `1`: also give the same months one year before (`previous`, `previousTotal`) | no |
+| `sort` | `value` (the largest first) or `label` | `value` |
+| `open` | the keys of the open rows. A key is the path of the row, such as `R01\|C1` | none |
+| `format` | `csv`: all levels open, as a file | JSON |
+
+- `GET /api/reports/sales/values?dimension=customer&search=spar&…` gives the
+  values of one dimension with their totals, the largest first. The other
+  selections apply, and the selection of the dimension itself does not. So a
+  person sees only the customers of the selected reps, and can add more.
+- `GET /api/reports/sales/labels?dimension=customer&keys=C1,C2` gives the
+  labels of the selected keys, for the chips of a selection.
+- `GET /api/reports/sales/lines?page=1&…` gives the lines of the filter.
+- `GET /api/reports/sales/meta` gives the first and last month with sales.
+- `GET, POST /api/reports/sales/saved-filters` and
+  `PUT, DELETE /api/reports/sales/saved-filters/{id}` keep the named filters
+  in the table `reporting.sales_report_saved_filters`. A saved filter is the
+  query string of the page. A person sees their own filters and the shared
+  filters of other people. Only the owner changes or deletes a filter.
+- The SQL groups by grouping sets, so each level is one query, and only the
+  children of open rows come back.
+
 ---
 
 ## 5. New parts in `src/ui`
