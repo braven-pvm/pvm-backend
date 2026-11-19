@@ -256,3 +256,90 @@ export function shortFigure(value: number, measure: Measure): string {
 export function selectionCount(state: ReportState): number {
   return Object.values(state.include).reduce((sum, keys) => sum + (keys?.length ?? 0), 0);
 }
+
+/*
+ * The parts of the prototype pages: the status of a customer, the periods of the filter
+ * bar, and the trail of a drill-down.
+ */
+
+export type CustomerStatus = "Growing" | "Steady" | "Declining" | "New" | "At risk" | "Lost";
+
+export const customerStatuses: CustomerStatus[] = ["Growing", "Steady", "Declining", "New", "At risk", "Lost"];
+
+/**
+ * The status of a customer, as the prototype defines it. monthsSinceOrder is the number of
+ * months since the last month with sales (0: this month), or null with no sales in the window.
+ * - Lost: no order in the last 4 months, or none in the window, but sales a year before.
+ * - New: no sales a year before.
+ * - At risk: no order in the last 2 months.
+ * - Growing: up more than 10%. Declining: down more than 10%. Else Steady.
+ */
+export function statusOf(current: number, previous: number, monthsSinceOrder: number | null): CustomerStatus {
+  if (monthsSinceOrder === null || monthsSinceOrder >= 4) {
+    return previous > 0 || monthsSinceOrder !== null ? "Lost" : "New";
+  }
+  if (previous <= 0 && current > 0) {
+    return "New";
+  }
+  if (monthsSinceOrder >= 2) {
+    return "At risk";
+  }
+  if (previous > 0 && current / previous > 1.1) {
+    return "Growing";
+  }
+  if (previous > 0 && current / previous < 0.9) {
+    return "Declining";
+  }
+  return "Steady";
+}
+
+/** The months since the last month with sales: 0 for the last value. Null with no sales. */
+export function monthsSinceLast(values: number[]): number | null {
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    if (values[index] > 0) {
+      return values.length - 1 - index;
+    }
+  }
+  return null;
+}
+
+/** The periods of the prototype filter bar, then "custom" in the page. */
+export const prototypePeriods = ["fytd", "lastmonth", "last3", "last12"] as const;
+
+/** "Mar to Nov 2026, against Mar to Nov 2025". */
+export function periodNote(from: string, to: string): string {
+  const range = (a: string, b: string) => (a === b ? monthLabel(a) : `${monthLabel(a).slice(0, 3)}${a.slice(0, 4) === b.slice(0, 4) ? "" : ` ${a.slice(0, 4)}`} to ${monthLabel(b)}`);
+  return `${range(from, to)}, against ${range(addMonths(from, -12), addMonths(to, -12))}`;
+}
+
+/** One step of a drill-down: a dimension and the key that the person opened. */
+export type TrailStep = { dimension: Dimension; key: string };
+
+/** Reads the trail "rep:R01|product:P05". Wrong steps drop out. */
+export function readTrail(value: string | string[] | undefined): TrailStep[] {
+  const text = Array.isArray(value) ? value[0] : value;
+  return (text ?? "")
+    .split("|")
+    .map((step) => {
+      const at = step.indexOf(":");
+      return { dimension: step.slice(0, at), key: step.slice(at + 1) };
+    })
+    .filter((step): step is TrailStep => isDimension(step.dimension) && step.key.length > 0)
+    .slice(0, maxRows);
+}
+
+export function trailText(trail: TrailStep[]): string {
+  return trail.map((step) => `${step.dimension}:${step.key}`).join("|");
+}
+
+/**
+ * The state of a page in a drill-down: the filters, and each step of the trail as a selection
+ * of one key. So a product page under a rep shows the sales of that product by that rep.
+ */
+export function withTrail(state: ReportState, trail: TrailStep[]): ReportState {
+  const include = { ...state.include };
+  for (const step of trail) {
+    include[step.dimension] = [step.key];
+  }
+  return { ...state, include };
+}

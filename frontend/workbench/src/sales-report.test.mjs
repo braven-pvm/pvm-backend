@@ -115,3 +115,37 @@ test("the period presets start at the financial year", () => {
   assert.deepEqual(presets[1], { id: "lastfy", label: "FY2026", from: "2025-03", to: "2026-02" });
   assert.deepEqual(presets[2].from, "2025-12");
 });
+
+test("the customer status follows the prototype rules", async () => {
+  const { statusOf } = await import("./sales-report.ts");
+  assert.equal(statusOf(120, 100, 0), "Growing");
+  assert.equal(statusOf(80, 100, 1), "Declining");
+  assert.equal(statusOf(100, 100, 0), "Steady");
+  assert.equal(statusOf(50, 0, 0), "New");
+  assert.equal(statusOf(50, 100, 2), "At risk");
+  assert.equal(statusOf(0, 100, 5), "Lost");
+  assert.equal(statusOf(0, 100, null), "Lost");
+});
+
+test("the months since the last order", async () => {
+  const { monthsSinceLast } = await import("./sales-report.ts");
+  assert.equal(monthsSinceLast([1, 0, 5]), 0);
+  assert.equal(monthsSinceLast([1, 3, 0, 0]), 2);
+  assert.equal(monthsSinceLast([0, 0]), null);
+});
+
+test("the period note names the months and the year before", async () => {
+  const { periodNote } = await import("./sales-report.ts");
+  assert.equal(periodNote("2026-03", "2026-11"), "Mar to Nov 2026, against Mar to Nov 2025");
+  assert.equal(periodNote("2026-10", "2026-10"), "Oct 2026, against Oct 2025");
+  assert.equal(periodNote("2025-12", "2026-11"), "Dec 2025 to Nov 2026, against Dec 2024 to Nov 2025");
+});
+
+test("a trail reads, writes and narrows the filters", async () => {
+  const { readTrail, trailText, withTrail, readState } = await import("./sales-report.ts");
+  const trail = readTrail("rep:R01|town:X|product:P05");
+  assert.deepEqual(trail, [{ dimension: "rep", key: "R01" }, { dimension: "product", key: "P05" }]);
+  assert.equal(trailText(trail), "rep:R01|product:P05");
+  const state = withTrail(readState({ rep: "R01,R02", channel: "Retail" }, today), trail);
+  assert.deepEqual(state.include, { rep: ["R01"], channel: ["Retail"], product: ["P05"] });
+});

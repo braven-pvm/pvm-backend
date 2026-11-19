@@ -44,7 +44,7 @@ Rules that apply to every screen:
   - Lists: [DataTable](#datatable), [FilterChips](#filterchips), [FilterBar](#filterbar), [MultiSelect](#multiselect), [OrderPicker](#orderpicker), [PivotGrid](#pivotgrid), [Pagination](#pagination), [Thumbnail](#thumbnail).
   - Navigation: [TabNav and Tabs](#tabs), [BackLink](#backlink), [RecordNav](#recordnav), [Stepper](#stepper).
   - Records: [KeyValueList](#keyvaluelist), [Timeline](#timeline).
-  - Dashboards: [AttentionList](#attentionlist), [StatTile](#stattile), [Tile](#tile), [BarList](#barlist), [ColumnChart](#columnchart).
+  - Dashboards: [AttentionList](#attentionlist), [StatTile](#stattile), [Tile](#tile), [BarList](#barlist), [ColumnChart](#columnchart), [Sparkline](#sparkline), [Delta](#delta).
   - Automation: [ModeSwitch](#modeswitch).
 - [Copy rules](#copy-rules).
 - [Patterns that are not components](#patterns-that-are-not-components).
@@ -919,7 +919,29 @@ The axis shows the top, the middle and zero. Each column has a title with its
 value. A table that only screen readers read gives every value. Put the chart
 in a `Panel` with a description that says what the values include.
 
-Do not add a chart library. A `Sparkline` is still to come.
+Do not add a chart library.
+
+### Sparkline
+
+A small line of the last months in a table row, such as the sales of the last
+12 months. The last value is a dot. It shows the shape only, so the row must
+also give the figures.
+
+| Prop | Notes |
+| --- | --- |
+| `values` | The values in time order |
+| `label` | For screen readers: "Sales of the last 12 months" |
+
+### Delta
+
+The change of a figure against a figure to compare with: "▲ 12.3%" in green,
+"▼ 4.0%" in red, "New" when there is nothing to compare with. The arrow carries
+the direction, so it reads without colour.
+
+| Prop | Notes |
+| --- | --- |
+| `current` | The figure now |
+| `previous` | The figure to compare with, such as the same months last year |
 
 ---
 
