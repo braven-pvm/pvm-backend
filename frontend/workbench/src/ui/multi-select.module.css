@@ -61,11 +61,9 @@
   box-shadow: var(--shadow-overlay);
   display: flex;
   flex-direction: column;
-  left: 0;
-  margin-top: var(--space-2xs);
+  max-height: calc(100vh - 2 * var(--space-s));
   max-width: calc(100vw - 2 * var(--space-s));
-  position: absolute;
-  top: 100%;
+  position: fixed;
   width: 360px;
   z-index: var(--layer-overlay);
 }

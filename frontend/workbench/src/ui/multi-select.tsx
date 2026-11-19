@@ -41,7 +41,9 @@ export function MultiSelect({ label, selected, load, onApply }: MultiSelectProps
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const [chosen, setChosen] = useState<Map<string, MultiSelectOption>>(new Map());
+  const [place, setPlace] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const listId = useId();
 
@@ -75,11 +77,29 @@ export function MultiSelect({ label, selected, load, onApply }: MultiSelectProps
         setOpen(false);
       }
     };
+    // The list has a fixed position, so that a panel with hidden overflow does not clip it.
+    // A scroll or a resize of the page closes it, because the button moves.
+    const leave = (event: Event) => {
+      if (!(event.target instanceof Node) || !rootRef.current?.contains(event.target)) {
+        setOpen(false);
+      }
+    };
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    window.addEventListener("scroll", leave, true);
+    window.addEventListener("resize", leave);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      window.removeEventListener("scroll", leave, true);
+      window.removeEventListener("resize", leave);
+    };
   }, [open]);
 
   const show = () => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) {
+      const width = Math.min(360, window.innerWidth - 32);
+      setPlace({ top: rect.bottom + 4, left: Math.max(16, Math.min(rect.left, window.innerWidth - width - 16)) });
+    }
     setChosen(new Map(selected.map((option) => [option.value, option])));
     setSearch("");
     setOpen(true);
@@ -118,6 +138,7 @@ export function MultiSelect({ label, selected, load, onApply }: MultiSelectProps
       }}
     >
       <button
+        ref={triggerRef}
         type="button"
         className={styles.trigger}
         data-active={selected.length > 0 || undefined}
@@ -130,7 +151,7 @@ export function MultiSelect({ label, selected, load, onApply }: MultiSelectProps
         <ChevronDown size={16} aria-hidden="true" />
       </button>
       {open ? (
-        <div className={styles.panel} id={listId} role="group" aria-label={`Select ${label.toLowerCase()}`}>
+        <div className={styles.panel} style={place} id={listId} role="group" aria-label={`Select ${label.toLowerCase()}`}>
           <label className={styles.search}>
             <Search size={16} aria-hidden="true" />
             <span className="sr-only">Search {label.toLowerCase()}</span>
