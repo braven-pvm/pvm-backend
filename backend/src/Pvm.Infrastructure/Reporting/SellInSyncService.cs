@@ -354,15 +354,19 @@ public sealed class SellInSyncService(
         CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
+        var id = Guid.NewGuid();
         var run = new IntegrationRunEntity
         {
-            Id = Guid.NewGuid(),
+            Id = id,
             RunType = RunType,
             Trigger = trigger,
             InitiatedBy = initiatedBy,
             EnvironmentName = configuration["Pvm:EnvironmentName"] ?? "Development",
             CorrelationId = Guid.NewGuid().ToString("N"),
-            ScheduleKey = $"{RunType}:{from.InternalId}-{to.InternalId}",
+            // The schedule key is unique in the table. The nightly load reads the same periods each
+            // night of a month, so a key of the periods alone fails the second night. Each load is
+            // its own run, as each sell-out import is.
+            ScheduleKey = $"{RunType}:{id:N}",
             Status = IntegrationRunStatuses.Running,
             AttemptCount = 1,
             QueryFrom = new DateTimeOffset(FinancialMonth.Create(from.FinancialYear, from.Number).FirstDay.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
