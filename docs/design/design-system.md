@@ -41,10 +41,10 @@ Rules that apply to every screen:
   - Content: [CodeBlock](#codeblock), [PdfFrame](#pdfframe), [QrCode](#qrcode).
   - Status: [StatusBadge](#statusbadge), [Notice](#notice), [Spinner](#spinner), [EmptyState](#emptystate).
   - Forms: [Fields](#fields), [FileDrop](#filedrop).
-  - Lists: [DataTable](#datatable), [FilterChips](#filterchips), [FilterBar](#filterbar), [Pagination](#pagination), [Thumbnail](#thumbnail).
+  - Lists: [DataTable](#datatable), [FilterChips](#filterchips), [FilterBar](#filterbar), [MultiSelect](#multiselect), [OrderPicker](#orderpicker), [PivotGrid](#pivotgrid), [Pagination](#pagination), [Thumbnail](#thumbnail).
   - Navigation: [TabNav and Tabs](#tabs), [BackLink](#backlink), [RecordNav](#recordnav), [Stepper](#stepper).
   - Records: [KeyValueList](#keyvaluelist), [Timeline](#timeline).
-  - Dashboards: [AttentionList](#attentionlist), [StatTile](#stattile), [Tile](#tile), [BarList](#barlist).
+  - Dashboards: [AttentionList](#attentionlist), [StatTile](#stattile), [Tile](#tile), [BarList](#barlist), [ColumnChart](#columnchart).
   - Automation: [ModeSwitch](#modeswitch).
 - [Copy rules](#copy-rules).
 - [Patterns that are not components](#patterns-that-are-not-components).
@@ -364,6 +364,8 @@ error to the user. The server logs it.
 | Show a key number | `StatTile` in a `TileGrid` |
 | Link to an object with its state | `Tile` in a `TileGrid` |
 | Compare one measure across items | `BarList` |
+| Show a trend by month, this year against last year | `ColumnChart` |
+| Show a report with row levels and many figure columns | `PivotGrid` in a flush `Panel` |
 | Set an automation to Off, Shadow or Live | `ModeSwitch` |
 | Wait for something | `Spinner` |
 | Show that a list or area is empty | `EmptyState` |
@@ -719,6 +721,74 @@ Fields in a filter bar:
 
 Use at most 4 fields. The button is "Apply filters".
 
+### MultiSelect
+
+A filter of many values with a search, such as some customers and some reps.
+Use it when a person selects more than one value from a list that is too long
+for chips, or when the filters combine as in a pivot table. It needs
+JavaScript, so a page that uses it is a client page for its filters.
+
+| Prop | Notes |
+| --- | --- |
+| `label` | The plural name of the values: "Customers" |
+| `selected` | The values in use, with labels |
+| `load` | Gives the values for a search text, the most useful first. A server action works |
+| `onApply` | Gets the new values when the person presses "Apply" |
+
+Rules:
+
+- The button shows "All", the one label in use, or "3 selected". A button with
+  values in use has the brand fill.
+- The list shows the values in use first. A value can show a detail, such as
+  its total.
+- Nothing changes until "Apply". Esc or a click outside closes the list
+  without a change. "Clear" removes all the values.
+
+### OrderPicker
+
+The order of some items, such as the levels of a drill-down: Rep, then
+Customer, then Product. Each item has buttons to move it up one level, down one
+level, or out. A select adds an item at the end. One item always stays.
+
+| Prop | Notes |
+| --- | --- |
+| `label` | What the order is for: "Drill-down" |
+| `options` | All the items that can be in the order |
+| `value` | The items in use, in order |
+| `max` | The most items. With this number in use, the select does not show |
+| `onChange` | Gets the new order |
+
+### PivotGrid
+
+A report grid: rows in levels that open and close, many figure columns, a total
+column and a totals row. Use it for a report, not for a list of records: a
+`DataTable` has at most 7 columns, and a year of months needs 13 or more.
+
+| Prop | Notes |
+| --- | --- |
+| `caption` | For screen readers: "Sales by rep" |
+| `rowHeader` | The header of the first column. It names the levels: "Rep, customer group, customer" |
+| `groups` | Optional. A first header row that groups the columns, such as the financial years |
+| `headers` | One header for each figure column |
+| `subtotalColumns` | The indexes of the subtotal columns, such as the year totals. They show in bold on a fill |
+| `rows` | `key`, `level`, `label`, `values`, `total`, and `toggleHref` and `open` for a row with rows under it. Optional: `trailing` cells, and an `action` link (`href`, `label`) that shows only this row |
+| `totals` | The totals row, with optional `trailing` cells |
+| `trailingHeaders` | Optional. Columns after the total, such as "A year before" and "Change" |
+| `empty` | An `EmptyState` for no rows |
+
+Rules:
+
+- Put the grid in `<Panel flush>`.
+- The server formats the figures. Use whole numbers with a space between
+  thousands. Put the unit in a filter chip or the header, not in each cell.
+- A row opens with a link that sets a URL parameter, so that the open rows can
+  be shared and reloaded. The link keeps the scroll position.
+- The server sorts each level: by total, the largest first, or by name.
+- The row action shows as a filter icon when the pointer is on the row or the
+  action has focus. On a touch screen it always shows.
+- The first column and the headers stay in view when the grid scrolls. On a
+  phone, the grid scrolls in both directions inside its panel.
+
 ### Pagination
 
 "1–50 of 312" and the links "Previous page" and "Next page". Leave `total` out
@@ -833,8 +903,23 @@ prints its value, so the chart needs no tooltip. `low` marks a bar below its
 target with warning colour and the word "Low". `axis` takes up to three tick
 labels. The chart has a screen-reader caption from `label`.
 
-For trends over time, step C7 adds a `Sparkline` and a column chart. Until then,
-do not add a chart library.
+### ColumnChart
+
+Columns by period with an optional comparison series, such as this financial
+year against last year. It has no chart library.
+
+| Prop | Notes |
+| --- | --- |
+| `label` | The caption for screen readers: "Sales by financial month" |
+| `categories` | One short label for each group of columns: "Mar". 12 at most |
+| `series` | 1 or 2 series of `name` and `values`. The first is the main series, in the brand colour. The second is the comparison, in grey |
+| `format` | Formats a value for the axis and the table: "R 1.2 m" |
+
+The axis shows the top, the middle and zero. Each column has a title with its
+value. A table that only screen readers read gives every value. Put the chart
+in a `Panel` with a description that says what the values include.
+
+Do not add a chart library. A `Sparkline` is still to come.
 
 ---
 
