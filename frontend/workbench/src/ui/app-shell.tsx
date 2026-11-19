@@ -20,6 +20,7 @@ import {
   Zap,
   ShoppingBasket,
   FileSpreadsheet,
+  ChartColumnBig,
   type LucideIcon,
 } from "lucide-react";
 import { isCurrent, type NavGroup, type NavIcon, type NavItem } from "../navigation";
@@ -33,6 +34,7 @@ const icons: Record<NavIcon, LucideIcon> = {
   stock: Package,
   sellout: ShoppingBasket,
   statements: FileSpreadsheet,
+  sales: ChartColumnBig,
   documents: FileText,
   automations: Zap,
   runs: History,
