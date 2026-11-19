@@ -436,6 +436,51 @@ Phone app flow:
 5. A short vibration and a check mark when a scan is sent. An empty state on
    the first start.
 
+### 6.13 Workbench changes after the first production use (2026-11-19)
+
+The owner asked for four changes after the first days of real scans. They are
+decided as follows and replace the earlier text where they differ.
+
+1. **Labels.** The panel of what was read from a general scan is headed "Read
+   by Vision". The backend names stay as they are. A filed POD shows "Linked
+   to INV190096" on the Documents list and on its page. An Acumatica attach
+   state (Attached, Waiting to attach, Not attached) shows only when the attach
+   mode is Write; the search response carries `acumaticaAttachMode` for this.
+   The list column that holds the link, the review reason or a scan's note is
+   called "Details".
+2. **Change invoice (owner choice: workbench only).** An Admin or Operator can
+   link a filed POD to another invoice while its PDF is not attached in
+   Acumatica. The POD is still linked automatically when the match is safe
+   (6.5); this lets a person correct it. Nothing is written to Acumatica, and
+   the pending attachment stays as it is.
+   - `POST /api/documents/{id}/change-invoice` with `{ invoiceReference,
+     reason? }` (reason at most 500 characters), under `Invoices.Write`.
+   - Refusals: 409 `not-a-pod`, `document-not-filed`, `document-attached`, and
+     `document-changed` when someone changed the invoice meanwhile; 400
+     `invoice-not-found` (exact reference, type Invoice, not voided or
+     cancelled) and `same-invoice`; 404 for an unknown ID.
+   - A conditional update (Filed, not attached, still linked to the invoice
+     the request read) sets the invoice, the customer, `MatchedBy`
+     `user:<email>` and the resolver. The same transaction writes the audit
+     event `document-invoice-changed`: who, when, the old and new invoice and
+     customer, the reason and the document ID.
+   - The detail response has `canChangeInvoice`. The page offers **Change
+     invoice**, which opens the invoice search; each result has **Link to this
+     invoice**, and a confirm dialog names the old and new invoice and
+     customer. After the change the page says "Linked to <new invoice>."
+3. **One Documents list.** `GET /api/documents` returns every type unless
+   `type=POD` or `type=GENERAL` is given. The Documents page has the chips All
+   types, Proof of delivery and General document. A general row shows its
+   title (typed, else automatic, else "Untitled scan") where a POD shows its
+   invoice, and its note under Details. Previous and Next walk the mixed list.
+   General scans stays as the general-only view with its own text search.
+4. **Delete warning and badge.** When a delete leaves a file in storage, the
+   answer names it (`warningFile`: `pdf` or `thumbnail`). If only the preview
+   image stayed, the warning is "The scan is deleted. Its preview image could
+   not be removed from storage." and its title does not mention the PDF. The
+   general document page shows its state badge next to the title, as the POD
+   page does.
+
 ## 7. Constraints
 
 - The phones are Android only, and the app is side-loaded.
