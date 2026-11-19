@@ -165,6 +165,8 @@ GET /api/reports/sales/pivot?rows=rep,customer,product&from=2026-03&to=2026-11&r
   values of one dimension with their totals, the largest first. The other
   selections apply, and the selection of the dimension itself does not. So a
   person sees only the customers of the selected reps, and can add more.
+- `GET /api/reports/sales/labels?dimension=customer&keys=C1,C2` gives the
+  labels of the selected keys, for the chips of a selection.
 - `GET /api/reports/sales/lines?page=1&…` gives the lines of the filter.
 - `GET /api/reports/sales/meta` gives the first and last month with sales.
 - `GET, POST /api/reports/sales/saved-filters` and

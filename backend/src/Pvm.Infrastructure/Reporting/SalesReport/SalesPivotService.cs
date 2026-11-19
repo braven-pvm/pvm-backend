@@ -165,6 +165,26 @@ public sealed class SalesPivotService(PvmDbContext db)
         return await db.Database.SqlQueryRaw<SalesDimensionValue>(sql, [.. parameters]).ToListAsync(cancellationToken);
     }
 
+    /// <summary>The labels of some keys of a dimension, in any month, for the chips of a selection.</summary>
+    public async Task<IReadOnlyList<SalesDimensionValue>> LabelsAsync(SalesDimension dimension, IReadOnlyList<string> keys, CancellationToken cancellationToken)
+    {
+        if (keys.Count == 0)
+        {
+            return [];
+        }
+
+        var (key, label) = Sql[dimension];
+        var sql = $"""
+            select {key} as "Key", min({label}) as "Label", 0::numeric as "Total"
+            from {Source}
+            where {key} = any(@keys)
+            group by 1
+            order by 2
+            """;
+        var parameter = new NpgsqlParameter("keys", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = keys.Take(500).ToArray() };
+        return await db.Database.SqlQueryRaw<SalesDimensionValue>(sql, parameter).ToListAsync(cancellationToken);
+    }
+
     /// <summary>The pivot: the first level, and the children of each open row.</summary>
     public async Task<SalesPivot> PivotAsync(SalesPivotRequest request, CancellationToken cancellationToken)
     {

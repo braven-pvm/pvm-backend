@@ -12,6 +12,7 @@ namespace Pvm.Api.Features.Reports;
 ///   <item><c>GET /api/reports/sales/meta</c>: the months with sales, and the end of the last load.</item>
 ///   <item><c>GET /api/reports/sales/pivot?rows=rep,customer&amp;from=2026-03&amp;to=2027-02&amp;rep=R1,R2&amp;open=R1&amp;format=csv</c>: the pivot.</item>
 ///   <item><c>GET /api/reports/sales/values?dimension=customer&amp;search=spar&amp;…</c>: the values of one dimension in the filter.</item>
+///   <item><c>GET /api/reports/sales/labels?dimension=customer&amp;keys=C1,C2</c>: the labels of some keys.</item>
 ///   <item><c>GET /api/reports/sales/lines?page=1&amp;…</c>: the lines, 100 for each page.</item>
 ///   <item><c>GET, POST /api/reports/sales/saved-filters</c> and <c>PUT, DELETE /api/reports/sales/saved-filters/{id}</c>: the named filters.</item>
 /// </list>
@@ -42,6 +43,7 @@ public static class SalesPivotEndpoints
             Results.Ok(await service.MetaAsync(cancellationToken)));
         group.MapGet("/pivot", GetPivotAsync);
         group.MapGet("/values", GetValuesAsync);
+        group.MapGet("/labels", GetLabelsAsync);
         group.MapGet("/lines", GetLinesAsync);
         group.MapGet("/saved-filters", ListSavedAsync);
         group.MapPost("/saved-filters", CreateSavedAsync);
@@ -82,6 +84,16 @@ public static class SalesPivotEndpoints
 
         var limit = int.TryParse(http.Query["limit"], NumberStyles.None, CultureInfo.InvariantCulture, out var value) ? value : 100;
         return Results.Ok(await service.ValuesAsync(dimension, filter, http.Query["search"], limit, cancellationToken));
+    }
+
+    private static async Task<IResult> GetLabelsAsync(HttpRequest http, SalesPivotService service, CancellationToken cancellationToken)
+    {
+        if (!Dimensions.TryGetValue(http.Query["dimension"].ToString(), out var dimension))
+        {
+            return Results.BadRequest(new { message = $"Give a dimension: {string.Join(", ", Dimensions.Keys)}." });
+        }
+
+        return Results.Ok(await service.LabelsAsync(dimension, [.. List(http.Query, "keys").Distinct(StringComparer.Ordinal)], cancellationToken));
     }
 
     private static async Task<IResult> GetLinesAsync(HttpRequest http, SalesPivotService service, TimeProvider time, CancellationToken cancellationToken)

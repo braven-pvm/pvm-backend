@@ -200,6 +200,16 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_labels_of_selected_keys_come_in_any_month()
+    {
+        await using var db = CreateDbContext();
+
+        var labels = await new SalesPivotService(db).LabelsAsync(SalesDimension.Customer, ["P1", "C1", "NONE"], CancellationToken.None);
+
+        Assert.Equal([("P1", "PHARMACY ONE"), ("C1", "STORE ONE")], labels.Select(value => (value.Key, value.Label)));
+    }
+
+    [Fact]
     public async Task The_csv_has_every_level_and_a_total()
     {
         await using var db = CreateDbContext();
