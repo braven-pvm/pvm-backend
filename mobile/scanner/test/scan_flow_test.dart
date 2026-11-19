@@ -194,6 +194,12 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Proof of delivery'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, 'General document'), findsOneWidget);
     expect(find.text(HomeScreen.hintOf('POD')!), findsOneWidget);
+    // The hint on the main button has the button's text colour, not the dark body text colour.
+    Color? colourOf(Finder text) =>
+        tester.widget<RichText>(find.descendant(of: text, matching: find.byType(RichText))).text.style?.color;
+    final hint = colourOf(find.text(HomeScreen.hintOf('POD')!));
+    expect(hint, colourOf(find.text('Proof of delivery')));
+    expect(hint, Theme.of(tester.element(find.byType(HomeScreen))).colorScheme.onPrimary);
     // The type buttons sit below the status, at the bottom of the screen (thumb reach).
     final screen = tester.getSize(find.byType(HomeScreen));
     expect(tester.getTopLeft(find.text('Proof of delivery')).dy, greaterThan(screen.height / 2));

@@ -468,9 +468,10 @@ class _TypeButton extends StatelessWidget {
                 Text(
                   hint!,
                   // The main button's hint follows the button's own text colour, also when disabled.
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: main || onPressed == null ? null : theme.colorScheme.onSurfaceVariant,
-                  ),
+                  // No colour of its own: the text theme colour would hide the button's colour.
+                  style: main || onPressed == null
+                      ? TextStyle(fontSize: theme.textTheme.bodyMedium?.fontSize)
+                      : theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
             ],
           ),
