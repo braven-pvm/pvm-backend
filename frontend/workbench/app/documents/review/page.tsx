@@ -1,7 +1,7 @@
 import { getReviewList, type ReviewListItem } from "../../../src/api/documents";
 import { hasAnyRole, requireWorkbenchUser } from "../../../src/auth/session";
 import { documentHref } from "../../../src/document-list";
-import { documentTypeLabel, formatReviewReason, uploaderText } from "../../../src/documents";
+import { deleteWarningTitle, documentTypeLabel, formatReviewReason, uploaderText } from "../../../src/documents";
 import { formatDateTime } from "../../../src/formatters.mjs";
 import { ButtonLink, DataTable, EmptyState, ListPage, Notice, Pagination, type Column } from "../../../src/ui";
 import { DocumentStateBadge } from "../document-parts";
@@ -35,6 +35,8 @@ type SearchParams = {
   /** After File-to, Reject or Delete of the last document on the list: the result notice. */
   documentStatus?: string;
   documentWarning?: string;
+  /** "pdf" or "thumbnail": the file the warning is about. */
+  documentWarningFile?: string;
   documentError?: string;
 };
 
@@ -66,7 +68,7 @@ export default async function ReviewListPage({ searchParams }: { searchParams: P
           ) : null}
           {params.documentStatus ? <Notice tone="success" title={params.documentStatus} live /> : null}
           {params.documentWarning ? (
-            <Notice tone="warning" title="The PDF is still in storage">
+            <Notice tone="warning" title={deleteWarningTitle(params.documentWarningFile)}>
               {params.documentWarning}
             </Notice>
           ) : null}

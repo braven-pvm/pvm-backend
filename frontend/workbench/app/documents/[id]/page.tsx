@@ -22,16 +22,22 @@ import {
   type Neighbours,
 } from "../../../src/document-list";
 import {
+  acumaticaAttachLabel,
   canActOnDocument,
   canProcessAgain,
   canReturnToReview,
+  deleteWarningTitle,
   documentTypeLabel,
   fileToAttachText,
   formatDocumentState,
   formatReviewReason,
   isDocumentId,
+  linkedToText,
+  maxChangeReasonLength,
   maxDeleteReasonLength,
+  readByVisionTitle,
   readExtraction,
+  showChangeInvoiceAction,
   showDeleteAction,
   uploaderText,
 } from "../../../src/documents";
@@ -39,6 +45,7 @@ import { formatDate, formatDateTime } from "../../../src/formatters.mjs";
 import { generalTitle, isGeneralDocument } from "../../../src/general-documents";
 import {
   Button,
+  ButtonLink,
   ConfirmDialog,
   DataTable,
   EmptyState,
@@ -55,8 +62,15 @@ import {
   type Column,
   type TimelineEntry,
 } from "../../../src/ui";
-import { deleteDocumentAction, fileDocumentToAction, processAgainAction, rejectDocumentAction, returnToReviewAction } from "../actions";
-import { AcumaticaInvoice, DocumentStateBadge, acumaticaLabel, customerOf, invoiceColumns } from "../document-parts";
+import {
+  changeInvoiceAction,
+  deleteDocumentAction,
+  fileDocumentToAction,
+  processAgainAction,
+  rejectDocumentAction,
+  returnToReviewAction,
+} from "../actions";
+import { AcumaticaInvoice, DocumentStateBadge, customerOf, invoiceColumns } from "../document-parts";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Document" };
@@ -64,7 +78,8 @@ export const metadata = { title: "Document" };
 type DocumentPageProps = {
   params: Promise<{ id: string }>;
   /**
-   * q: the invoice search. documentError, documentStatus, documentWarning: the result of an action.
+   * q: the invoice search. change=1: the invoice search to change the invoice of a filed POD.
+   * documentError, documentStatus, documentWarning (documentWarningFile): the result of an action.
    * list and the list's filters and page: the list the page was opened from (src/document-list.ts).
    */
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -126,9 +141,13 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
   const documentStatus = param(query.documentStatus);
   // After a delete from the review list, the next document opens with the notice.
   const documentWarning = param(query.documentWarning);
-  const search = open && canWrite && q ? await searchReviewInvoices(q) : null;
+  // Change invoice (design 6.13): the same invoice search, opened from the Actions panel.
+  const canChange = showChangeInvoiceAction(document, canWrite);
+  const changing = canChange && param(query.change) === "1";
+  const search = (open || changing) && canWrite && q ? await searchReviewInvoices(q) : null;
   const contextFields = listContextFields(context);
   const fields: Fields = { documentId: document.id, ...contextFields };
+  const searchFields: Fields = changing ? { ...contextFields, change: "1" } : contextFields;
   const step = (neighbour: { id: string; page: number } | null) =>
     neighbour && context ? documentHref(neighbour.id, { ...context, page: neighbour.page }) : undefined;
 
@@ -167,22 +186,35 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
       ) : null}
       {documentStatus ? <Notice tone="success" title={documentStatus} live /> : null}
       {documentWarning ? (
-        <Notice tone="warning" title="The PDF is still in storage">
+        <Notice tone="warning" title={deleteWarningTitle(param(query.documentWarningFile))}>
           {documentWarning}
         </Notice>
       ) : null}
       <StateNotice document={document} reason={reason} />
+      {document.state === "Filed" && document.matchedReference ? (
+        <Notice tone="info" title={linkedToText(document.matchedReference)}>
+          {document.matchedCustomerName ? `${document.matchedCustomerName}. ` : null}
+          {document.matchedBy
+            ? document.matchedBy === "auto"
+              ? "Matched automatically."
+              : `Linked by ${matchedByLabel(document.matchedBy)}.`
+            : null}
+        </Notice>
+      ) : null}
       {(open || document.stuck) && !canWrite ? (
         <Notice tone="info" title="Only an Admin or Operator can file, reject or process documents">
           You can see the document and what was read.
         </Notice>
       ) : null}
-      {canReject || canSendBack || canProcess || canDelete ? (
+      {canReject || canSendBack || canProcess || canDelete || canChange ? (
         <Panel
           title="Actions"
           description={open && canWrite ? "To file it, use File to this invoice on one of the invoices below." : undefined}
         >
           <Stack direction="row" gap="s" wrap>
+            {canChange && !changing ? (
+              <ButtonLink href={changeInvoiceHref(document.id, contextFields)}>Change invoice</ButtonLink>
+            ) : null}
             {canReject ? <RejectDocument fields={fields} /> : null}
             {canSendBack ? <SendBackToReview document={document} fields={fields} /> : null}
             {canProcess ? <ProcessAgain document={document} fields={fields} /> : null}
@@ -201,18 +233,21 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
               empty={<EmptyState title="No possible invoices" description="Search for the invoice below." />}
             />
           </Panel>
-          <Panel title="Find an invoice" description="Search Acumatica by invoice number or customer name.">
-            <form method="get" action={`/documents/${document.id}`} role="search" aria-label="Find an invoice">
-              {Object.entries(contextFields).map(([name, value]) => (
-                <input key={name} type="hidden" name={name} value={value} />
-              ))}
-              <Stack direction="row" gap="s" align="end" wrap>
-                <TextField name="q" label="Invoice or customer" type="search" width="m" showOptional={false} defaultValue={q} required />
-                <Button type="submit">Search invoices</Button>
-              </Stack>
-            </form>
-          </Panel>
+          <FindInvoice document={document} hidden={searchFields} q={q} />
           {search ? <SearchResults document={document} fields={fields} q={q} search={search} /> : null}
+        </>
+      ) : null}
+      {changing ? (
+        <>
+          <FindInvoice
+            document={document}
+            hidden={searchFields}
+            q={q}
+            title="Change invoice"
+            description={`Linked to ${document.matchedReference ?? "an invoice"} now. Search Acumatica by invoice number or customer name, then choose the right invoice.`}
+            cancelHref={documentHref(document.id, context)}
+          />
+          {search ? <SearchResults document={document} fields={fields} q={q} search={search} change /> : null}
         </>
       ) : null}
       <Panel title="What was read" description="The fields read from the PDF.">
@@ -227,15 +262,18 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
             ...(document.state === "Filed"
               ? [
                   {
-                    label: "Invoice",
+                    label: "Linked to",
                     value: document.matchedReference ? (
                       <AcumaticaInvoice reference={document.matchedReference} baseUrl={acumaticaBaseUrl()} />
                     ) : null,
                     mono: true,
                   },
                   { label: "Client", value: document.matchedCustomerName },
-                  { label: "Filed by", value: document.matchedBy ? matchedByLabel(document.matchedBy) : null },
-                  { label: "Acumatica", value: acumaticaLabel(document) },
+                  { label: "Linked by", value: document.matchedBy ? matchedByLabel(document.matchedBy) : null },
+                  // The attach state means something only when attachments are written (design 6.13).
+                  ...(acumaticaAttachLabel(document, document.acumaticaAttachMode)
+                    ? [{ label: "Acumatica", value: acumaticaAttachLabel(document, document.acumaticaAttachMode) }]
+                    : []),
                 ]
               : []),
             { label: "Uploaded by", value: uploaderText(document) },
@@ -246,6 +284,46 @@ export default async function DocumentPage({ params, searchParams }: DocumentPag
         <Timeline label="Document history" entries={history(document)} />
       </Panel>
     </ViewerPage>
+  );
+}
+
+/** The document page with the Change invoice search open, keeping the list context. */
+function changeInvoiceHref(id: string, contextFields: Fields) {
+  return `/documents/${id}?${new URLSearchParams({ ...contextFields, change: "1" }).toString()}`;
+}
+
+function FindInvoice({
+  document,
+  hidden,
+  q,
+  title = "Find an invoice",
+  description = "Search Acumatica by invoice number or customer name.",
+  cancelHref,
+}: {
+  document: DocumentDetail;
+  hidden: Fields;
+  q: string;
+  title?: string;
+  description?: string;
+  cancelHref?: string;
+}) {
+  return (
+    <Panel title={title} description={description}>
+      <form method="get" action={`/documents/${document.id}`} role="search" aria-label={title}>
+        {Object.entries(hidden).map(([name, value]) => (
+          <input key={name} type="hidden" name={name} value={value} />
+        ))}
+        <Stack direction="row" gap="s" align="end" wrap>
+          <TextField name="q" label="Invoice or customer" type="search" width="m" showOptional={false} defaultValue={q} required />
+          <Button type="submit">Search invoices</Button>
+          {cancelHref ? (
+            <ButtonLink href={cancelHref} variant="tertiary">
+              Cancel
+            </ButtonLink>
+          ) : null}
+        </Stack>
+      </form>
+    </Panel>
   );
 }
 
@@ -262,7 +340,7 @@ function backLabel(context: ListContext | null) {
 
 /**
  * A general document (design 6.12): the PDF, what was typed on the phone and
- * what Claude read, who scanned it, and Delete. It is never filed to an
+ * what Vision read, who scanned it, and Delete. It is never filed to an
  * invoice, so there is no File, Reject or review action.
  */
 function GeneralDocumentView({
@@ -304,7 +382,8 @@ function GeneralDocumentView({
       header={{
         eyebrow: "General document",
         title,
-        status: document.state === "Filed" ? null : <DocumentStateBadge state={document.state} stuck={document.stuck} />,
+        // Like the POD page: the state badge next to the title, Filed included (design 6.13).
+        status: <DocumentStateBadge state={document.state} stuck={document.stuck} />,
         description: `Uploaded ${formatDateTime(document.uploadedAt)} by ${uploaderText(document)} · ${pages(document.pageCount)}`,
       }}
       viewer={<PdfFrame size="fill" src={`/documents/${document.id}/file`} title={`${title}, uploaded ${formatDateTime(document.uploadedAt)}`} />}
@@ -315,9 +394,14 @@ function GeneralDocumentView({
         </Notice>
       ) : null}
       {documentStatus ? <Notice tone="success" title={documentStatus} live /> : null}
+      {param(query.documentWarning) ? (
+        <Notice tone="warning" title={deleteWarningTitle(param(query.documentWarningFile))}>
+          {param(query.documentWarning)}
+        </Notice>
+      ) : null}
       {document.stuck ? (
         <Notice tone="warning" title="Stuck — reading did not finish">
-          The scan is stored, but Claude has not read it yet. Tell the backoffice developer if it stays like this.
+          The scan is stored, but Vision has not read it yet. Tell the backoffice developer if it stays like this.
         </Notice>
       ) : document.state === "Failed" ? (
         <Notice tone="error" title="Reading failed after every retry">
@@ -334,7 +418,7 @@ function GeneralDocumentView({
           ]}
         />
       </Panel>
-      <Panel title="Read by Claude" description="An automatic title and search words, so the scan can be found again.">
+      <Panel title={readByVisionTitle} description="An automatic title and search words, so the scan can be found again.">
         {read ? (
           <KeyValueList
             layout="stacked"
@@ -348,7 +432,7 @@ function GeneralDocumentView({
         ) : (
           <EmptyState
             title={reading ? "Not read yet" : "Nothing was read"}
-            description={reading ? "Claude reads the scan in a minute or two." : "The scan could not be read. Search for it by its title, note, phone or date."}
+            description={reading ? "Vision reads the scan in a minute or two." : "The scan could not be read. Search for it by its title, note, phone or date."}
           />
         )}
       </Panel>
@@ -414,16 +498,62 @@ function StateNotice({ document, reason }: { document: DocumentDetail; reason: s
   return null;
 }
 
-/** The candidate columns with the file action last. */
-function withFileAction(document: DocumentDetail, fields: Fields): Column<InvoiceCandidate>[] {
+/** The candidate columns with the file action (or, when changing the invoice, the change action) last. */
+function withFileAction(document: DocumentDetail, fields: Fields, change = false): Column<InvoiceCandidate>[] {
   return [
     ...invoiceColumns,
     {
       key: "action",
       header: "Action",
-      render: (row) => <FileToInvoice document={document} invoice={row} fields={fields} />,
+      render: (row) =>
+        change ? (
+          row.referenceNumber.toUpperCase() === document.matchedReference?.toUpperCase() ? (
+            "Linked now"
+          ) : (
+            <ChangeToInvoice document={document} invoice={row} fields={fields} />
+          )
+        ) : (
+          <FileToInvoice document={document} invoice={row} fields={fields} />
+        ),
     },
   ];
+}
+
+/**
+ * Change invoice (design 6.13): names the old and the new invoice and
+ * customer. Nothing is written to Acumatica; an optional reason goes to the audit.
+ */
+function ChangeToInvoice({ document, invoice, fields }: { document: DocumentDetail; invoice: InvoiceCandidate; fields: Fields }) {
+  return (
+    <ConfirmDialog
+      triggerLabel="Link to this invoice"
+      triggerVariant="secondary"
+      title={`Change the invoice to ${invoice.referenceNumber}?`}
+      confirmLabel="Change invoice"
+      pendingLabel="Changing…"
+      action={changeInvoiceAction}
+      fields={{ ...fields, invoiceReference: invoice.referenceNumber }}
+    >
+      <KeyValueList
+        layout="stacked"
+        items={[
+          { label: "Linked to now", value: document.matchedReference, mono: true },
+          { label: "Customer now", value: document.matchedCustomerName },
+          { label: "New invoice", value: invoice.referenceNumber, mono: true },
+          { label: "New customer", value: customerOf(invoice) },
+          { label: "Invoice date", value: invoice.date ? formatDate(invoice.date) : null },
+        ]}
+      />
+      <p>The document is linked to {invoice.referenceNumber} instead. Nothing changes in Acumatica.</p>
+      <TextareaField
+        name="reason"
+        label="Reason"
+        hint={`Why the invoice changes, such as “Split delivery, this page belongs to the second invoice”. At most ${maxChangeReasonLength} characters.`}
+        width="full"
+        maxLength={maxChangeReasonLength}
+      />
+    </ConfirmDialog>
+  );
 }
 
 function FileToInvoice({ document, invoice, fields }: { document: DocumentDetail; invoice: InvoiceCandidate; fields: Fields }) {
@@ -558,11 +688,13 @@ function SearchResults({
   fields,
   q,
   search,
+  change = false,
 }: {
   document: DocumentDetail;
   fields: Fields;
   q: string;
   search: Awaited<ReturnType<typeof searchReviewInvoices>>;
+  change?: boolean;
 }) {
   if (!search.ok) {
     return (
@@ -577,7 +709,7 @@ function SearchResults({
     <Panel flush title={`Invoices for “${q}”`} description="At most 20, newest first. Voided and cancelled invoices are left out.">
       <DataTable
         caption={`Invoices for ${q}`}
-        columns={withFileAction(document, fields)}
+        columns={withFileAction(document, fields, change)}
         rows={search.value}
         rowKey={(row) => row.referenceNumber}
         empty={<EmptyState title="No invoices match this search" description="Check the number, or search by customer name." />}
@@ -645,7 +777,7 @@ function history(document: DocumentDetail): TimelineEntry[] {
       at,
       time: formatDateTime(at),
       dateTime: at,
-      title: `Filed to ${document.matchedReference ?? "an invoice"}`,
+      title: linkedToText(document.matchedReference ?? "an invoice"),
       detail: document.matchedBy ? matchedByLabel(document.matchedBy) : undefined,
     });
   }

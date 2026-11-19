@@ -154,6 +154,73 @@ export function showDeleteAction(document: { canDelete?: boolean | null }, canWr
 
 export const maxDeleteReasonLength = 500;
 
+/** The heading of what was read from a general scan (owner decision, design 6.13). */
+export const readByVisionTitle = "Read by Vision";
+
+/** A filed POD is linked to its invoice; in Shadow mode that is all the user needs to see (design 6.13). */
+export function linkedToText(reference: string): string {
+  return `Linked to ${reference}`;
+}
+
+/**
+ * Where the PDF stands in Acumatica, for a filed document. Only in Write mode:
+ * in Shadow mode nothing is attached, and "Waiting to attach" only confused
+ * people, so the invoice link alone shows (design 6.13).
+ */
+export function acumaticaAttachLabel(
+  document: { state: string; acumaticaAttachPending: boolean; acumaticaAttachedAt: string | null },
+  mode: string | null | undefined,
+): string | null {
+  if (mode !== "Write" || document.state !== "Filed") {
+    return null;
+  }
+  if (document.acumaticaAttachedAt) {
+    return "Attached";
+  }
+  return document.acumaticaAttachPending ? "Waiting to attach" : "Not attached";
+}
+
+/**
+ * Change invoice: shown only to an Admin or Operator, and only when the backend
+ * says the invoice can change (canChangeInvoice on the detail response).
+ */
+export function showChangeInvoiceAction(document: { canChangeInvoice?: boolean | null }, canWrite: boolean): boolean {
+  return canWrite && document.canChangeInvoice === true;
+}
+
+export const maxChangeReasonLength = 500;
+
+/** The notice after the invoice of a document changed. */
+export function invoiceChangedMessage(reference: string): string {
+  return `${linkedToText(reference)}.`;
+}
+
+export function changeInvoiceErrorMessage(status: number, code: string | null | undefined, invoiceReference: string): string {
+  switch (status) {
+    case 409:
+      if (code === "document-attached") return "The PDF is already attached to the invoice in Acumatica, so the invoice cannot be changed here.";
+      if (code === "document-not-filed") return "The document is no longer filed. The page now shows its current state.";
+      if (code === "not-a-pod") return "A general document has no invoice to change.";
+      if (code === "document-changed") return "Someone else changed the invoice of this document. The page now shows its current invoice.";
+      return "The invoice can no longer be changed. The page now shows the current state.";
+    case 400:
+      if (code === "invoice-not-found") return `Invoice ${invoiceReference} was not found in Acumatica. Search again and choose an invoice from the results.`;
+      if (code === "same-invoice") return `The document is already linked to ${invoiceReference}.`;
+      return "Choose an invoice from the search, and write a reason of at most 500 characters.";
+    case 404:
+      return "This document no longer exists.";
+    case 403:
+      return "You do not have permission to change the invoice. Ask an Admin or Operator.";
+    default:
+      return `The invoice could not be changed (error ${status}). Nothing changed. Try again in a minute.`;
+  }
+}
+
+/** The title of the warning after a delete that left a file in storage. */
+export function deleteWarningTitle(file: string | null | undefined): string {
+  return file === "thumbnail" ? "The preview image is still in storage" : "The PDF is still in storage";
+}
+
 /** The notice on the Documents list after a delete. */
 export const documentDeletedMessage = "Document deleted.";
 
@@ -294,7 +361,9 @@ export function acumaticaInvoiceUrl(baseUrl: string | null | undefined, referenc
 }
 
 /** When the API call itself failed (timeout, network), the write may or may not have happened. */
-export function unconfirmedMessage(outcome: "filed" | "rejected" | "sent back to review" | "queued for processing" | "deleted"): string {
+export function unconfirmedMessage(
+  outcome: "filed" | "rejected" | "sent back to review" | "queued for processing" | "deleted" | "linked to the new invoice",
+): string {
   return `We could not confirm whether the document was ${outcome}. Reload the page to see its state.`;
 }
 

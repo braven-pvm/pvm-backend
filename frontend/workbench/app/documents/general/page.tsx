@@ -2,6 +2,7 @@ import { getGeneralDocuments, getGeneralFilterOptions, type GeneralDocumentItem 
 import { requireWorkbenchUser } from "../../../src/auth/session";
 import { documentHref } from "../../../src/document-list";
 import { buildGeneralQuery, generalTitle, noteLine, phoneAndStaff, type GeneralSearchFilters } from "../../../src/general-documents";
+import { deleteWarningTitle } from "../../../src/documents";
 import { formatDateTime } from "../../../src/formatters.mjs";
 import {
   ButtonLink,
@@ -33,6 +34,8 @@ type SearchParams = {
   /** After a delete: the result notice, and a storage warning when the PDF stayed behind. */
   documentStatus?: string;
   documentWarning?: string;
+  /** "pdf" or "thumbnail": the file the warning is about. */
+  documentWarningFile?: string;
   documentError?: string;
 };
 
@@ -106,7 +109,7 @@ export default async function GeneralScansPage({ searchParams }: { searchParams:
             ) : null}
             {params.documentStatus ? <Notice tone="success" title={params.documentStatus} live /> : null}
             {params.documentWarning ? (
-              <Notice tone="warning" title="The PDF is still in storage">
+              <Notice tone="warning" title={deleteWarningTitle(params.documentWarningFile)}>
                 {params.documentWarning}
               </Notice>
             ) : null}
