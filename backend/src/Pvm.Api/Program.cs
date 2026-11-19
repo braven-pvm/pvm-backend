@@ -94,6 +94,7 @@ app.MapBankImportEndpoints();
 app.MapSellOutEndpoints();
 app.MapStatementEndpoints();
 app.MapSalesReportEndpoints();
+app.MapSalesPivotEndpoints();
 app.MapStockSyncEndpoints();
 app.MapSubmissionEndpoints();
 app.MapPurchaseOrderEndpoints();

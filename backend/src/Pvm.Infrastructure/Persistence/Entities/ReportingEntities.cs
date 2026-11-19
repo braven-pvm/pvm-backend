@@ -168,3 +168,19 @@ public sealed class SellInExcludedLine
     public required string InventoryId { get; set; }
     public decimal Amount { get; set; }
 }
+
+/// <summary>
+/// A named filter of the sales report that a person saved: the query string of the report page.
+/// The owner can change it. A shared filter shows to all people who can open the report.
+/// </summary>
+public sealed class SalesReportSavedFilterEntity
+{
+    public Guid Id { get; set; }
+    public required string Name { get; set; }
+    public required string Query { get; set; }
+    public Guid OwnerUserId { get; set; }
+    public required string OwnerName { get; set; }
+    public bool Shared { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
