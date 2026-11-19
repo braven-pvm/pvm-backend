@@ -1,0 +1,8 @@
+{
+  "name": "pvm-scanner-tests",
+  "private": true,
+  "description": "Runs the Flutter tests of the phone app, so that the lane board can run them with npm test --prefix mobile/scanner.",
+  "scripts": {
+    "test": "flutter test"
+  }
+}
