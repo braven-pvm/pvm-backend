@@ -666,6 +666,243 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Delete_OnlyTheThumbnailFails_SaysTheThumbnail_NotThePdf()
+    {
+        var id = await SeedAsync(DocumentState.Filed, documentType: "GENERAL", thumbnail: true);
+        _store.DeleteFailsFor = path => path.EndsWith(".thumb.jpg", StringComparison.Ordinal);
+        var before = await LoadAsync(id);
+
+        var result = await DeleteAsync(id, "Scanned twice");
+
+        Assert.Equal(DeleteOutcome.Deleted, result.Outcome);
+        Assert.True(result.BlobDeleteFailed);
+        Assert.False(result.PdfDeleteFailed);
+        Assert.True(result.ThumbnailDeleteFailed);
+        Assert.Equal([before.BlobPath], _store.Deleted);
+        Assert.Null(await FindAsync(id));
+    }
+
+    [Fact]
+    public async Task Delete_OnlyThePdfFails_SaysThePdf()
+    {
+        var id = await SeedAsync(DocumentState.Filed, documentType: "GENERAL", thumbnail: true);
+        _store.DeleteFailsFor = path => path.EndsWith(".pdf", StringComparison.Ordinal);
+        var before = await LoadAsync(id);
+
+        var result = await DeleteAsync(id, "Scanned twice");
+
+        Assert.Equal(DeleteOutcome.Deleted, result.Outcome);
+        Assert.True(result.PdfDeleteFailed);
+        Assert.False(result.ThumbnailDeleteFailed);
+        Assert.Equal([before.ThumbnailBlobPath!], _store.Deleted);
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_FiledInShadowMode_LinksTheNewInvoice_KeepsTheAttachPending_WritesTheAudit()
+    {
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV001234", matchedCustomerName: "Acme Stores (Pty) Ltd", attachPending: true);
+        _acumatica.SearchResults = [Invoice("INV001240", "Midwater Spar")];
+
+        var result = await ChangeInvoiceAsync(id, "inv001240", "Split delivery: this page is the second invoice");
+
+        Assert.Equal(ChangeInvoiceOutcome.Changed, result.Outcome);
+        Assert.Equal("INV001240", result.Invoice!.ReferenceNumber);
+        Assert.Equal("INV001234", result.PreviousReference);
+        var row = await LoadAsync(id);
+        Assert.Equal(DocumentState.Filed, row.State);
+        Assert.Equal("INV001240", row.MatchedReference);
+        Assert.Equal("Midwater Spar", row.MatchedCustomerName);
+        Assert.Equal($"user:{User}", row.MatchedBy);
+        Assert.Equal(User, row.ResolvedBy);
+        Assert.NotNull(row.ResolvedAt);
+        Assert.True(row.AcumaticaAttachPending);
+        Assert.Null(row.AcumaticaAttachedAt);
+        Assert.Equal(["inv001240"], _acumatica.Lookups);
+        Assert.Empty(_acumatica.AttachAttempts);
+
+        var audit = Assert.Single(await DocumentAuditsAsync());
+        Assert.Equal(id.ToString("D"), audit.EntityId);
+        Assert.Equal("document-invoice-changed", audit.Action);
+        Assert.Equal(User, audit.Actor);
+        using var details = JsonDocument.Parse(audit.DetailsJson!);
+        var root = details.RootElement;
+        Assert.Equal(id, root.GetProperty("documentId").GetGuid());
+        Assert.Equal("INV001234", root.GetProperty("oldInvoice").GetString());
+        Assert.Equal("Acme Stores (Pty) Ltd", root.GetProperty("oldCustomerName").GetString());
+        Assert.Equal("INV001240", root.GetProperty("newInvoice").GetString());
+        Assert.Equal("Midwater Spar", root.GetProperty("newCustomerName").GetString());
+        Assert.Equal("Split delivery: this page is the second invoice", root.GetProperty("reason").GetString());
+        Assert.Equal(User, root.GetProperty("changedBy").GetString());
+        Assert.True(root.GetProperty("changedAt").GetDateTimeOffset() > DateTimeOffset.UtcNow.AddMinutes(-1));
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_WithoutAReason_AuditHasANullReason()
+    {
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV001234", matchedCustomerName: "Acme Stores (Pty) Ltd");
+        _acumatica.SearchResults = [Invoice("INV001240", "Midwater Spar")];
+
+        var result = await ChangeInvoiceAsync(id, "INV001240");
+
+        Assert.Equal(ChangeInvoiceOutcome.Changed, result.Outcome);
+        var audit = Assert.Single(await DocumentAuditsAsync());
+        using var details = JsonDocument.Parse(audit.DetailsJson!);
+        Assert.Equal(JsonValueKind.Null, details.RootElement.GetProperty("reason").ValueKind);
+    }
+
+    [Theory]
+    [InlineData(DocumentState.NeedsReview)]
+    [InlineData(DocumentState.Failed)]
+    [InlineData(DocumentState.Received)]
+    [InlineData(DocumentState.Processing)]
+    public async Task ChangeInvoice_NotFiled_NoLookup_NoWrite(DocumentState state)
+    {
+        var id = await SeedAsync(state);
+        _acumatica.SearchResults = [Invoice("INV001240", "Midwater Spar")];
+
+        var result = await ChangeInvoiceAsync(id, "INV001240");
+
+        Assert.Equal(ChangeInvoiceOutcome.NotFiled, result.Outcome);
+        Assert.Empty(_acumatica.Lookups);
+        Assert.Null((await LoadAsync(id)).MatchedReference);
+        Assert.Empty(await DocumentAuditsAsync());
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_AttachedInAcumatica_NoLookup_NoWrite()
+    {
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV001234", acumaticaAttachedAt: DateTimeOffset.UtcNow.AddHours(-1));
+        _acumatica.SearchResults = [Invoice("INV001240", "Midwater Spar")];
+
+        var result = await ChangeInvoiceAsync(id, "INV001240");
+
+        Assert.Equal(ChangeInvoiceOutcome.Attached, result.Outcome);
+        Assert.Empty(_acumatica.Lookups);
+        Assert.Equal("INV001234", (await LoadAsync(id)).MatchedReference);
+        Assert.Empty(await DocumentAuditsAsync());
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_GeneralDocument_NotAPod()
+    {
+        var id = await SeedAsync(DocumentState.Filed, documentType: "GENERAL");
+        _acumatica.SearchResults = [Invoice("INV001240", "Midwater Spar")];
+
+        var result = await ChangeInvoiceAsync(id, "INV001240");
+
+        Assert.Equal(ChangeInvoiceOutcome.NotAPod, result.Outcome);
+        Assert.Empty(_acumatica.Lookups);
+        Assert.Null((await LoadAsync(id)).MatchedReference);
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_UnknownDocument_NotFound()
+    {
+        var result = await ChangeInvoiceAsync(Guid.NewGuid(), "INV001240");
+
+        Assert.Equal(ChangeInvoiceOutcome.NotFound, result.Outcome);
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_NoExactInvoice_InvoiceNotFound_NoWrite()
+    {
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV001234");
+        // A prefix hit is not the invoice: only an exact reference counts.
+        _acumatica.SearchResults = [Invoice("INV0012400", "Midwater Spar")];
+
+        var result = await ChangeInvoiceAsync(id, "INV001240");
+
+        Assert.Equal(ChangeInvoiceOutcome.InvoiceNotFound, result.Outcome);
+        Assert.Equal("INV001234", (await LoadAsync(id)).MatchedReference);
+        Assert.Empty(await DocumentAuditsAsync());
+    }
+
+    [Theory]
+    [InlineData("INV001234")]
+    [InlineData(" inv001234 ")]
+    public async Task ChangeInvoice_SameInvoice_NoLookup_NoWrite(string reference)
+    {
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV001234");
+        _acumatica.SearchResults = [Invoice("INV001234", "Acme Stores (Pty) Ltd")];
+
+        var result = await ChangeInvoiceAsync(id, reference);
+
+        Assert.Equal(ChangeInvoiceOutcome.SameInvoice, result.Outcome);
+        Assert.Empty(_acumatica.Lookups);
+        Assert.Empty(await DocumentAuditsAsync());
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_RowChangedDuringTheLookup_ChangedMeanwhile_KeepsTheOtherChange_NoAudit()
+    {
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV001234");
+        _acumatica.SearchResults = [Invoice("INV001240", "Midwater Spar")];
+        _acumatica.OnSearch = async () =>
+        {
+            // Another person changes the invoice while this request looks up its own.
+            await using var other = CreateDbContext();
+            await other.CapturedDocuments.Where(item => item.Id == id).ExecuteUpdateAsync(setters => setters
+                .SetProperty(item => item.MatchedReference, "INV777"));
+        };
+
+        var result = await ChangeInvoiceAsync(id, "INV001240");
+
+        Assert.Equal(ChangeInvoiceOutcome.ChangedMeanwhile, result.Outcome);
+        Assert.Equal("INV777", (await LoadAsync(id)).MatchedReference);
+        Assert.Empty(await DocumentAuditsAsync());
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_AttachedDuringTheLookup_Attached_NoWrite()
+    {
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV001234");
+        _acumatica.SearchResults = [Invoice("INV001240", "Midwater Spar")];
+        _acumatica.OnSearch = async () =>
+        {
+            await using var other = CreateDbContext();
+            await other.CapturedDocuments.Where(item => item.Id == id).ExecuteUpdateAsync(setters => setters
+                .SetProperty(item => item.AcumaticaAttachedAt, DateTimeOffset.UtcNow));
+        };
+
+        var result = await ChangeInvoiceAsync(id, "INV001240");
+
+        Assert.Equal(ChangeInvoiceOutcome.Attached, result.Outcome);
+        Assert.Equal("INV001234", (await LoadAsync(id)).MatchedReference);
+        Assert.Empty(await DocumentAuditsAsync());
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_SentBackToReviewDuringTheLookup_NotFiled_NoWrite()
+    {
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV001234");
+        _acumatica.SearchResults = [Invoice("INV001240", "Midwater Spar")];
+        _acumatica.OnSearch = async () =>
+        {
+            await using var other = CreateDbContext();
+            await other.CapturedDocuments.Where(item => item.Id == id).ExecuteUpdateAsync(setters => setters
+                .SetProperty(item => item.State, DocumentState.NeedsReview)
+                .SetProperty(item => item.MatchedReference, (string?)null));
+        };
+
+        var result = await ChangeInvoiceAsync(id, "INV001240");
+
+        Assert.Equal(ChangeInvoiceOutcome.NotFiled, result.Outcome);
+        Assert.Null((await LoadAsync(id)).MatchedReference);
+    }
+
+    [Theory]
+    [InlineData("POD", DocumentState.Filed, false, true)]
+    [InlineData("POD", DocumentState.Filed, true, false)]
+    [InlineData("POD", DocumentState.NeedsReview, false, false)]
+    [InlineData("GENERAL", DocumentState.Filed, false, false)]
+    public void ChangeInvoiceCheck_FollowsTheRule(string type, DocumentState state, bool attached, bool expected)
+    {
+        var outcome = DocumentReviewService.ChangeInvoiceCheck(type, state, attached ? DateTimeOffset.UtcNow : null);
+
+        Assert.Equal(expected, outcome == ChangeInvoiceOutcome.Changed);
+    }
+
+    [Fact]
     public async Task Process_AfterDelete_CompletesQuietly()
     {
         var id = await SeedAsync(DocumentState.Failed);
@@ -679,6 +916,18 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
 
         Assert.Null(await FindAsync(id));
         Assert.Empty(_acumatica.AttachAttempts);
+    }
+
+    private async Task<ChangeInvoiceResult> ChangeInvoiceAsync(Guid id, string reference, string? reason = null)
+    {
+        await using var db = CreateDbContext();
+        return await CreateService(db, AcumaticaAttachMode.Shadow).ChangeInvoiceAsync(id, reference, reason, User, default);
+    }
+
+    private async Task<List<AuditEventEntity>> DocumentAuditsAsync()
+    {
+        await using var check = CreateDbContext();
+        return await check.AuditEvents.AsNoTracking().Where(audit => audit.EntityType == "CapturedDocument").ToListAsync();
     }
 
     private async Task<DeleteResult> DeleteAsync(Guid id, string reason)
@@ -763,7 +1012,9 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
         string? scannerStaffName = null,
         string documentType = "POD",
         string? title = null,
-        bool thumbnail = false)
+        bool thumbnail = false,
+        string? matchedCustomerName = null,
+        bool attachPending = false)
     {
         var id = Guid.NewGuid();
         var at = uploadedAt ?? DateTimeOffset.UtcNow;
@@ -790,6 +1041,9 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
             SizeBytes = PdfBytes.Length,
             Sha256 = new string('a', 64),
             MatchedReference = matchedReference,
+            MatchedCustomerName = matchedCustomerName,
+            MatchedBy = matchedReference is null ? null : "auto",
+            AcumaticaAttachPending = attachPending,
             ReviewNote = reviewNote,
             ExtractionJson = extractionJson,
             AcumaticaAttachedAt = acumaticaAttachedAt,
@@ -908,9 +1162,12 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
 
         public bool DeleteFails { get; set; }
 
+        /// <summary>When set, only the delete of a path that matches fails.</summary>
+        public Func<string, bool>? DeleteFailsFor { get; set; }
+
         public Task DeleteAsync(string blobPath, CancellationToken cancellationToken)
         {
-            if (DeleteFails)
+            if (DeleteFails || DeleteFailsFor?.Invoke(blobPath) == true)
             {
                 throw new IOException("Storage refused the delete.");
             }

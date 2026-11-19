@@ -838,18 +838,245 @@ public sealed class DocumentReviewEndpointsTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Search_DefaultsToPod_AndAnExplicitTypeGeneralStillWorks()
+    public async Task Search_ReturnsAllTypesByDefault_TypeFiltersPodOrGeneral_WithTheGeneralFieldsAndTheAttachMode()
     {
         var client = await StartAsync();
-        var pod = await SeedAsync(DocumentState.Filed, matchedReference: "INV1");
-        var general = await SeedGeneralAsync();
+        var now = DateTimeOffset.UtcNow;
+        var pod = await SeedAsync(DocumentState.Filed, uploadedAt: now.AddHours(-2), matchedReference: "INV1");
+        var general = await SeedGeneralAsync(uploadedAt: now.AddHours(-1), title: "Fleet licence", note: "Keep for SARS", autoTitle: "Vehicle licence disc", thumbnail: true);
 
         var all = await (await client.SendAsync(Get("/api/documents", AppRoles.Viewer))).Content.ReadFromJsonAsync<JsonElement>();
+        var podOnly = await (await client.SendAsync(Get("/api/documents?type=POD", AppRoles.Viewer))).Content.ReadFromJsonAsync<JsonElement>();
         var generalOnly = await (await client.SendAsync(Get("/api/documents?type=general", AppRoles.Viewer))).Content.ReadFromJsonAsync<JsonElement>();
 
-        Assert.Equal(pod, Assert.Single(all.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+        Assert.Equal([general, pod], all.GetProperty("items").EnumerateArray().Select(item => item.GetProperty("id").GetGuid()));
+        Assert.Equal(2, all.GetProperty("total").GetInt32());
+        Assert.Equal("Shadow", all.GetProperty("acumaticaAttachMode").GetString());
+        var first = all.GetProperty("items")[0];
+        Assert.Equal("GENERAL", first.GetProperty("documentType").GetString());
+        Assert.Equal("Fleet licence", first.GetProperty("title").GetString());
+        Assert.Equal("Vehicle licence disc", first.GetProperty("autoTitle").GetString());
+        Assert.Equal("Keep for SARS", first.GetProperty("note").GetString());
+        Assert.True(first.GetProperty("hasThumbnail").GetBoolean());
+        Assert.Equal(pod, Assert.Single(podOnly.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
         Assert.Equal(general, Assert.Single(generalOnly.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
     }
+
+    [Fact]
+    public async Task Search_ReturnsTheWriteAttachMode_WhenSet()
+    {
+        var client = await StartAsync(attachMode: "Write");
+
+        var body = await (await client.SendAsync(Get("/api/documents", AppRoles.Viewer))).Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal("Write", body.GetProperty("acumaticaAttachMode").GetString());
+    }
+
+    [Theory]
+    [InlineData(DocumentState.Filed, false, true)]
+    [InlineData(DocumentState.Filed, true, false)]
+    [InlineData(DocumentState.NeedsReview, false, false)]
+    [InlineData(DocumentState.Failed, false, false)]
+    public async Task Detail_CanChangeInvoice_FollowsTheRule(DocumentState state, bool attached, bool expected)
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(
+            state,
+            matchedReference: state == DocumentState.Filed ? "INV1" : null,
+            acumaticaAttachedAt: attached ? DateTimeOffset.UtcNow.AddHours(-1) : null);
+
+        var body = await (await client.SendAsync(Get($"/api/documents/{id:D}", AppRoles.Viewer))).Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(expected, body.GetProperty("canChangeInvoice").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Detail_General_CannotChangeInvoice()
+    {
+        var client = await StartAsync();
+        var id = await SeedGeneralAsync();
+
+        var body = await (await client.SendAsync(Get($"/api/documents/{id:D}", AppRoles.Viewer))).Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.False(body.GetProperty("canChangeInvoice").GetBoolean());
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_Viewer_Returns403()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV1");
+
+        var response = await client.SendAsync(ChangeInvoice(id, "INV001234", role: AppRoles.Viewer));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Empty(_acumatica.Lookups);
+        Assert.Equal("INV1", (await LoadAsync(id)).MatchedReference);
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_Anonymous_Returns401()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV1");
+
+        var response = await client.PostAsJsonAsync($"/api/documents/{id:D}/change-invoice", new { invoiceReference = "INV001234" });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_UnknownDocument_Returns404()
+    {
+        var client = await StartAsync();
+
+        var response = await client.SendAsync(ChangeInvoice(Guid.NewGuid(), "INV001234"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(DocumentState.NeedsReview)]
+    [InlineData(DocumentState.Failed)]
+    [InlineData(DocumentState.Processing)]
+    public async Task ChangeInvoice_NotFiled_Returns409_DocumentNotFiled(DocumentState state)
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(state);
+        _acumatica.SearchResults = [Invoice("INV001234")];
+
+        var response = await client.SendAsync(ChangeInvoice(id, "INV001234"));
+
+        await AssertConflictAsync(response, "document-not-filed", "not filed");
+        Assert.Empty(_acumatica.Lookups);
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_Attached_Returns409_DocumentAttached()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV1", acumaticaAttachedAt: DateTimeOffset.UtcNow.AddHours(-1));
+        _acumatica.SearchResults = [Invoice("INV001234")];
+
+        var response = await client.SendAsync(ChangeInvoice(id, "INV001234"));
+
+        await AssertConflictAsync(response, "document-attached", "Acumatica");
+        Assert.Equal("INV1", (await LoadAsync(id)).MatchedReference);
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_General_Returns409_NotAPod()
+    {
+        var client = await StartAsync();
+        var id = await SeedGeneralAsync();
+        _acumatica.SearchResults = [Invoice("INV001234")];
+
+        var response = await client.SendAsync(ChangeInvoice(id, "INV001234"));
+
+        await AssertConflictAsync(response, "not-a-pod", "proof of delivery");
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_NoExactInvoice_Returns400_InvoiceNotFound()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV1");
+        _acumatica.SearchResults = [Invoice("INV0012345")];
+
+        var response = await client.SendAsync(ChangeInvoice(id, "INV001234"));
+
+        await AssertBadRequestAsync(response, "invoice-not-found");
+        Assert.Equal(["INV001234"], _acumatica.Lookups);
+        Assert.Equal("INV1", (await LoadAsync(id)).MatchedReference);
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_SameInvoice_Returns400_SameInvoice()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV001234");
+        _acumatica.SearchResults = [Invoice("INV001234")];
+
+        var response = await client.SendAsync(ChangeInvoice(id, "inv001234"));
+
+        await AssertBadRequestAsync(response, "same-invoice");
+        Assert.Empty(_acumatica.Lookups);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task ChangeInvoice_BlankReference_Returns400(string reference)
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV1");
+
+        var response = await client.SendAsync(ChangeInvoice(id, reference));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(_acumatica.Lookups);
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_ReasonOver500_Returns400()
+    {
+        var client = await StartAsync();
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV1");
+
+        var response = await client.SendAsync(ChangeInvoice(id, "INV001234", new string('x', 501)));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(_acumatica.Lookups);
+    }
+
+    [Fact]
+    public async Task ChangeInvoice_UserNotResolved_Returns500_AndWritesNothing()
+    {
+        var client = await StartAsync(resolveUser: false);
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV1");
+        _acumatica.SearchResults = [Invoice("INV001234")];
+
+        var response = await client.SendAsync(ChangeInvoice(id, "INV001234"));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("INV1", (await LoadAsync(id)).MatchedReference);
+    }
+
+    [Fact]
+    public void DeleteWarning_NamesTheFileThatStayedBehind()
+    {
+        Assert.Null(DocumentReviewEndpoints.DeleteWarning(new DeleteResult(DeleteOutcome.Deleted)));
+        Assert.Equal(
+            "The scan is deleted. Its preview image could not be removed from storage.",
+            DocumentReviewEndpoints.DeleteWarning(new DeleteResult(DeleteOutcome.Deleted, ThumbnailDeleteFailed: true)));
+        var pdf = DocumentReviewEndpoints.DeleteWarning(new DeleteResult(DeleteOutcome.Deleted, PdfDeleteFailed: true));
+        Assert.Contains("its PDF could not be removed from storage", pdf);
+        Assert.Equal(pdf, DocumentReviewEndpoints.DeleteWarning(new DeleteResult(DeleteOutcome.Deleted, PdfDeleteFailed: true, ThumbnailDeleteFailed: true)));
+    }
+
+    [Theory]
+    [InlineData(false, false, null)]
+    [InlineData(true, false, "pdf")]
+    [InlineData(false, true, "thumbnail")]
+    [InlineData(true, true, "pdf")]
+    public void DeleteWarningFile_NamesWhichFile(bool pdf, bool thumbnail, string? expected)
+    {
+        Assert.Equal(expected, DocumentReviewEndpoints.DeleteWarningFile(new DeleteResult(DeleteOutcome.Deleted, PdfDeleteFailed: pdf, ThumbnailDeleteFailed: thumbnail)));
+    }
+
+    private static async Task AssertBadRequestAsync(HttpResponseMessage response, string code)
+    {
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(code, problem.GetProperty("code").GetString());
+    }
+
+    private static HttpRequestMessage ChangeInvoice(Guid id, string reference, string? reason = null, string role = AppRoles.Operator)
+        => new(HttpMethod.Post, $"/api/documents/{id:D}/change-invoice")
+        {
+            Content = JsonContent.Create(new { invoiceReference = reference, reason }),
+            Headers = { { TestAuthHandler.RoleHeader, role } }
+        };
 
     [Fact]
     public async Task ReviewList_LeavesOutGeneralDocuments_EvenFailedOrStuck()

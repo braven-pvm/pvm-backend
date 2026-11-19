@@ -14,7 +14,7 @@ namespace Pvm.Api.Features.Documents;
 /// The workbench's Documents page and review list (design 6.8, 6.9):
 /// <list type="bullet">
 ///   <item><c>GET /api/documents</c> — search, newest first, pages of 50. Without <c>type</c> it
-///   searches POD only; <c>type=GENERAL</c> searches the general documents.</item>
+///   searches every type (design 6.13); <c>type=POD</c> or <c>type=GENERAL</c> narrows it.</item>
 ///   <item><c>GET /api/documents/review</c> — the open review list, oldest first: NeedsReview and
 ///   Failed documents that are not rejected, and Received or Processing ones that are stuck. General
 ///   documents are never on it.</item>
@@ -28,6 +28,8 @@ namespace Pvm.Api.Features.Documents;
 ///   Acumatica, back to the review list.</item>
 ///   <item><c>POST /{id}/process-again</c> — sends a Failed or stuck document through processing again.</item>
 ///   <item><c>POST /{id}/delete</c> — removes an unfiled document and its PDF for good (design 6.11).</item>
+///   <item><c>POST /{id}/change-invoice</c> — links a filed POD, not yet attached in Acumatica, to
+///   another invoice (design 6.13). Nothing is written to Acumatica.</item>
 /// </list>
 /// </summary>
 public static class DocumentReviewEndpoints
@@ -35,6 +37,8 @@ public static class DocumentReviewEndpoints
     public const int PageSize = 50;
 
     private const int MaxReferenceLength = 64;
+
+    public const int MaxChangeReasonLength = 500;
 
     public static IEndpointRouteBuilder MapDocumentReviewEndpoints(this IEndpointRouteBuilder app)
     {
@@ -52,6 +56,7 @@ public static class DocumentReviewEndpoints
         group.MapPost("/{id:guid}/return-to-review", ReturnToReviewAsync).RequireAuthorization("Invoices.Write");
         group.MapPost("/{id:guid}/process-again", ProcessAgainAsync).RequireAuthorization("Invoices.Write");
         group.MapPost("/{id:guid}/delete", DeleteAsync).RequireAuthorization("Invoices.Write");
+        group.MapPost("/{id:guid}/change-invoice", ChangeInvoiceAsync).RequireAuthorization("Invoices.Write");
 
         return app;
     }
@@ -69,6 +74,7 @@ public static class DocumentReviewEndpoints
 
     private static async Task<IResult> SearchAsync(
         PvmDbContext dbContext,
+        IOptions<DocumentCaptureOptions> captureOptions,
         string? invoice,
         string? client,
         string? type,
@@ -91,9 +97,12 @@ public static class DocumentReviewEndpoints
             query = query.Where(item => item.MatchedCustomerName != null && item.MatchedCustomerName.ToLower().Contains(name));
         }
 
-        // The Documents page is the POD search: general documents have their own list (design 6.12).
-        var code = string.IsNullOrWhiteSpace(type) ? DocumentTypeCodes.Pod : type.Trim().ToUpperInvariant();
-        query = query.Where(item => item.DocumentType.ToUpper() == code);
+        // The Documents page lists every type (design 6.13); a type narrows it to POD or general.
+        if (!string.IsNullOrWhiteSpace(type))
+        {
+            var code = type.Trim().ToUpperInvariant();
+            query = query.Where(item => item.DocumentType.ToUpper() == code);
+        }
 
         if (!string.IsNullOrWhiteSpace(state))
         {
@@ -133,7 +142,9 @@ public static class DocumentReviewEndpoints
             items = items.Select(item => SearchItem(item, deviceNames)),
             page = pageNumber,
             pageSize = PageSize,
-            total
+            total,
+            // So the list shows an Acumatica attach state only when attachments are written (design 6.13).
+            acumaticaAttachMode = captureOptions.Value.AcumaticaAttachMode.ToString()
         });
     }
 
@@ -214,6 +225,11 @@ public static class DocumentReviewEndpoints
                 document.AcumaticaAttachedAt,
                 document.UploadedAt,
                 stuckBefore) == DeleteOutcome.Deleted,
+            // The change-invoice rule (design 6.13), so the workbench shows Change invoice without repeating it.
+            canChangeInvoice = DocumentReviewService.ChangeInvoiceCheck(
+                document.DocumentType,
+                document.State,
+                document.AcumaticaAttachedAt) == ChangeInvoiceOutcome.Changed,
             pageCount = document.PageCount,
             sizeBytes = document.SizeBytes,
             matchedReference = document.MatchedReference,
@@ -458,9 +474,9 @@ public static class DocumentReviewEndpoints
             {
                 documentId = id,
                 deleted = true,
-                warning = result.BlobDeleteFailed
-                    ? "The document is deleted, but its PDF could not be removed from storage. The path is logged for the developer."
-                    : null
+                warning = DeleteWarning(result),
+                // "pdf" or "thumbnail": which file stayed behind, so the workbench titles the notice.
+                warningFile = DeleteWarningFile(result)
             }),
             DeleteOutcome.NotFound => NotFound(),
             DeleteOutcome.Filed => Conflict(
@@ -473,6 +489,82 @@ public static class DocumentReviewEndpoints
                 "The document was uploaded recently and is still processing. Wait until processing ends.",
                 "document-processing"),
             _ => throw new InvalidOperationException("Unknown delete outcome.")
+        };
+    }
+
+    /// <summary>The warning after a delete that left a file in storage, naming the file; null when none.</summary>
+    public static string? DeleteWarning(DeleteResult result)
+    {
+        if (result.PdfDeleteFailed)
+        {
+            return "The document is deleted, but its PDF could not be removed from storage. The path is logged for the developer.";
+        }
+
+        return result.ThumbnailDeleteFailed
+            ? "The scan is deleted. Its preview image could not be removed from storage."
+            : null;
+    }
+
+    /// <summary>Which file stayed behind: "pdf" (it wins when both did), "thumbnail", or null.</summary>
+    public static string? DeleteWarningFile(DeleteResult result)
+        => result.PdfDeleteFailed ? "pdf" : result.ThumbnailDeleteFailed ? "thumbnail" : null;
+
+    private static async Task<IResult> ChangeInvoiceAsync(
+        Guid id,
+        ChangeInvoiceRequest? request,
+        CurrentAppUserAccessor currentUser,
+        DocumentReviewService reviewService,
+        CancellationToken cancellationToken)
+    {
+        var reference = request?.InvoiceReference?.Trim();
+        if (string.IsNullOrEmpty(reference) || reference.Length > MaxReferenceLength)
+        {
+            return BadRequest($"'invoiceReference' is required, at most {MaxReferenceLength} characters.");
+        }
+
+        var reason = string.IsNullOrWhiteSpace(request?.Reason) ? null : request.Reason.Trim();
+        if (reason is not null && reason.Length > MaxChangeReasonLength)
+        {
+            return BadRequest($"'reason' is optional, at most {MaxChangeReasonLength} characters.");
+        }
+
+        var user = CurrentEmail(currentUser);
+        if (user is null)
+        {
+            return UserNotResolved();
+        }
+
+        var result = await reviewService.ChangeInvoiceAsync(id, reference, reason, user, cancellationToken);
+        return result.Outcome switch
+        {
+            ChangeInvoiceOutcome.Changed => Results.Ok(new
+            {
+                documentId = id,
+                state = DocumentState.Filed.ToString(),
+                previousReference = result.PreviousReference,
+                matchedReference = result.Invoice!.ReferenceNumber,
+                matchedCustomerName = result.Invoice.CustomerName
+            }),
+            ChangeInvoiceOutcome.NotFound => NotFound(),
+            ChangeInvoiceOutcome.NotAPod => Conflict(
+                "Only a proof of delivery is linked to an invoice; a general document has no invoice.",
+                "not-a-pod"),
+            ChangeInvoiceOutcome.NotFiled => Conflict(
+                "The document is not filed; only a filed document can be linked to another invoice. File it from the review list.",
+                "document-not-filed"),
+            ChangeInvoiceOutcome.Attached => Conflict(
+                "The PDF is already attached to the invoice in Acumatica; the invoice cannot be changed from here.",
+                "document-attached"),
+            ChangeInvoiceOutcome.ChangedMeanwhile => Conflict(
+                "Someone changed the invoice of this document meanwhile. Reload the page to see its invoice.",
+                "document-changed"),
+            ChangeInvoiceOutcome.InvoiceNotFound => BadRequest(
+                $"Acumatica has no invoice with the reference '{reference}'.",
+                "invoice-not-found"),
+            ChangeInvoiceOutcome.SameInvoice => BadRequest(
+                $"The document is already linked to {result.PreviousReference}.",
+                "same-invoice"),
+            _ => throw new InvalidOperationException("Unknown change-invoice outcome.")
         };
     }
 
@@ -494,7 +586,12 @@ public static class DocumentReviewEndpoints
         scannerStaffName = item.ScannerStaffName,
         resolvedBy = item.ResolvedBy,
         resolvedAt = item.ResolvedAt,
-        rejectedAt = item.RejectedAt
+        rejectedAt = item.RejectedAt,
+        // A general document shows its title and note in the mixed list (design 6.13).
+        title = item.Title,
+        autoTitle = item.AutoTitle,
+        note = item.Note,
+        hasThumbnail = item.ThumbnailBlobPath != null
     };
 
     /// <summary>The current names of the scanner devices that uploaded these documents (design 6.10).</summary>
@@ -575,6 +672,12 @@ public static class DocumentReviewEndpoints
     internal static IResult BadRequest(string detail)
         => Results.Problem(detail, statusCode: StatusCodes.Status400BadRequest);
 
+    private static IResult BadRequest(string detail, string code)
+        => Results.Problem(
+            detail,
+            statusCode: StatusCodes.Status400BadRequest,
+            extensions: new Dictionary<string, object?> { ["code"] = code });
+
     private static IResult Conflict(string detail)
         => Results.Problem(detail, statusCode: StatusCodes.Status409Conflict);
 
@@ -592,4 +695,6 @@ public static class DocumentReviewEndpoints
     public sealed record RejectRequest(string? Note);
 
     public sealed record DeleteRequest(string? Reason);
+
+    public sealed record ChangeInvoiceRequest(string? InvoiceReference, string? Reason);
 }
