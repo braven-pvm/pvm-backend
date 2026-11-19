@@ -24,10 +24,10 @@ const _invoice = DocumentType(code: 'INVOICE', displayName: 'Supplier invoice');
 class _Store implements DeviceStore {
   @override
   Future<DeviceCredentials?> read() async => DeviceCredentials(
-        apiBaseUri: Uri.parse('https://api.example.test'),
-        deviceKey: 'pvmd_key',
-        deviceName: 'Dispatch phone 1',
-      );
+    apiBaseUri: Uri.parse('https://api.example.test'),
+    deviceKey: 'pvmd_key',
+    deviceName: 'Dispatch phone 1',
+  );
 
   @override
   Future<void> write(DeviceCredentials value) async {}
@@ -49,6 +49,7 @@ class _Client implements DeviceClient {
   _Client(this.types);
 
   List<DocumentType> types;
+  List<StaffMember> staff = const [];
   final outcomes = <UploadOutcome>[];
   final uploads = <({String documentType, String? title, String? note})>[];
   var configCalls = 0;
@@ -56,7 +57,7 @@ class _Client implements DeviceClient {
   @override
   Future<DeviceConfig> config() async {
     configCalls++;
-    return DeviceConfig(deviceName: 'Dispatch phone 1', documentTypes: types, staff: const []);
+    return DeviceConfig(deviceName: 'Dispatch phone 1', documentTypes: types, staff: staff);
   }
 
   @override
@@ -132,8 +133,13 @@ void main() {
   }
 
   /// [retryWaitsForever]: the fake clock never ends a retry wait; only a wake does.
-  Future<void> startApp(WidgetTester tester, List<DocumentType> types, {bool retryWaitsForever = false}) async {
-    client = _Client(types);
+  Future<void> startApp(
+    WidgetTester tester,
+    List<DocumentType> types, {
+    bool retryWaitsForever = false,
+    List<StaffMember> staff = const [],
+  }) async {
+    client = _Client(types)..staff = staff;
     final settings = AppSettings(SharedPreferencesAsync());
     session = DeviceSession(
       store: _Store(),
@@ -143,16 +149,18 @@ void main() {
       clientFor: (_) => client,
       delay: retryWaitsForever ? (_) => Completer<void>().future : (_) async {},
     );
-    await tester.pumpWidget(ScannerApp(
-      services: AppServices(
-        session: session,
-        scanner: scanner,
-        settings: settings,
-        networkChanges: network.stream,
-        confirmQueued: () async => buzzes++,
-        clock: () => now,
+    await tester.pumpWidget(
+      ScannerApp(
+        services: AppServices(
+          session: session,
+          scanner: scanner,
+          settings: settings,
+          networkChanges: network.stream,
+          confirmQueued: () async => buzzes++,
+          clock: () => now,
+        ),
       ),
-    ));
+    );
     await settle(tester, () => session.phase == SessionPhase.ready && session.config != null);
     await settle(tester);
   }
@@ -179,7 +187,49 @@ void main() {
     expect(find.text(HomeScreen.allSentText), findsOneWidget);
     expect(find.text('Sent today: 0'), findsOneWidget);
     expect(find.byTooltip('Settings'), findsOneWidget);
+    // The phone's name heads the screen.
+    expect(find.text('Dispatch phone 1', findRichText: true), findsOneWidget);
+    expect(find.text('Change'), findsNothing);
+    // The first type is the main action; the others are outlined.
+    expect(find.widgetWithText(FilledButton, 'Proof of delivery'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'General document'), findsOneWidget);
+    expect(find.text(HomeScreen.hintOf('POD')!), findsOneWidget);
+    // The hint on the main button has the button's text colour, not the dark body text colour.
+    Color? colourOf(Finder text) =>
+        tester.widget<RichText>(find.descendant(of: text, matching: find.byType(RichText))).text.style?.color;
+    final hint = colourOf(find.text(HomeScreen.hintOf('POD')!));
+    expect(hint, colourOf(find.text('Proof of delivery')));
+    expect(hint, Theme.of(tester.element(find.byType(HomeScreen))).colorScheme.onPrimary);
+    // The type buttons sit below the status, at the bottom of the screen (thumb reach).
+    final screen = tester.getSize(find.byType(HomeScreen));
+    expect(tester.getTopLeft(find.text('Proof of delivery')).dy, greaterThan(screen.height / 2));
+    expect(
+      tester.getTopLeft(find.text(HomeScreen.allSentText)).dy,
+      lessThan(tester.getTopLeft(find.text('Proof of delivery')).dy),
+    );
     // Two types: the person chooses; the camera does not open by itself.
+    expect(scanner.calls, 0);
+    await closeApp(tester);
+  });
+
+  testWidgets('the_top_row_shows_the_phone_and_the_staff_name_and_a_tap_changes_the_name', (tester) async {
+    await startApp(
+      tester,
+      const [_pod, _general],
+      staff: const [
+        StaffMember(id: 's-1', name: 'Anna'),
+        StaffMember(id: 's-2', name: 'Thabo'),
+      ],
+    );
+
+    expect(find.text('Dispatch phone 1  ·  ${HomeScreen.noStaffText}', findRichText: true), findsOneWidget);
+    await tester.tap(find.text('Change'));
+    await tester.pumpAndSettle();
+    expect(find.text('Who is scanning?'), findsOneWidget);
+    await tester.tap(find.text('Thabo'));
+    await settle(tester);
+
+    expect(find.text('Dispatch phone 1  ·  Thabo', findRichText: true), findsOneWidget);
     expect(scanner.calls, 0);
     await closeApp(tester);
   });
@@ -434,8 +484,11 @@ void main() {
     await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Remove')));
     await settle(tester, () => queued().length == 1);
     await settle(tester);
-    await tester.scrollUntilVisible(find.text('1 scan not sent — see below'), -80,
-        scrollable: find.byType(Scrollable).last);
+    await tester.scrollUntilVisible(
+      find.text('1 scan not sent — see below'),
+      -80,
+      scrollable: find.byType(Scrollable).last,
+    );
     expect(find.text('1 scan not sent — see below'), findsOneWidget);
     expect(find.text(HomeScreen.allSentText), findsNothing);
     await closeApp(tester);

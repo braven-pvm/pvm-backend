@@ -50,6 +50,14 @@ class HomeScreen extends StatefulWidget {
   static const allSentText = 'All scans sent';
   static const retryingText = 'Waiting for network — will retry';
   static const sendingText = 'Sending…';
+  static const noStaffText = 'Choose name';
+
+  /// The short line under a type button, for the types the app knows.
+  static String? hintOf(String code) => switch (code) {
+    'POD' => 'Scan delivery notes',
+    QueuedDocument.generalType => 'Scan any other document',
+    _ => null,
+  };
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -149,7 +157,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final chosen = await Navigator.of(context).push<StaffMember>(
-      MaterialPageRoute(builder: (context) => StaffPickerScreen(staff: staffList, currentId: remembered)),
+      MaterialPageRoute(
+        builder: (context) => StaffPickerScreen(staff: staffList, currentId: remembered),
+      ),
     );
     if (chosen == null) {
       return !choice.mustAsk;
@@ -227,8 +237,15 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
         // Every way out keeps the scan. Null: the app closed the screen (the phone was removed).
-        await _keep(queue, document, type.code, staffId,
-            title: result?.title, note: result?.note, thumbnail: await thumbnail);
+        await _keep(
+          queue,
+          document,
+          type.code,
+          staffId,
+          title: result?.title,
+          note: result?.note,
+          thumbnail: await thumbnail,
+        );
         if (result?.action != ReviewAction.next) {
           break;
         }
@@ -305,82 +322,107 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   static IconData _iconOf(String code) => switch (code) {
-        'POD' => Icons.local_shipping_outlined,
-        QueuedDocument.generalType => Icons.description_outlined,
-        _ => Icons.document_scanner_outlined,
-      };
+    'POD' => Icons.local_shipping_outlined,
+    QueuedDocument.generalType => Icons.description_outlined,
+    _ => Icons.document_scanner_outlined,
+  };
+
+  String get _deviceName {
+    final fromConfig = widget.session.config?.deviceName ?? '';
+    return fromConfig.isNotEmpty ? fromConfig : widget.session.credentials?.deviceName ?? '';
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final showStaff = _staffList.isNotEmpty;
-    final problems = [for (final item in _items) if (item.state == QueuedDocument.failed) item];
+    final problems = [
+      for (final item in _items)
+        if (item.state == QueuedDocument.failed) item,
+    ];
     final waiting = _items
         .where((item) => item.state == QueuedDocument.waiting || item.state == QueuedDocument.uploading)
         .toList();
+    final types = _types;
 
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: 52,
+        titleTextStyle: theme.textTheme.titleMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
+        ),
         title: const Text('PVM Scanner'),
         actions: [
           IconButton(
-            iconSize: 32,
+            iconSize: 28,
             tooltip: 'Settings',
             onPressed: widget.onOpenSettings,
             icon: const Icon(Icons.settings_outlined),
           ),
         ],
       ),
+      // One scroll view: the buttons sit at the bottom when the screen has room, and scroll with
+      // the rest on a small phone with large text.
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.only(bottom: 24),
-          children: [
-            if (showStaff)
-              _StaffRow(name: _staff?.name ?? 'Not chosen', onChange: _scanning ? null : _changeStaff),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: _WhoRow(
+                deviceName: _deviceName,
+                staffName: showStaff ? (_staff?.name ?? HomeScreen.noStaffText) : null,
+                onChange: showStaff && !_scanning ? _changeStaff : null,
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              sliver: SliverToBoxAdapter(
+                child: _UploadStatus(queue: widget.queue, waiting: waiting.length, problems: problems.length),
+              ),
+            ),
+            if (problems.isNotEmpty)
+              SliverList.list(
                 children: [
-                  for (final type in _types) ...[
-                    FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(88),
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                        alignment: Alignment.centerLeft,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      ),
-                      onPressed: _scanning ? null : () => _scanFlow(type),
-                      icon: Icon(_iconOf(type.code), size: 36),
-                      label: Text(type.displayName, style: const TextStyle(fontSize: 24)),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                    child: Text('Not sent', style: theme.textTheme.titleMedium),
+                  ),
+                  const Divider(height: 1),
+                  for (final item in problems) ...[
+                    _ProblemTile(
+                      key: ValueKey(item.clientDocumentId),
+                      item: item,
+                      thumbnail: widget.queue.thumbnailOf(item),
+                      typeName: _typeName(item.documentType),
+                      onTryAgain: () => widget.queue.retry(item.clientDocumentId),
+                      onRemove: () => _confirmRemove(item),
                     ),
-                    const SizedBox(height: 12),
+                    const Divider(height: 1),
                   ],
                 ],
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _UploadStatus(queue: widget.queue, waiting: waiting.length, problems: problems.length),
-            ),
-            if (problems.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-                child: Text('Not sent', style: theme.textTheme.titleLarge),
-              ),
-              const Divider(height: 1),
-              for (final item in problems) ...[
-                _ProblemTile(
-                  key: ValueKey(item.clientDocumentId),
-                  item: item,
-                  thumbnail: widget.queue.thumbnailOf(item),
-                  typeName: _typeName(item.documentType),
-                  onTryAgain: () => widget.queue.retry(item.clientDocumentId),
-                  onRemove: () => _confirmRemove(item),
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final (index, type) in types.indexed) ...[
+                      if (index > 0) const SizedBox(height: 12),
+                      _TypeButton(
+                        main: index == 0,
+                        icon: _iconOf(type.code),
+                        label: type.displayName,
+                        hint: HomeScreen.hintOf(type.code),
+                        onPressed: _scanning ? null : () => _scanFlow(type),
+                      ),
+                    ],
+                  ],
                 ),
-                const Divider(height: 1),
-              ],
-            ],
+              ),
+            ),
           ],
         ),
       ),
@@ -388,7 +430,76 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// Waiting, sending or waiting for the network; and the scans sent today.
+/// One document type. The first type is the main action (filled); the others are outlined.
+class _TypeButton extends StatelessWidget {
+  const _TypeButton({
+    required this.main,
+    required this.icon,
+    required this.label,
+    required this.hint,
+    required this.onPressed,
+  });
+
+  final bool main;
+  final IconData icon;
+  final String label;
+  final String? hint;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(16));
+    final size = Size.fromHeight(main ? 96 : 72);
+    const padding = EdgeInsets.symmetric(horizontal: 20, vertical: 12);
+    final labelStyle = TextStyle(fontSize: main ? 24 : 20, fontWeight: FontWeight.w600);
+
+    final content = Row(
+      children: [
+        Icon(icon, size: main ? 36 : 28),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: labelStyle),
+              if (hint != null)
+                Text(
+                  hint!,
+                  // The main button's hint follows the button's own text colour, also when disabled.
+                  // No colour of its own: the text theme colour would hide the button's colour.
+                  style: main || onPressed == null
+                      ? TextStyle(fontSize: theme.textTheme.bodyMedium?.fontSize)
+                      : theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    if (main) {
+      return FilledButton(
+        style: FilledButton.styleFrom(minimumSize: size, padding: padding, shape: shape),
+        onPressed: onPressed,
+        child: content,
+      );
+    }
+    return OutlinedButton(
+      style: OutlinedButton.styleFrom(
+        minimumSize: size,
+        padding: padding,
+        shape: shape,
+        side: BorderSide(color: theme.colorScheme.outline, width: 1.5),
+      ),
+      onPressed: onPressed,
+      child: content,
+    );
+  }
+}
+
+/// One line: all sent, sending, waiting for the network or not sent; then the scans sent today.
 class _UploadStatus extends StatelessWidget {
   const _UploadStatus({required this.queue, required this.waiting, required this.problems});
 
@@ -398,7 +509,8 @@ class _UploadStatus extends StatelessWidget {
   /// Scans the server refused (400 or 413), listed under "Not sent".
   final int problems;
 
-  static String notSentText(int count) => count == 1 ? '1 scan not sent — see below' : '$count scans not sent — see below';
+  static String notSentText(int count) =>
+      count == 1 ? '1 scan not sent — see below' : '$count scans not sent — see below';
 
   static String _clock(DateTime time) {
     final local = time.toLocal();
@@ -414,125 +526,123 @@ class _UploadStatus extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    const green = Color(0xFF1B6B2F);
+    const amber = Color(0xFF8A5300);
     return ValueListenableBuilder<QueueStatus>(
       valueListenable: queue.status,
       builder: (context, status, _) {
         final (Widget icon, String text, Color color) = switch (status) {
           _ when waiting == 0 && problems == 0 => (
-              Icon(Icons.check_circle, size: 32, color: Colors.green.shade800),
-              HomeScreen.allSentText,
-              Colors.green.shade800,
-            ),
+            const Icon(Icons.check_circle, size: 28, color: green),
+            HomeScreen.allSentText,
+            green,
+          ),
           _ when waiting == 0 => (
-              Icon(Icons.warning_amber_rounded, size: 32, color: theme.colorScheme.error),
-              notSentText(problems),
-              theme.colorScheme.error,
-            ),
-          QueueStatus.retrying => (
-              Icon(Icons.wifi_off, size: 32, color: theme.colorScheme.tertiary),
-              HomeScreen.retryingText,
-              theme.colorScheme.onSurface,
-            ),
+            Icon(Icons.error, size: 28, color: theme.colorScheme.error),
+            notSentText(problems),
+            theme.colorScheme.error,
+          ),
+          QueueStatus.retrying => (const Icon(Icons.wifi_off, size: 28, color: amber), HomeScreen.retryingText, amber),
           QueueStatus.sending => (
-              const SizedBox.square(dimension: 28, child: CircularProgressIndicator(strokeWidth: 3)),
-              HomeScreen.sendingText,
-              theme.colorScheme.primary,
-            ),
-          QueueStatus.idle => (
-              Icon(Icons.schedule, size: 32, color: theme.colorScheme.outline),
-              'Waiting to send',
-              theme.colorScheme.onSurface,
-            ),
+            const SizedBox.square(dimension: 24, child: CircularProgressIndicator(strokeWidth: 3)),
+            HomeScreen.sendingText,
+            theme.colorScheme.primary,
+          ),
+          QueueStatus.idle => (const Icon(Icons.schedule, size: 28, color: amber), 'Waiting to send', amber),
         };
 
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+        final details = theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(width: 32, height: 32, child: Center(child: icon)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(width: 36, child: Center(child: icon)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      text,
-                      style: theme.textTheme.titleLarge?.copyWith(color: color, fontWeight: FontWeight.w600),
+                  Text(
+                    text,
+                    style: theme.textTheme.titleLarge?.copyWith(color: color, fontWeight: FontWeight.w600),
+                  ),
+                  if (waiting > 0) Text('$waiting waiting', style: details),
+                  if (waiting > 0 && problems > 0)
+                    Text(
+                      notSentText(problems),
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: theme.colorScheme.error,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
+                  ValueListenableBuilder<SentCount>(
+                    valueListenable: queue.sent,
+                    builder: (context, sent, _) {
+                      final last = sent.lastSentAt;
+                      return Wrap(
+                        spacing: 8,
+                        children: [
+                          Text('Sent today: ${sent.today(DateTime.now())}', style: details),
+                          if (last != null) Text('· last ${_clock(last)}', style: details),
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),
-              if (waiting > 0)
-                Padding(
-                  padding: const EdgeInsets.only(left: 48, top: 2),
-                  child: Text('$waiting waiting', style: theme.textTheme.titleMedium),
-                ),
-              if (waiting > 0 && problems > 0)
-                Padding(
-                  padding: const EdgeInsets.only(left: 48, top: 2),
-                  child: Text(
-                    notSentText(problems),
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(color: theme.colorScheme.error, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              const Divider(height: 24),
-              ValueListenableBuilder<SentCount>(
-                valueListenable: queue.sent,
-                builder: (context, sent, _) {
-                  final last = sent.lastSentAt;
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Sent today: ${sent.today(DateTime.now())}',
-                        style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
-                      ),
-                      if (last != null) Text('Last sent ${_clock(last)}', style: theme.textTheme.bodyLarge),
-                    ],
-                  );
-                },
-              ),
-            ],
-          ),
+            ),
+          ],
         );
       },
     );
   }
 }
 
-class _StaffRow extends StatelessWidget {
-  const _StaffRow({required this.name, required this.onChange});
+/// The phone's name and who is scanning, with Change when the server has names.
+class _WhoRow extends StatelessWidget {
+  const _WhoRow({required this.deviceName, required this.staffName, required this.onChange});
 
-  final String name;
+  /// Between the phone name and the staff name.
+  static const separator = '  ·  ';
+
+  final String deviceName;
+  final String? staffName;
   final VoidCallback? onChange;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.surfaceContainerLow,
+    final style = theme.textTheme.titleMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    final staffStyle = style?.copyWith(color: theme.colorScheme.onSurface, fontWeight: FontWeight.w600);
+    if (deviceName.isEmpty && staffName == null) {
+      return const SizedBox.shrink();
+    }
+    // One text, so the two names share the whole row and are cut only when the row is full.
+    final names = Text.rich(
+      TextSpan(
+        style: style,
+        children: [
+          if (deviceName.isNotEmpty) TextSpan(text: deviceName),
+          if (deviceName.isNotEmpty && staffName != null) const TextSpan(text: separator),
+          if (staffName != null) TextSpan(text: staffName, style: staffStyle),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+    return InkWell(
+      onTap: onChange,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-        child: Row(
-          children: [
-            Icon(Icons.person_outline, size: 32, color: theme.colorScheme.primary),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Scanning', style: theme.textTheme.labelLarge),
-                  Text(name, style: theme.textTheme.titleLarge),
-                ],
-              ),
-            ),
-            TextButton(onPressed: onChange, child: const Text('Change')),
-          ],
+        padding: EdgeInsets.fromLTRB(16, 4, onChange == null ? 16 : 8, 4),
+        child: SizedBox(
+          height: 48,
+          child: Row(
+            children: [
+              Icon(Icons.smartphone, size: 24, color: theme.colorScheme.onSurfaceVariant),
+              const SizedBox(width: 8),
+              Expanded(child: names),
+              if (onChange != null) TextButton(onPressed: onChange, child: const Text('Change')),
+            ],
+          ),
         ),
       ),
     );
@@ -596,8 +706,10 @@ class _ProblemTile extends StatelessWidget {
                     Flexible(
                       child: Text(
                         'Problem',
-                        style: theme.textTheme.titleMedium
-                            ?.copyWith(color: theme.colorScheme.error, fontWeight: FontWeight.w600),
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: theme.colorScheme.error,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
