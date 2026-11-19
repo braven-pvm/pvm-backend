@@ -1,6 +1,6 @@
 import { customerStatuses, type CustomerStatus } from "../../../../src/sales-report";
 import { FilterBar as SearchBar, FilterChips, Notice, Panel, TextField } from "../../../../src/ui";
-import { byDimension, customerMeta, customers } from "../data";
+import { customerBundle } from "../data";
 import { drillHref, readContext, SalesFrame, sectionHref } from "../frame";
 import { basePath, requireReportUser, single, type Search } from "../parts";
 import { customerColumns, customerValues, FigureTable, figureValues, MoreLink, pathKey, readOrder, sortRows } from "../views";
@@ -22,8 +22,8 @@ export default async function SalesCustomersPage({ searchParams }: { searchParam
 
   let data;
   try {
-    const [rows, reps] = await Promise.all([customers(state), byDimension(state, "rep")]);
-    data = { rows, meta: await customerMeta(state, reps.rows) };
+    const bundle = await customerBundle(state);
+    data = { rows: bundle, meta: bundle.meta };
   } catch {
     data = undefined;
   }

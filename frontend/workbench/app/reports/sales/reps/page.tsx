@@ -1,5 +1,5 @@
 import { Notice, Panel } from "../../../../src/ui";
-import { byDimension, customers, lastTwelveMonths, parentOf } from "../data";
+import { customerBundle } from "../data";
 import { drillHref, readContext, SalesFrame, sectionHref } from "../frame";
 import { basePath, requireReportUser, type Search } from "../parts";
 import { customerCounts, FigureTable, pathKey, rand, readOrder, sparkColumn, StatusPill } from "../views";
@@ -19,9 +19,12 @@ export default async function SalesRepsPage({ searchParams }: { searchParams: Pr
 
   let data;
   try {
-    const [reps, months, customerRows] = await Promise.all([byDimension(state, "rep"), lastTwelveMonths(state, "rep"), customers(state)]);
-    const repOf = await parentOf(state, "rep", "customer", reps.rows, "key");
-    data = { reps, months, counts: customerCounts(customerRows.rows, repOf) };
+    const bundle = await customerBundle(state);
+    data = {
+      reps: { rows: bundle.reps, current: bundle.current, previous: bundle.previous, message: bundle.message },
+      months: bundle.repMonths,
+      counts: customerCounts(bundle.rows, bundle.repOf),
+    };
   } catch {
     data = undefined;
   }

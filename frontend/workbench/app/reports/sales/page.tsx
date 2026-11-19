@@ -1,5 +1,5 @@
 import { ButtonLink, Columns, Delta, Notice, Panel, StatTile, TileGrid } from "../../../src/ui";
-import { byDimension, customerMeta, customers, financialYear, lastTwelveMonths, total } from "./data";
+import { byDimension, customerBundle, financialYear, total } from "./data";
 import { drillHref, readContext, SalesFrame, sectionHref } from "./frame";
 import { basePath, requireReportUser, single, type Search } from "./parts";
 import { against, CallList, lastOrderText, FigureBars, FigureTable, MoverList, readOrder, short, sparkColumn, YearChart } from "./views";
@@ -17,16 +17,16 @@ export default async function SalesOverviewPage({ searchParams }: { searchParams
 
   let data;
   try {
-    const [reps, repMonths, groups, customerRows, units, year] = await Promise.all([
-      byDimension(state, "rep"),
-      lastTwelveMonths(state, "rep"),
-      byDimension(state, "itemGroup"),
-      customers(state),
-      total(state, "quantity"),
-      financialYear(state),
-    ]);
-    const meta = await customerMeta(state, reps.rows);
-    data = { reps, repMonths, groups, customerRows, units, year, meta };
+    const [bundle, groups, units, year] = await Promise.all([customerBundle(state), byDimension(state, "itemGroup"), total(state, "quantity"), financialYear(state)]);
+    data = {
+      reps: { rows: bundle.reps, current: bundle.current, previous: bundle.previous, message: bundle.message },
+      repMonths: bundle.repMonths,
+      groups,
+      customerRows: bundle,
+      units,
+      year,
+      meta: bundle.meta,
+    };
   } catch {
     data = undefined;
   }

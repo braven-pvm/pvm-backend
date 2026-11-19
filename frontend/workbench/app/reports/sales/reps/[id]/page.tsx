@@ -1,5 +1,5 @@
 import { Columns, Notice, Panel, StatTile, TabNav, TileGrid } from "../../../../../src/ui";
-import { byDimension, customers, financialYear } from "../../data";
+import { byDimension, customerBundle, financialYear } from "../../data";
 import { drillHref, readContext, SalesFrame, sectionHref } from "../../frame";
 import { basePath, requireReportUser, single, type Search } from "../../parts";
 import { against, breakdownTabs, customerColumns, customerValues, FigureBars, FigureTable, keyOf, pathKey, readOrder, short, YearChart } from "../../views";
@@ -26,14 +26,13 @@ export default async function SalesRepPage({ params, searchParams }: { params: P
 
   let data;
   try {
-    const [rep, customerRows, groups, products, year] = await Promise.all([
-      byDimension(state, "rep"),
-      customers(state),
+    const [bundle, groups, products, year] = await Promise.all([
+      customerBundle(state),
       byDimension(state, "itemGroup"),
       by === "products" ? byDimension(state, "product") : Promise.resolve(undefined),
       financialYear(state),
     ]);
-    data = { rep, customerRows, groups, products, year };
+    data = { rep: { rows: bundle.reps, current: bundle.current, previous: bundle.previous, message: bundle.message }, customerRows: bundle, groups, products, year };
   } catch {
     data = undefined;
   }

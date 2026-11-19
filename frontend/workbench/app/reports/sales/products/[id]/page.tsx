@@ -1,6 +1,6 @@
 import { formatFigure } from "../../../../../src/sales-report";
 import { Columns, Notice, Panel, StatTile, TabNav, TileGrid } from "../../../../../src/ui";
-import { byDimension, customerMeta, customers, financialYear, parentOf, total } from "../../data";
+import { byDimension, customerBundle, financialYear, total, twoLevels } from "../../data";
 import { drillHref, readContext, SalesFrame, sectionHref } from "../../frame";
 import { basePath, requireReportUser, single, type Search } from "../../parts";
 import {
@@ -43,17 +43,25 @@ export default async function SalesProductPage({ params, searchParams }: { param
 
   let data;
   try {
-    const [product, units, reps, customerRows, customerGroups, groups, year] = await Promise.all([
-      byDimension(state, "product"),
+    const [bundle, tree, units, customerGroups, year] = await Promise.all([
+      customerBundle(state),
+      twoLevels(state, "itemGroup", "product"),
       total(state, "quantity"),
-      byDimension(state, "rep"),
-      customers(state),
       byDimension(state, "customerGroup"),
-      byDimension(state, "itemGroup"),
       financialYear(state),
     ]);
-    const [meta, repOf] = await Promise.all([customerMeta(state, reps.rows), parentOf(state, "rep", "customer", reps.rows)]);
-    data = { product, units, reps, customerRows, customerGroups, group: groups.rows[0]?.label, year, meta, repOf };
+    const repLabels = new Map(bundle.reps.map((row) => [row.key, row.label]));
+    data = {
+      product: { rows: tree.children, current: bundle.current, previous: bundle.previous, message: bundle.message },
+      units,
+      reps: { rows: bundle.reps },
+      customerRows: bundle,
+      customerGroups,
+      group: tree.parents[0]?.label,
+      year,
+      meta: bundle.meta,
+      repOf: new Map([...bundle.repOf].map(([customer, rep]) => [customer, repLabels.get(rep) ?? "No rep"])),
+    };
   } catch {
     data = undefined;
   }

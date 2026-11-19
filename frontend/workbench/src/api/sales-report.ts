@@ -73,6 +73,11 @@ export function getPivot(query: URLSearchParams) {
   return send<Pivot>(`pivot?${query}`, {}, "the sales report");
 }
 
+/** The channels of the channel table, then "Other". It reads no sales lines. */
+export async function getChannels(): Promise<string[]> {
+  return (await send<string[]>("channels", {}, "the channels")).data ?? [];
+}
+
 export function getMeta() {
   return send<SalesMeta>("meta", {}, "the sales months");
 }

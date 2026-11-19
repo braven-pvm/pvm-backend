@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { getLabels, getMeta, listSavedFilters, type SavedFilter } from "../../../src/api/sales-report";
+import { getChannels, getLabels, getMeta, listSavedFilters, type SavedFilter } from "../../../src/api/sales-report";
 import {
   dimensionLabel,
   dimensions,
@@ -14,8 +14,7 @@ import {
   type ReportState,
   type TrailStep,
 } from "../../../src/sales-report";
-import { BackLink, ButtonLink, FilterChips, Notice, PageFrame, PageHeader, Stack, TabNav, type MultiSelectOption } from "../../../src/ui";
-import { byDimension } from "./data";
+import { BackLink, buttonClass, FilterChips, Notice, PageFrame, PageHeader, Stack, TabNav, type MultiSelectOption } from "../../../src/ui";
 import { FilterBar } from "./filter-bar";
 import { pageHref } from "./links";
 import { basePath, freshness, isStale, single, type Search } from "./parts";
@@ -109,7 +108,7 @@ export async function SalesFrame({ context, path, tab, back, eyebrow, title, des
   const fixedAll = [...new Set([...fixed, ...trail.map((step) => step.dimension)])];
   const [selected, channelRows, meta] = await Promise.all([
     selectedLabels(state),
-    byDimension({ ...state, include: { ...state.include, channel: [] } }, "channel").catch(() => ({ rows: [] })),
+    getChannels().catch(() => []),
     getMeta().catch(() => ({ data: undefined })),
   ]);
   const dataTo = meta.data?.dataTo;
@@ -128,7 +127,10 @@ export async function SalesFrame({ context, path, tab, back, eyebrow, title, des
         actions={
           <Stack direction="row" wrap align="end" gap="xs">
             <SavedFilters path={path} filters={saved} current={current} query={savedQuery.toString()} />
-            <ButtonLink href={`${basePath}/export?${downloadQuery}`}>Download Excel</ButtonLink>
+            {/* A plain link: a prefetch of the export would read the whole report. */}
+            <a className={buttonClass("secondary")} href={`${basePath}/export?${downloadQuery}`} download>
+              Download Excel
+            </a>
           </Stack>
         }
       />
@@ -164,7 +166,7 @@ export async function SalesFrame({ context, path, tab, back, eyebrow, title, des
           state={state}
           selected={selected}
           presets={presets}
-          channels={channelRows.rows.map((row) => row.key).sort((a, b) => (a === "Other" ? 1 : b === "Other" ? -1 : a.localeCompare(b)))}
+          channels={channelRows}
           trail={trail}
           saved={current?.id}
           fixed={fixedAll}
