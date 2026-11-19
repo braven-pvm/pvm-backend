@@ -71,13 +71,12 @@ public static class DocumentReviewEndpoints
         int? page,
         CancellationToken cancellationToken)
     {
-        var query = dbContext.CapturedDocuments.AsNoTracking();
-
-        if (!string.IsNullOrWhiteSpace(invoice))
-        {
-            var reference = invoice.Trim().ToUpperInvariant();
-            query = query.Where(item => item.MatchedReference != null && item.MatchedReference.ToUpper() == reference);
-        }
+        // An invoice number finds a document in any state: filed to it, read from its paper, or
+        // among its candidates. A paper with two invoice numbers is found by both.
+        var query = (string.IsNullOrWhiteSpace(invoice)
+                ? dbContext.CapturedDocuments
+                : DocumentSearch.ByInvoice(dbContext, invoice))
+            .AsNoTracking();
 
         if (!string.IsNullOrWhiteSpace(client))
         {
