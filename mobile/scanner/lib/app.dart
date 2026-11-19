@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'device/device_session.dart';
 import 'scanner/document_scanner.dart';
-import 'screens/batch_screen.dart';
+import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/setup_screen.dart';
 import 'settings/app_settings.dart';
@@ -61,7 +61,7 @@ class ScannerApp extends StatelessWidget {
   }
 }
 
-/// Chooses the screen: setup (no device key) or the batch screen.
+/// Chooses the screen: setup (no device key) or the start screen.
 class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.services});
 
@@ -138,7 +138,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       case SessionPhase.needsSetup:
         return SetupScreen(session: _session, message: _session.setupMessage);
       case SessionPhase.ready:
-        return BatchScreen(
+        return HomeScreen(
           // A new enrolment opens a new queue: start the screen afresh.
           key: ObjectKey(_session.queue),
           session: _session,

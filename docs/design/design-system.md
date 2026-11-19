@@ -41,7 +41,7 @@ Rules that apply to every screen:
   - Content: [CodeBlock](#codeblock), [PdfFrame](#pdfframe), [QrCode](#qrcode).
   - Status: [StatusBadge](#statusbadge), [Notice](#notice), [Spinner](#spinner), [EmptyState](#emptystate).
   - Forms: [Fields](#fields), [FileDrop](#filedrop).
-  - Lists: [DataTable](#datatable), [FilterChips](#filterchips), [FilterBar](#filterbar), [Pagination](#pagination).
+  - Lists: [DataTable](#datatable), [FilterChips](#filterchips), [FilterBar](#filterbar), [Pagination](#pagination), [Thumbnail](#thumbnail).
   - Navigation: [TabNav and Tabs](#tabs), [BackLink](#backlink), [RecordNav](#recordnav), [Stepper](#stepper).
   - Records: [KeyValueList](#keyvaluelist), [Timeline](#timeline).
   - Dashboards: [AttentionList](#attentionlist), [StatTile](#stattile), [Tile](#tile), [BarList](#barlist).
@@ -724,6 +724,19 @@ Use at most 4 fields. The button is "Apply filters".
 "1–50 of 312" and the links "Previous page" and "Next page". Leave `total` out
 when the API does not return it. Show only the links that apply.
 
+### Thumbnail
+
+A 48 × 64 portrait preview of a scanned page in a list row, such as a General
+scan (`/documents/general`). Without a picture it shows a document icon, so the
+rows stay the same height.
+
+| Prop | Notes |
+| --- | --- |
+| `src` | A workbench URL that serves the JPEG, such as `/documents/{id}/thumbnail`. Never a backend URL. Leave it out when the API says there is none |
+| `alt` | Names the picture: "First page of Fleet licence" |
+
+Put it in the first cell, before the record's name, inside the row link.
+
 ---
 
 ## Navigation
@@ -743,7 +756,10 @@ Labels are short nouns. At most 6 tabs.
 ### BackLink
 
 The link from a Record or Task page up to its list. The label names the list:
-"Shoprite invoices". Never "Back". It goes above the `PageHeader`.
+"Shoprite invoices". Never "Back" alone. It goes above the `PageHeader`. On a
+`ViewerPage`, where one record can be opened from more than one list, the
+label is "Back to" plus the list it returns to: "Back to the review list",
+"Back to Documents".
 
 ### RecordNav
 

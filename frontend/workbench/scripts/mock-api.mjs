@@ -321,10 +321,11 @@ function searchDocuments(url) {
   const invoice = url.searchParams.get("invoice")?.toUpperCase();
   const client = url.searchParams.get("client")?.toLowerCase();
   const state = url.searchParams.get("state")?.toLowerCase();
-  const type = url.searchParams.get("type")?.toUpperCase();
+  // Like the API: without a type, the delivery documents (POD) only.
+  const type = url.searchParams.get("type")?.toUpperCase() || "POD";
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
-  const items = (empty ? [] : documents)
+  const items = (empty ? [] : allDocuments())
     .filter((item) => !invoice || item.matchedReference?.toUpperCase() === invoice)
     .filter((item) => !client || item.matchedCustomerName?.toLowerCase().includes(client))
     .filter((item) => !state || item.state.toLowerCase() === state)
@@ -346,14 +347,26 @@ function reviewList() {
 
 // A one-page PDF that names the document, so the viewer has something to show.
 function documentPdf(id) {
-  const document = documents.find((item) => item.id === id);
-  const lines = [
+  const document = allDocuments().find((item) => item.id === id);
+  if (document?.documentType === "GENERAL") {
+    return simplePdf([
+      (document.title ?? document.autoTitle ?? "Scanned paper").toUpperCase(),
+      document.summary ?? "A paper kept for the records.",
+      `Date: ${document.documentDate ?? "-"}`,
+      `Words: ${document.searchWords.join(", ") || "-"}`,
+      `Mock document ${id.slice(-4)}`,
+    ]);
+  }
+  return simplePdf([
     "PROOF OF DELIVERY",
     `Invoice: ${document?.extraction?.invoiceNumbers?.join(", ") || document?.matchedReference || "unreadable"}`,
     `Client: ${document?.extraction?.clientName ?? "-"}`,
     "Received in good order. Signed: ________",
     `Mock document ${id.slice(-4)}`,
-  ];
+  ]);
+}
+
+function simplePdf(lines) {
   const text = lines.map((line, index) => `BT /F1 ${index === 0 ? 20 : 12} Tf 60 ${760 - index * 32} Td (${line.replace(/[()\\]/g, "")}) Tj ET`).join("\n");
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
@@ -392,6 +405,72 @@ const scannerStaff = [
   { id: "57aff000-0000-4000-8000-000000000003", name: "Sipho", active: false, createdAt: daysAgo(30), updatedAt: daysAgo(7) },
 ];
 const scannerNotConfigured = () => problem(500, "Scanner setup is not configured: set DocumentCapture:DeviceApiBaseUrl");
+// General scans (design 6.12): typed title or not, read by Claude or not, with
+// and without a thumbnail, from two phones, and one still being read.
+const generalDocuments = [
+  generalRecord("6e4e0000-0000-4000-8000-000000000001", { uploaded: 40, device: "Dispatch phone 1", staff: "Thabo", title: "Fleet licence renewal", note: "Keep for the SARS audit. Original is in the blue file.", autoTitle: "Vehicle licence renewal notice, ND 123-456", summary: "Licence renewal notice for the delivery truck ND 123-456, due 30 November.", documentDate: daysAgo(3).slice(0, 10), searchWords: ["licence", "ND 123-456", "truck", "renewal"], thumbnail: true }),
+  generalRecord("6e4e0000-0000-4000-8000-000000000002", { uploaded: 3 * 60, device: "Dispatch phone 1", staff: "Anna", autoTitle: "Eskom electricity statement, October 2026", summary: "Electricity account for the Middelburg depot for October.", documentDate: daysAgo(18).slice(0, 10), searchWords: ["Eskom", "electricity", "4410 2290 11", "Middelburg"], thumbnail: true }),
+  generalRecord("6e4e0000-0000-4000-8000-000000000003", { uploaded: 26 * 60, device: "Driver phone Bongani", staff: "Sipho", title: "Diesel slip Shell Middelstad", note: "Paid cash", autoTitle: "Shell fuel receipt", summary: "Fuel receipt for 80 litres of diesel.", documentDate: daysAgo(1).slice(0, 10), searchWords: ["Shell", "diesel", "fuel"] }),
+  generalRecord("6e4e0000-0000-4000-8000-000000000004", { uploaded: 2 * 24 * 60, device: "Dispatch phone 1", staff: "Thabo", note: "Could not read this one, very faded", thumbnail: true }),
+  generalRecord("6e4e0000-0000-4000-8000-000000000005", { uploaded: 3, device: "Driver phone Bongani", title: "Signed lease page 4", state: "Processing" }),
+];
+
+function generalRecord(id, options) {
+  const state = options.state ?? "Filed";
+  return {
+    ...documentRecord(id, state, null, { uploaded: options.uploaded, device: options.device, staff: options.staff }),
+    documentType: "GENERAL",
+    title: options.title ?? null,
+    note: options.note ?? null,
+    autoTitle: options.autoTitle ?? null,
+    summary: options.summary ?? null,
+    documentDate: options.documentDate ?? null,
+    searchWords: options.searchWords ?? [],
+    hasThumbnail: options.thumbnail ?? false,
+    scannerDeviceId: scannerDevices.find((device) => device.name === options.device)?.id ?? null,
+    scannerStaffId: scannerStaff.find((staff) => staff.name === options.staff)?.id ?? null,
+    // The general delete rule: Filed or Failed, or stuck. A fresh one is still being read.
+    canDelete: state === "Filed" || state === "Failed",
+  };
+}
+
+const allDocuments = () => [...documents, ...generalDocuments];
+
+const generalFields = ["id", "documentType", "state", "title", "note", "autoTitle", "summary", "documentDate", "searchWords", "hasThumbnail", "pageCount", "uploadedBy", "uploadedAt", "scannerDeviceId", "scannerDeviceName", "scannerStaffId", "scannerStaffName"];
+
+function generalList(url) {
+  const q = url.searchParams.get("q")?.trim().toLowerCase();
+  const device = url.searchParams.get("device");
+  const staff = url.searchParams.get("staff");
+  const from = url.searchParams.get("from");
+  const to = url.searchParams.get("to");
+  const items = (empty ? [] : generalDocuments)
+    .filter((item) => !q || [item.title, item.note, item.autoTitle, item.summary, ...item.searchWords].some((text) => text?.toLowerCase().includes(q)))
+    .filter((item) => !device || item.scannerDeviceId === device)
+    .filter((item) => !staff || item.scannerStaffId === staff)
+    .filter((item) => !from || Date.parse(item.uploadedAt) >= Date.parse(from))
+    .filter((item) => !to || Date.parse(item.uploadedAt) < Date.parse(to))
+    .sort((a, b) => Date.parse(b.uploadedAt) - Date.parse(a.uploadedAt))
+    .map((item) => Object.fromEntries(generalFields.map((field) => [field, item[field]])));
+  return { items, page: 1, pageSize: 50, total: items.length };
+}
+
+function generalFilters() {
+  const source = empty ? [] : generalDocuments;
+  const unique = (pairs) =>
+    [...new Map(pairs.filter(([id]) => id).map(([id, name]) => [id, { id, name }])).values()].sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    devices: unique(source.map((item) => [item.scannerDeviceId, item.scannerDeviceName])),
+    staff: unique(source.map((item) => [item.scannerStaffId, item.scannerStaffName])),
+  };
+}
+
+// A 96 x 128 JPEG that looks like a page, for every thumbnail.
+const thumbnailJpeg = Buffer.from(
+  "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",
+  "base64",
+);
+
 const validScannerName = (value) => typeof value === "string" && value.trim().length > 0 && value.trim().length <= 100;
 
 // A new setup code: 32 random bytes in base64url (43 characters), valid for 15 minutes.
@@ -525,15 +604,24 @@ const routes = {
   "POST /api/exceptions/*": () => ({}),
   // Documents. The review routes come before "/:id" so they match first.
   "GET /api/documents": (context) => searchDocuments(context.url),
-  "GET /api/documents/types": () => [{ code: "POD", displayName: "Proof of delivery" }],
+  "GET /api/documents/types": () => [
+    { code: "POD", displayName: "Proof of delivery" },
+    { code: "GENERAL", displayName: "General document" },
+  ],
+  "GET /api/documents/general": (context) => generalList(context.url),
+  "GET /api/documents/general/filters": () => generalFilters(),
   "GET /api/documents/review": () => reviewList(),
   "GET /api/documents/review/invoice-search": (context) => {
     const q = context.url.searchParams.get("q")?.trim().toLowerCase();
     if (!q) return problem(400, "The query 'q' is required.");
     return invoicePool.filter((invoice) => invoice.referenceNumber.toLowerCase().startsWith(q) || invoice.customerName.toLowerCase().includes(q));
   },
-  "GET /api/documents/:id": (id) => documents.find((item) => item.id === id) ?? problem(404, "Not found."),
-  "GET /api/documents/:id/file": (id) => (documents.some((item) => item.id === id) ? { __raw: documentPdf(id), contentType: "application/pdf", disposition: `inline; filename="POD-${id}.pdf"` } : problem(404, "Not found.")),
+  "GET /api/documents/:id": (id) => allDocuments().find((item) => item.id === id) ?? problem(404, "Not found."),
+  "GET /api/documents/:id/file": (id) => (allDocuments().some((item) => item.id === id) ? { __raw: documentPdf(id), contentType: "application/pdf", disposition: `inline; filename="document-${id}.pdf"` } : problem(404, "Not found.")),
+  "GET /api/documents/:id/thumbnail": (id) =>
+    generalDocuments.some((item) => item.id === id && item.hasThumbnail)
+      ? { __raw: thumbnailJpeg, contentType: "image/jpeg", disposition: "inline" }
+      : problem(404, "The document has no thumbnail."),
   // The Failed document answers 409, to show what happens when someone else resolved it first.
   "POST /api/documents/:id/file-to": (id, context) => {
     const item = documents.find((document) => document.id === id);
@@ -564,11 +652,14 @@ const routes = {
   // Deletes answer success and change nothing. The second needs-review document answers 409
   // document-filed, as if someone filed it meanwhile; filed ones answer the matching 409.
   "POST /api/documents/:id/delete": (id, context) => {
-    const item = documents.find((document) => document.id === id);
+    const item = allDocuments().find((document) => document.id === id);
     if (!item) return problem(404, "The document was not found.");
     const reason = String(context.json?.reason ?? "").trim();
     if (!reason || reason.length > 500) return problem(400, "'reason' is required, at most 500 characters.");
     if (item.acumaticaAttachedAt) return problem(409, "The PDF is already attached to the invoice in Acumatica; the document cannot be deleted.", "document-attached");
+    if (item.documentType === "GENERAL") {
+      return item.canDelete ? { documentId: id, deleted: true, warning: null } : problem(409, "The document was uploaded recently and is still processing. Wait until processing ends.", "document-processing");
+    }
     if (item.state === "Filed" || id.endsWith("0004")) return problem(409, "The document is filed. Send it back to review first.", "document-filed");
     if (!item.canDelete) return problem(409, "The document was uploaded recently and is still processing. Wait until processing ends.", "document-processing");
     return { documentId: id, deleted: true, warning: null };

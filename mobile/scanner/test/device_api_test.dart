@@ -247,6 +247,113 @@ void main() {
       expect(bodies[1], contains('name="clientDocumentId"\r\n\r\n$clientDocumentId'));
     });
 
+    test('sends_title_note_and_thumbnail_when_given', () async {
+      String? body;
+      final client = MockClient((request) async {
+        body = latin1.decode(request.bodyBytes);
+        return http.Response(jsonEncode({'documentId': 'd-4', 'state': 'Received'}), 201);
+      });
+      final thumbnail = File('${root.path}/thumb.jpg')..writeAsBytesSync([0xFF, 0xD8, 0xFF, 0x41]);
+
+      await api(client).upload(
+        pdf: pdf,
+        clientDocumentId: clientDocumentId,
+        documentType: 'GENERAL',
+        pageCount: 1,
+        title: 'Lease',
+        note: 'Signed',
+        thumbnail: thumbnail,
+      );
+
+      expect(body, contains('name="title"\r\n\r\nLease'));
+      expect(body, contains('name="note"\r\n\r\nSigned'));
+      expect(body, contains('name="thumbnail"; filename="$clientDocumentId.jpg"'));
+      expect(body, contains('content-type: image/jpeg'));
+    });
+
+    test('without_title_note_or_thumbnail_sends_none_of_those_fields', () async {
+      String? body;
+      final client = MockClient((request) async {
+        body = latin1.decode(request.bodyBytes);
+        return http.Response('', 201);
+      });
+
+      await upload(api(client));
+
+      expect(body, isNot(contains('name="title"')));
+      expect(body, isNot(contains('name="note"')));
+      expect(body, isNot(contains('name="thumbnail"')));
+    });
+
+    for (final detail in [
+      "The form field 'title' is only for the document type GENERAL.",
+      "Unknown form field 'note'.",
+      "The form field 'thumbnail' is not supported.",
+    ]) {
+      test('a_400_naming_a_new_field_sends_once_more_without_title_note_and_thumbnail: $detail', () async {
+        final bodies = <String>[];
+        final client = MockClient((request) async {
+          bodies.add(latin1.decode(request.bodyBytes));
+          return bodies.length == 1
+              ? problem(400, detail)
+              : http.Response(jsonEncode({'documentId': 'd-5', 'state': 'Received'}), 201);
+        });
+        final thumbnail = File('${root.path}/thumb.jpg')..writeAsBytesSync([0xFF, 0xD8, 0xFF, 0x41]);
+
+        final outcome = await api(client).upload(
+          pdf: pdf,
+          clientDocumentId: clientDocumentId,
+          documentType: 'GENERAL',
+          pageCount: 1,
+          staffId: 'staff-1',
+          title: 'Lease',
+          note: 'Signed',
+          thumbnail: thumbnail,
+        );
+
+        expect(outcome, isA<UploadAccepted>());
+        expect(bodies, hasLength(2));
+        expect(bodies[0], contains('name="title"'));
+        for (final field in ['title', 'note', 'thumbnail']) {
+          expect(bodies[1], isNot(contains('name="$field"')));
+        }
+        expect(bodies[1], contains('name="staffId"\r\n\r\nstaff-1'));
+        expect(bodies[1], contains('name="clientDocumentId"\r\n\r\n$clientDocumentId'));
+      });
+    }
+
+    test('a_400_when_no_new_field_was_sent_is_not_sent_again', () async {
+      var calls = 0;
+      final client = MockClient((_) async {
+        calls++;
+        return problem(400, "Unknown form field 'note'.");
+      });
+
+      final outcome = await upload(api(client));
+
+      expect(outcome, isA<UploadRejected>());
+      expect(calls, 1);
+    });
+
+    test('a_second_400_after_the_send_without_new_fields_is_rejected', () async {
+      var calls = 0;
+      final client = MockClient((_) async {
+        calls++;
+        return problem(400, "The form field 'note' must be at most 1000 characters.");
+      });
+
+      final outcome = await api(client).upload(
+        pdf: pdf,
+        clientDocumentId: clientDocumentId,
+        documentType: 'GENERAL',
+        pageCount: 1,
+        note: 'Signed',
+      );
+
+      expect(outcome, isA<UploadRejected>());
+      expect(calls, 2);
+    });
+
     test('413_is_rejected_as_too_large', () async {
       final client = MockClient((_) async => problem(413, 'Too large.'));
 

@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Pvm.Application.Documents;
@@ -27,17 +28,31 @@ public sealed record UploaderResolution(DocumentUploader? Uploader, IResult? Err
 
 /// <summary>
 /// The one upload pipeline behind <c>POST /api/documents</c> and <c>POST /api/device/documents</c>
-/// (design 6.1, 6.10): the multipart contract, the idempotent client document ID, the size limit,
-/// the PDF check, then the blob, and the row and its message in one transaction.
+/// (design 6.1, 6.10, 6.12): the multipart contract, the idempotent client document ID, the size
+/// limit, the PDF check, then the blob (and the optional thumbnail), and the row and its message in
+/// one transaction.
 /// </summary>
+/// <remarks>
+/// Optional fields: <c>title</c> (at most 120 characters, GENERAL only; 400 for another type),
+/// <c>note</c> (at most 1000 characters, any type), and <c>thumbnail</c> (a JPEG of at most
+/// <see cref="MaxThumbnailBytes"/>). Blank text counts as missing. A thumbnail that is too large
+/// or not a JPEG is left out and logged; the document itself is still stored, so a scan is never
+/// lost for its preview.
+/// </remarks>
 public sealed class DocumentIntakeService(
     PvmDbContext dbContext,
     IIntegrationCommandQueue commandQueue,
     IDocumentStore documentStore,
     IEnumerable<IDocumentType> documentTypes,
-    IOptions<DocumentCaptureOptions> options)
+    IOptions<DocumentCaptureOptions> options,
+    ILogger<DocumentIntakeService> logger)
 {
+    /// <summary>The largest thumbnail the upload keeps: 200 KB.</summary>
+    public const int MaxThumbnailBytes = 200 * 1024;
+
     private static readonly byte[] PdfSignature = Encoding.ASCII.GetBytes("%PDF-");
+
+    private static readonly byte[] JpegSignature = [0xFF, 0xD8, 0xFF];
 
     /// <param name="resolveUploader">
     /// Called after the form is valid and the client document ID is new; it may refuse the upload
@@ -77,6 +92,23 @@ public sealed class DocumentIntakeService(
             return BadRequest($"The document type '{form["documentType"]}' is not known.");
         }
 
+        var title = GeneralDocumentFields.Clean(form["title"].ToString());
+        var note = GeneralDocumentFields.Clean(form["note"].ToString());
+        if (title is not null && !DocumentTypeCodes.IsGeneral(documentType.Code))
+        {
+            return BadRequest("The form field 'title' is only for the document type GENERAL.");
+        }
+
+        if (title is { Length: > GeneralDocumentFields.MaxTitleLength })
+        {
+            return BadRequest($"The form field 'title' must be at most {GeneralDocumentFields.MaxTitleLength} characters.");
+        }
+
+        if (note is { Length: > GeneralDocumentFields.MaxNoteLength })
+        {
+            return BadRequest($"The form field 'note' must be at most {GeneralDocumentFields.MaxNoteLength} characters.");
+        }
+
         var existing = await FindAsync(clientDocumentId, cancellationToken);
         if (existing is not null)
         {
@@ -114,6 +146,26 @@ public sealed class DocumentIntakeService(
             stored = await documentStore.SaveAsync(blobPath, pdf, cancellationToken);
         }
 
+        string? thumbnailPath = null;
+        var thumbnail = form.Files.GetFile("thumbnail");
+        if (thumbnail is not null && thumbnail.Length > 0)
+        {
+            if (thumbnail.Length <= MaxThumbnailBytes && await StartsWithAsync(thumbnail, JpegSignature, cancellationToken))
+            {
+                thumbnailPath = ThumbnailPath(blobPath);
+                await using var jpeg = thumbnail.OpenReadStream();
+                await documentStore.SaveAsync(thumbnailPath, jpeg, "image/jpeg", cancellationToken);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "document.upload.thumbnail-ignored DocumentId={DocumentId} SizeBytes={SizeBytes} Reason={Reason}",
+                    documentId,
+                    thumbnail.Length,
+                    thumbnail.Length > MaxThumbnailBytes ? "too-large" : "not-jpeg");
+            }
+        }
+
         var document = new CapturedDocumentEntity
         {
             Id = documentId,
@@ -129,6 +181,10 @@ public sealed class DocumentIntakeService(
             ScannerDeviceId = uploader.ScannerDeviceId,
             ScannerStaffId = uploader.ScannerStaffId,
             ScannerStaffName = uploader.ScannerStaffName,
+            Title = title,
+            Note = note,
+            SearchText = GeneralDocumentFields.SearchText(title, note),
+            ThumbnailBlobPath = thumbnailPath,
             UpdatedAt = now
         };
 
@@ -158,20 +214,29 @@ public sealed class DocumentIntakeService(
             return Results.Ok(Receipt(winner));
         }
 
-        return Results.Created($"/api/documents/{documentId:D}", Receipt(document));
+        return Results.Created(
+            $"/api/documents/{documentId:D}",
+            new { documentId = document.Id, state = document.State.ToString(), thumbnailStored = thumbnailPath is not null });
     }
+
+    /// <summary>The thumbnail's path: the PDF's path with <c>.thumb.jpg</c> in place of <c>.pdf</c>.</summary>
+    public static string ThumbnailPath(string pdfBlobPath)
+        => (pdfBlobPath.EndsWith(".pdf", StringComparison.Ordinal) ? pdfBlobPath[..^4] : pdfBlobPath) + ".thumb.jpg";
 
     private Task<CapturedDocumentEntity?> FindAsync(Guid clientDocumentId, CancellationToken cancellationToken)
         => dbContext.CapturedDocuments
             .AsNoTracking()
             .SingleOrDefaultAsync(document => document.ClientDocumentId == clientDocumentId, cancellationToken);
 
-    private static async Task<bool> StartsWithPdfSignatureAsync(IFormFile file, CancellationToken cancellationToken)
+    private static Task<bool> StartsWithPdfSignatureAsync(IFormFile file, CancellationToken cancellationToken)
+        => StartsWithAsync(file, PdfSignature, cancellationToken);
+
+    private static async Task<bool> StartsWithAsync(IFormFile file, byte[] signature, CancellationToken cancellationToken)
     {
-        var header = new byte[PdfSignature.Length];
+        var header = new byte[signature.Length];
         await using var stream = file.OpenReadStream();
         await stream.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, cancellationToken);
-        return header.AsSpan().SequenceEqual(PdfSignature);
+        return header.AsSpan().SequenceEqual(signature);
     }
 
     private static object Receipt(CapturedDocumentEntity document)

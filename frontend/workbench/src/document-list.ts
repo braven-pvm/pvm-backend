@@ -1,7 +1,8 @@
 /*
- * The list a document page was opened from: the review list or the Documents
- * search with its filters. It travels in the URL (?list=review&page=2, or
- * ?list=search&state=NeedsReview&page=3), never in browser storage, so
+ * The list a document page was opened from: the review list, the Documents
+ * search with its filters, or the General scans list with its search. It
+ * travels in the URL (?list=review&page=2, ?list=search&state=NeedsReview&page=3,
+ * or ?list=general&q=eskom), never in browser storage, so
  * "Back to list", Previous and Next walk the same list the user saw.
  * Pure helpers: the node tests in document-list.test.mjs cover them.
  */
@@ -18,7 +19,23 @@ export type ListFilters = {
   to?: string;
 };
 
-export type ListContext = { kind: "review"; page: number } | { kind: "search"; filters: ListFilters; page: number };
+/** The General scans filters as its page puts them in its URL. */
+export type GeneralListFilters = {
+  q?: string;
+  /** A scanner device ID. */
+  device?: string;
+  /** A staff name ID. */
+  staff?: string;
+  /** yyyy-mm-dd */
+  from?: string;
+  /** yyyy-mm-dd */
+  to?: string;
+};
+
+export type ListContext =
+  | { kind: "review"; page: number }
+  | { kind: "search"; filters: ListFilters; page: number }
+  | { kind: "general"; filters: GeneralListFilters; page: number };
 
 /** A neighbour in the list, with the list page it is on. */
 export type ListNeighbour = { id: string; page: number };
@@ -34,6 +51,7 @@ export type Neighbours = {
 type Params = URLSearchParams | Record<string, string | string[] | undefined>;
 
 const textFilters = ["invoice", "client", "type", "state"] as const;
+const generalTextFilters = ["q", "device", "staff"] as const;
 const dayFilters = ["from", "to"] as const;
 
 function read(params: Params, key: string): string | undefined {
@@ -63,6 +81,16 @@ export function parseListContext(params: Params): ListContext | null {
   const page = pageOf(read(params, "page"));
   if (list === "review") {
     return { kind: "review", page };
+  }
+  if (list === "general") {
+    const filters: GeneralListFilters = {};
+    for (const key of [...generalTextFilters, ...dayFilters]) {
+      const value = read(params, key)?.trim();
+      if (value && (!(dayFilters as readonly string[]).includes(key) || isDay(value))) {
+        filters[key] = value;
+      }
+    }
+    return { kind: "general", filters, page };
   }
   if (list !== "search") {
     return null;
@@ -94,6 +122,14 @@ function listQuery(context: ListContext): URLSearchParams {
       }
     }
   }
+  if (context.kind === "general") {
+    for (const key of [...generalTextFilters, ...dayFilters]) {
+      const value = context.filters[key];
+      if (value) {
+        query.set(key, value);
+      }
+    }
+  }
   if (context.page > 1) {
     query.set("page", String(context.page));
   }
@@ -111,12 +147,20 @@ export function listHref(context: ListContext | null, notice: Record<string, str
   for (const [key, value] of Object.entries(notice)) {
     query.set(key, value);
   }
-  return withQuery(context?.kind === "review" ? "/documents/review" : "/documents", query);
+  const path = context?.kind === "review" ? "/documents/review" : context?.kind === "general" ? "/documents/general" : "/documents";
+  return withQuery(path, query);
 }
 
 /** The name of the list for the back link. */
 export function listLabel(context: ListContext | null): string {
-  return context?.kind === "review" ? "Review list" : "Documents";
+  switch (context?.kind) {
+    case "review":
+      return "Review list";
+    case "general":
+      return "General scans";
+    default:
+      return "Documents";
+  }
 }
 
 /** The context as name/value pairs: hidden form fields, or the start of a document link. */

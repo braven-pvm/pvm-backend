@@ -1,0 +1,23 @@
+/* A small portrait preview of a scanned page, the size of a list row. */
+.frame {
+  align-items: center;
+  background: var(--color-fill);
+  border: 1px solid var(--color-stroke-weak);
+  border-radius: var(--radius-s);
+  box-sizing: border-box;
+  color: var(--color-text-weak);
+  display: inline-flex;
+  flex: none;
+  height: 64px;
+  justify-content: center;
+  overflow: hidden;
+  width: 48px;
+}
+
+.image {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+  width: 100%;
+}

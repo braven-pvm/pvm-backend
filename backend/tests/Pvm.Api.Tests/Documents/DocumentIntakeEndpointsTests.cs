@@ -198,9 +198,155 @@ public sealed class DocumentIntakeEndpointsTests : IAsyncLifetime
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var types = await response.Content.ReadFromJsonAsync<JsonElement>();
-        var type = Assert.Single(types.EnumerateArray());
-        Assert.Equal("POD", type.GetProperty("code").GetString());
-        Assert.Equal("Proof of delivery", type.GetProperty("displayName").GetString());
+        Assert.Equal(
+            [("POD", "Proof of delivery"), ("GENERAL", "General document")],
+            types.EnumerateArray().Select(type => (type.GetProperty("code").GetString(), type.GetProperty("displayName").GetString())));
+    }
+
+    [Fact]
+    public async Task Upload_General_WithTitleAndNote_StoresThemTrimmed_AndTheSearchText()
+    {
+        var client = await StartAsync();
+
+        var response = await client.SendAsync(Upload(
+            Guid.NewGuid(), "general", Pdf, title: "  Fleet licence  ", note: " Keep for SARS "));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var row = await SingleRowAsync();
+        Assert.Equal("GENERAL", row.DocumentType);
+        Assert.Equal(DocumentState.Received, row.State);
+        Assert.Equal("Fleet licence", row.Title);
+        Assert.Equal("Keep for SARS", row.Note);
+        Assert.Equal("fleet licence\nkeep for sars", row.SearchText);
+        Assert.Null(row.AutoTitle);
+        Assert.StartsWith("documents/GENERAL/", row.BlobPath);
+    }
+
+    [Fact]
+    public async Task Upload_General_WithoutTitleOrNote_Returns201_NullFields()
+    {
+        var client = await StartAsync();
+
+        var response = await client.SendAsync(Upload(Guid.NewGuid(), "GENERAL", Pdf, title: "   ", note: ""));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var row = await SingleRowAsync();
+        Assert.Null(row.Title);
+        Assert.Null(row.Note);
+        Assert.Null(row.SearchText);
+        Assert.Null(row.ThumbnailBlobPath);
+    }
+
+    [Fact]
+    public async Task Upload_Pod_WithNote_StoresTheNote()
+    {
+        var client = await StartAsync();
+
+        var response = await client.SendAsync(Upload(Guid.NewGuid(), "POD", Pdf, note: "Stamp on the back"));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal("Stamp on the back", (await SingleRowAsync()).Note);
+    }
+
+    [Fact]
+    public async Task Upload_Pod_WithTitle_Returns400_StoresNothing()
+    {
+        var client = await StartAsync();
+
+        var response = await client.SendAsync(Upload(Guid.NewGuid(), "POD", Pdf, title: "A title"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Contains("title", problem.GetProperty("detail").GetString());
+        await AssertNothingStoredAsync();
+    }
+
+    [Theory]
+    [InlineData(121, 0)]
+    [InlineData(0, 1001)]
+    public async Task Upload_General_TitleOrNoteOverTheLimit_Returns400(int titleLength, int noteLength)
+    {
+        var client = await StartAsync();
+
+        var response = await client.SendAsync(Upload(
+            Guid.NewGuid(),
+            "GENERAL",
+            Pdf,
+            title: titleLength > 0 ? new string('t', titleLength) : null,
+            note: noteLength > 0 ? new string('n', noteLength) : null));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertNothingStoredAsync();
+    }
+
+    [Fact]
+    public async Task Upload_General_TitleAndNoteAtTheLimit_Returns201()
+    {
+        var client = await StartAsync();
+
+        var response = await client.SendAsync(Upload(
+            Guid.NewGuid(), "GENERAL", Pdf, title: new string('t', 120), note: new string('n', 1000)));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var row = await SingleRowAsync();
+        Assert.Equal(120, row.Title!.Length);
+        Assert.Equal(1000, row.Note!.Length);
+    }
+
+    [Fact]
+    public async Task Upload_WithJpegThumbnail_StoresItNextToThePdf()
+    {
+        var client = await StartAsync();
+
+        var response = await client.SendAsync(Upload(Guid.NewGuid(), "GENERAL", Pdf, thumbnail: Jpeg(1024)));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(body.GetProperty("thumbnailStored").GetBoolean());
+        var row = await SingleRowAsync();
+        Assert.Equal(row.BlobPath[..^".pdf".Length] + ".thumb.jpg", row.ThumbnailBlobPath);
+        await using var scope = _app!.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
+        await using var stored = await store.OpenReadAsync(row.ThumbnailBlobPath!, CancellationToken.None);
+        using var copy = new MemoryStream();
+        await stored.CopyToAsync(copy);
+        Assert.Equal(Jpeg(1024), copy.ToArray());
+    }
+
+    [Theory]
+    [InlineData(200 * 1024 + 1, true)]
+    [InlineData(2048, false)]
+    public async Task Upload_ThumbnailTooLargeOrNotJpeg_IsIgnored_TheDocumentIsStored(int size, bool jpeg)
+    {
+        var client = await StartAsync();
+        var thumbnail = jpeg ? Jpeg(size) : Encoding.ASCII.GetBytes("GIF89a not a jpeg");
+
+        var response = await client.SendAsync(Upload(Guid.NewGuid(), "GENERAL", Pdf, thumbnail: thumbnail));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.False(body.GetProperty("thumbnailStored").GetBoolean());
+        Assert.Null((await SingleRowAsync()).ThumbnailBlobPath);
+        Assert.Single(Directory.GetFiles(_root, "*", SearchOption.AllDirectories));
+    }
+
+    private static byte[] Jpeg(int size)
+    {
+        var bytes = new byte[size];
+        bytes[0] = 0xFF;
+        bytes[1] = 0xD8;
+        bytes[2] = 0xFF;
+        bytes[3] = 0xE0;
+        bytes[^2] = 0xFF;
+        bytes[^1] = 0xD9;
+        return bytes;
+    }
+
+    private async Task<Pvm.Infrastructure.Persistence.Entities.CapturedDocumentEntity> SingleRowAsync()
+    {
+        await using var scope = _app!.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<PvmDbContext>();
+        return await db.CapturedDocuments.AsNoTracking().SingleAsync();
     }
 
     private async Task AssertNothingStoredAsync()
@@ -219,7 +365,10 @@ public sealed class DocumentIntakeEndpointsTests : IAsyncLifetime
         string documentType,
         byte[] file,
         int pageCount = 1,
-        string role = AppRoles.Operator)
+        string role = AppRoles.Operator,
+        string? title = null,
+        string? note = null,
+        byte[]? thumbnail = null)
     {
         var content = new MultipartFormDataContent
         {
@@ -228,6 +377,22 @@ public sealed class DocumentIntakeEndpointsTests : IAsyncLifetime
             { new StringContent(documentType), "documentType" },
             { new StringContent(pageCount.ToString()), "pageCount" }
         };
+        if (title is not null)
+        {
+            content.Add(new StringContent(title), "title");
+        }
+
+        if (note is not null)
+        {
+            content.Add(new StringContent(note), "note");
+        }
+
+        if (thumbnail is not null)
+        {
+            var part = new ByteArrayContent(thumbnail);
+            part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+            content.Add(part, "thumbnail", "thumbnail.jpg");
+        }
         return new HttpRequestMessage(HttpMethod.Post, "/api/documents")
         {
             Content = content,

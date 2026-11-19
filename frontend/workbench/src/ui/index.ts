@@ -55,5 +55,6 @@ export {
   TaskPage,
   ViewerPage,
 } from "./templates";
+export { Thumbnail } from "./thumbnail";
 export { Tile } from "./tile";
 export { Timeline, type TimelineEntry } from "./timeline";

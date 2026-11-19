@@ -2,10 +2,37 @@ import 'dart:io';
 
 /// One scanned paper document: a single PDF with all its pages.
 class ScannedDocument {
-  const ScannedDocument({required this.pdf, required this.pageCount});
+  const ScannedDocument({required this.pdf, required this.pageCount, this.pageImages = const []});
 
   final File pdf;
   final int pageCount;
+
+  /// The scanner's JPEG of each page, when it gave them; page 1 shows on the review screen and
+  /// becomes the thumbnail.
+  final List<File> pageImages;
+
+  File? get firstPage => pageImages.isEmpty ? null : pageImages.first;
+
+  /// Deletes the page images (the PDF is the document; the queue keeps its own copy).
+  Future<void> deleteImages() async {
+    for (final image in pageImages) {
+      try {
+        await image.delete();
+      } on FileSystemException {
+        // In the cache folder; Android clears it later.
+      }
+    }
+  }
+
+  /// "Scan again": deletes the PDF and the page images of this scan.
+  Future<void> discard() async {
+    try {
+      await pdf.delete();
+    } on FileSystemException {
+      // In the cache folder; Android clears it later.
+    }
+    await deleteImages();
+  }
 }
 
 /// A scan that failed for a reason other than the user closing the scanner.

@@ -46,20 +46,30 @@ next setup code.
 
 ## Scan flow
 
-1. The user opens the app. If the config has staff names, the app asks **Who is scanning?** with
-   the names as large buttons, unless the remembered name is still on the list. The choice is
-   remembered across restarts; **Change** on the scan screen picks another name. With no staff
-   names the question is skipped.
-2. The camera opens. The ML Kit scanner finds the paper edges and captures the page; the user
-   can adjust the corners, add pages (up to 20), and taps Done.
-3. The app moves the PDF into its upload queue, with the staff ID chosen at that moment, and
-   opens the camera again for the next document.
-4. When the user closes the scanner, the batch screen shows the documents of this session,
-   newest first, with their state: Waiting, Uploading, Received, or Failed. A large
-   "Scan next document" button opens the camera again.
+The flow follows design 6.12 ("Phone app flow").
 
-There is no text field in the scan flow. The document type is shown at the top; it is POD by
-default and remembered. A chooser appears only when the config has more than one type.
+1. The start screen shows the staff name with **Change** (when the config has staff names), one
+   large button per document type from the config (**Proof of delivery**, **General
+   document**), the recent scans, and the Settings icon. With only one type the scanner opens at
+   once. If the config has staff names, the app asks **Who is scanning?** first, unless the
+   remembered name is still on the list.
+2. The ML Kit scanner finds the paper edges and captures the page; the user can adjust the
+   corners, add pages (up to 20), and taps Done. It returns one PDF and a JPEG of each page.
+3. The review screen shows page 1, the page count, and optional fields: **Title (optional)**
+   (general documents) and **Note (optional)** (both types). Nothing has to be typed.
+   - **Send** queues the scan and opens the scanner again for the same type.
+   - **Send and finish** queues the scan and goes back to the start screen.
+   - **Scan again** deletes this scan and opens the scanner again.
+   - The back key asks "Send this scan?" (Send, or Delete it).
+4. The list shows each scan, newest first, with a thumbnail, type, title ("Untitled" for a
+   general document without one), time, and its state: Waiting, Sending, Sent, or Problem with
+   the reason and **Try again**. A scan that becomes Sent gives a short vibration and a check
+   mark. On the first start: "No scans yet. Choose a document type to start."
+
+The queue item keeps the title (general only, at most 120 characters), the note (at most 1000),
+and a thumbnail of page 1 (480 px on the long side, JPEG quality 70, at most 200 KB). They go
+with the upload as the optional fields `title`, `note` and `thumbnail`. If the server answers
+400 naming one of them (a backend without them), the app sends once more without them.
 
 ## Upload queue
 
@@ -150,13 +160,13 @@ git-ignored (`mobile/scanner/.gitignore` and `android/.gitignore`).
 
 | Path | What |
 | --- | --- |
-| `lib/main.dart`, `lib/app.dart` | Start; setup screen or batch screen by the session phase. |
+| `lib/main.dart`, `lib/app.dart` | Start; setup screen or start screen by the session phase. |
 | `lib/device/setup_code.dart` | Parses and checks the setup QR content. |
 | `lib/device/device_store.dart` | The device key, API address and name in encrypted storage. |
 | `lib/device/device_session.dart` | Enrolment, the queue with the device key, config, revoke (401) and reset. |
 | `lib/device/staff.dart` | Whether to ask "Who is scanning?". |
 | `lib/api/device_api.dart` | Enrol client and device API client (config, upload); outcomes. |
 | `lib/queue/upload_queue.dart` | The persistent upload queue. |
-| `lib/scanner/` | `DocumentScanner` interface and the ML Kit implementation. A different edge detector for some paper shapes goes behind the same interface. |
-| `lib/screens/` | Setup, QR camera, staff picker, batch and settings screens. |
+| `lib/scanner/` | `DocumentScanner` interface, the ML Kit implementation, and the thumbnail helper. A different edge detector for some paper shapes goes behind the same interface. |
+| `lib/screens/` | Setup, QR camera, staff picker, start (`home_screen.dart`), review and settings screens. |
 | `test/` | Setup code, API client, session, staff, queue and screen tests (fakes; no device needed). |

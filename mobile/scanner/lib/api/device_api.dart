@@ -102,6 +102,9 @@ abstract interface class DocumentUploader {
     required String documentType,
     required int pageCount,
     String? staffId,
+    String? title,
+    String? note,
+    File? thumbnail,
   });
 }
 
@@ -223,6 +226,7 @@ class DeviceApi implements DeviceClient {
         _client = client ?? http.Client();
 
   static const _staffFieldMarker = "'staffId'";
+  static const _newFieldMarkers = ["'title'", "'note'", "'thumbnail'"];
 
   final Uri baseUri;
   final String _authorization;
@@ -261,31 +265,55 @@ class DeviceApi implements DeviceClient {
     required String documentType,
     required int pageCount,
     String? staffId,
+    String? title,
+    String? note,
+    File? thumbnail,
   }) async {
-    final outcome = await _send(pdf, clientDocumentId, documentType, pageCount, staffId);
+    var send = _Upload(
+      pdf: pdf,
+      clientDocumentId: clientDocumentId,
+      documentType: documentType,
+      pageCount: pageCount,
+      staffId: staffId,
+      title: title,
+      note: note,
+      thumbnail: thumbnail,
+    );
+    var outcome = await _send(send);
     // A staff name turned off while the scan waited: the document matters more than the name.
-    if (staffId != null && outcome is UploadRejected && outcome.reason.contains(_staffFieldMarker)) {
-      return _send(pdf, clientDocumentId, documentType, pageCount, null);
+    if (send.staffId != null && outcome is UploadRejected && outcome.reason.contains(_staffFieldMarker)) {
+      send = send.withoutStaff();
+      outcome = await _send(send);
+    }
+    // A server without title, note or thumbnail yet (or one that refuses one of them): the
+    // document matters more than its extras. Sent once more without them.
+    if (send.hasExtras && outcome is UploadRejected && _namesNewField(outcome.reason)) {
+      outcome = await _send(send.withoutExtras());
     }
     return outcome;
   }
 
-  Future<UploadOutcome> _send(
-    File pdf,
-    String clientDocumentId,
-    String documentType,
-    int pageCount,
-    String? staffId,
-  ) async {
+  static bool _namesNewField(String reason) =>
+      _newFieldMarkers.any(reason.contains) || reason.toLowerCase().contains('unknown');
+
+  Future<UploadOutcome> _send(_Upload upload) async {
     final request = http.MultipartRequest('POST', _endpoint(baseUri, 'api/device/documents'))
       ..followRedirects = false
       ..headers['Authorization'] = _authorization
-      ..fields['clientDocumentId'] = clientDocumentId
-      ..fields['documentType'] = documentType
-      ..fields['pageCount'] = '$pageCount';
-    if (staffId != null) {
-      request.fields['staffId'] = staffId;
+      ..fields['clientDocumentId'] = upload.clientDocumentId
+      ..fields['documentType'] = upload.documentType
+      ..fields['pageCount'] = '${upload.pageCount}';
+    if (upload.staffId != null) {
+      request.fields['staffId'] = upload.staffId!;
     }
+    if (upload.title != null) {
+      request.fields['title'] = upload.title!;
+    }
+    if (upload.note != null) {
+      request.fields['note'] = upload.note!;
+    }
+    final pdf = upload.pdf;
+    final clientDocumentId = upload.clientDocumentId;
 
     final http.Response response;
     try {
@@ -297,6 +325,17 @@ class DeviceApi implements DeviceClient {
           contentType: http.MediaType('application', 'pdf'),
         ),
       );
+      final thumbnail = await _thumbnailBytes(upload.thumbnail);
+      if (thumbnail != null) {
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'thumbnail',
+            thumbnail,
+            filename: '$clientDocumentId.jpg',
+            contentType: http.MediaType('image', 'jpeg'),
+          ),
+        );
+      }
       response = await http.Response.fromStream(await _client.send(request).timeout(timeout));
     } on FileSystemException catch (error) {
       return UploadRejected('The scanned file could not be read on this phone: ${error.message}');
@@ -319,6 +358,18 @@ class DeviceApi implements DeviceClient {
     }
   }
 
+  /// The thumbnail is optional: when its file cannot be read, the scan goes without it.
+  static Future<List<int>?> _thumbnailBytes(File? file) async {
+    if (file == null) {
+      return null;
+    }
+    try {
+      return await file.readAsBytes();
+    } on FileSystemException {
+      return null;
+    }
+  }
+
   /// The receipt; the body is read best-effort, because the status already says the backend has it.
   static UploadAccepted _accepted(http.Response response) {
     try {
@@ -334,6 +385,49 @@ class DeviceApi implements DeviceClient {
     }
     return const UploadAccepted();
   }
+}
+
+/// The fields of one upload attempt.
+class _Upload {
+  const _Upload({
+    required this.pdf,
+    required this.clientDocumentId,
+    required this.documentType,
+    required this.pageCount,
+    this.staffId,
+    this.title,
+    this.note,
+    this.thumbnail,
+  });
+
+  final File pdf;
+  final String clientDocumentId;
+  final String documentType;
+  final int pageCount;
+  final String? staffId;
+  final String? title;
+  final String? note;
+  final File? thumbnail;
+
+  bool get hasExtras => title != null || note != null || thumbnail != null;
+
+  _Upload withoutStaff() => _Upload(
+        pdf: pdf,
+        clientDocumentId: clientDocumentId,
+        documentType: documentType,
+        pageCount: pageCount,
+        title: title,
+        note: note,
+        thumbnail: thumbnail,
+      );
+
+  _Upload withoutExtras() => _Upload(
+        pdf: pdf,
+        clientDocumentId: clientDocumentId,
+        documentType: documentType,
+        pageCount: pageCount,
+        staffId: staffId,
+      );
 }
 
 /// 401 from a device endpoint: the device was removed or its key replaced.

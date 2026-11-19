@@ -3,6 +3,7 @@ import { requireWorkbenchUser } from "../../src/auth/session";
 import { documentHref } from "../../src/document-list";
 import { buildDocumentSearchQuery, documentStates, documentTypeLabel, formatReviewReason, uploaderText, type DocumentSearchFilters } from "../../src/documents";
 import { formatDateTime } from "../../src/formatters.mjs";
+import { isGeneralDocument } from "../../src/general-documents";
 import {
   ButtonLink,
   DataTable,
@@ -75,7 +76,9 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
     to: params.to,
   };
   const page = Math.max(Number(params.page) || 1, 1);
-  const [result, types] = await Promise.all([searchDocuments({ ...filters, page }), getDocumentTypes()]);
+  const [result, allTypes] = await Promise.all([searchDocuments({ ...filters, page }), getDocumentTypes()]);
+  // General scans have their own page; this search is for the delivery documents.
+  const types = allTypes.filter((type) => !isGeneralDocument(type.code));
 
   const href = (changes: Partial<DocumentSearchFilters>) => {
     const query = buildDocumentSearchQuery({ ...filters, ...changes }, { forApi: false });

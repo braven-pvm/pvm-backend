@@ -15,6 +15,8 @@ namespace Pvm.Infrastructure.Documents;
 /// documents that wait for Acumatica. A document is never filed on a guess: anything that is not
 /// a safe match goes to the review list. Transport failures of the extractor and of the Acumatica
 /// lookup propagate, so Service Bus retries the message; the last delivery marks the row Failed.
+/// A general document (design 6.12) is only read: it becomes Filed with what Claude read, or with
+/// nothing when it cannot be read. It never goes to review and never touches Acumatica.
 /// </summary>
 /// <remarks>
 /// Every write is a conditional update. A run only writes a row that is still Processing, so a
@@ -37,7 +39,7 @@ public sealed class DocumentProcessor(
     /// <summary>The backfill leaves a document alone for this long after an attach attempt.</summary>
     public static readonly TimeSpan BackfillRetryDelay = TimeSpan.FromMinutes(60);
 
-    private const string ProofOfDeliveryCode = "POD";
+    private const string ProofOfDeliveryCode = DocumentTypeCodes.Pod;
 
     private static readonly JsonSerializerOptions FieldOptions = new()
     {
@@ -73,6 +75,12 @@ public sealed class DocumentProcessor(
             .SingleAsync(item => item.Id == documentId, cancellationToken);
 
         var type = ResolveType(document.DocumentType);
+        if (type is not null && DocumentTypeCodes.IsGeneral(type.Code))
+        {
+            await ProcessGeneralAsync(document, type, cancellationToken);
+            return;
+        }
+
         if (type is null || !string.Equals(type.Code, ProofOfDeliveryCode, StringComparison.OrdinalIgnoreCase))
         {
             // Only POD has a match strategy. Another type can never be filed automatically.
@@ -130,6 +138,61 @@ public sealed class DocumentProcessor(
     }
 
     /// <summary>
+    /// Reads a general document and files it. Content problems (unreadable, empty, refused or
+    /// rejected by the API, or fields with nothing usable) still file it, with no automatic title.
+    /// Transport failures of the extractor propagate, as for POD.
+    /// </summary>
+    private async Task ProcessGeneralAsync(
+        CapturedDocumentEntity document,
+        IDocumentType type,
+        CancellationToken cancellationToken)
+    {
+        ExtractionResult result;
+        await using (var pdf = await store.OpenReadAsync(document.BlobPath, cancellationToken))
+        {
+            result = await extractor.ExtractAsync(type, pdf, cancellationToken);
+        }
+
+        var read = result is Extracted extracted ? GeneralDocumentFields.Read(extracted.Fields) : null;
+        var extractionJson = result switch
+        {
+            Extracted fields => fields.Fields.GetRawText(),
+            Unreadable unreadable => UnreadableJson(unreadable.Reason),
+            _ => UnreadableJson("unknown-result"),
+        };
+        if (read is { IsEmpty: true })
+        {
+            read = null;
+        }
+
+        var autoTitle = read?.AutoTitle;
+        var summary = read?.Summary;
+        var documentDate = read?.DocumentDate;
+        var words = read?.SearchWords.ToArray() ?? [];
+        var searchText = GeneralDocumentFields.SearchText(document.Title, document.Note, autoTitle, summary, words);
+        if (await WhileProcessingAsync(
+                document.Id,
+                setters => setters
+                    .SetProperty(item => item.State, DocumentState.Filed)
+                    .SetProperty(item => item.ReviewReason, (ReviewReason?)null)
+                    .SetProperty(item => item.ExtractionJson, extractionJson)
+                    .SetProperty(item => item.AutoTitle, autoTitle)
+                    .SetProperty(item => item.Summary, summary)
+                    .SetProperty(item => item.DocumentDate, documentDate)
+                    .SetProperty(item => item.SearchWords, words)
+                    .SetProperty(item => item.SearchText, searchText)
+                    .SetProperty(item => item.AcumaticaAttachPending, false),
+                cancellationToken))
+        {
+            logger.LogInformation(
+                "document.process.general-filed DocumentId={DocumentId} Read={Read} Reason={Reason}",
+                document.Id,
+                read is not null,
+                result is Unreadable unreadable ? unreadable.Reason : read is null ? "empty" : null);
+        }
+    }
+
+    /// <summary>
     /// The dead-letter hook: the message for this document will not be delivered again, so a row
     /// that is still Received or Processing becomes Failed. The PDF and the row stay for a retry.
     /// </summary>
@@ -169,6 +232,7 @@ public sealed class DocumentProcessor(
             .Where(item => item.State == DocumentState.Filed
                 && item.AcumaticaAttachPending
                 && item.MatchedReference != null
+                && item.DocumentType != DocumentTypeCodes.General
                 && (item.AcumaticaAttachLastAttemptAt == null || item.AcumaticaAttachLastAttemptAt < retryBefore))
             .OrderBy(item => item.AcumaticaAttachLastAttemptAt != null)
             .ThenBy(item => item.AcumaticaAttachLastAttemptAt)
@@ -245,7 +309,7 @@ public sealed class DocumentProcessor(
             .AsNoTracking()
             .SingleOrDefaultAsync(item => item.Id == documentId, cancellationToken);
         var type = document is null ? null : ResolveType(document.DocumentType);
-        if (document is null || type is null)
+        if (document is null || type is null || DocumentTypeCodes.IsGeneral(type.Code))
         {
             logger.LogWarning(
                 "document.attach.skipped DocumentId={DocumentId} Reason=missing-row-or-unknown-document-type",

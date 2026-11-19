@@ -438,6 +438,82 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Delete_FiledGeneral_Deleted_PdfAndThumbnailGone_AuditHasTheTitle()
+    {
+        var id = await SeedAsync(DocumentState.Filed, documentType: "GENERAL", title: "Fleet licence", thumbnail: true);
+        var before = await LoadAsync(id);
+
+        var result = await DeleteAsync(id, "Old copy");
+
+        Assert.Equal(DeleteOutcome.Deleted, result.Outcome);
+        Assert.Null(await FindAsync(id));
+        Assert.Equal([before.BlobPath, before.ThumbnailBlobPath!], _store.Deleted);
+        await using var check = CreateDbContext();
+        var audit = Assert.Single(await check.AuditEvents.AsNoTracking().Where(audit => audit.EntityType == "CapturedDocument").ToListAsync());
+        using var details = JsonDocument.Parse(audit.DetailsJson!);
+        Assert.Equal("GENERAL", details.RootElement.GetProperty("documentType").GetString());
+        Assert.Equal("Filed", details.RootElement.GetProperty("state").GetString());
+        Assert.Equal("Fleet licence", details.RootElement.GetProperty("title").GetString());
+        Assert.Equal(before.ThumbnailBlobPath, details.RootElement.GetProperty("thumbnailBlobPath").GetString());
+    }
+
+    [Theory]
+    [InlineData(DocumentState.Failed, 60)]
+    [InlineData(DocumentState.Received, 31)]
+    [InlineData(DocumentState.Processing, 31)]
+    public async Task Delete_General_FailedOrStuck_Deleted(DocumentState state, int minutesOld)
+    {
+        var id = await SeedAsync(state, documentType: "GENERAL", uploadedAt: DateTimeOffset.UtcNow.AddMinutes(-minutesOld));
+
+        var result = await DeleteAsync(id, "Test scan");
+
+        Assert.Equal(DeleteOutcome.Deleted, result.Outcome);
+        Assert.Null(await FindAsync(id));
+    }
+
+    [Fact]
+    public async Task Delete_General_RecentlyUploaded_Processing_NothingChanged()
+    {
+        var id = await SeedAsync(DocumentState.Processing, documentType: "GENERAL", uploadedAt: DateTimeOffset.UtcNow.AddMinutes(-5));
+
+        var result = await DeleteAsync(id, "Too early");
+
+        Assert.Equal(DeleteOutcome.Processing, result.Outcome);
+        await AssertUntouchedAsync(id, DocumentState.Processing);
+    }
+
+    [Fact]
+    public async Task Delete_FiledPod_StillFiled_NothingChanged()
+    {
+        var id = await SeedAsync(DocumentState.Filed, matchedReference: "INV1", thumbnail: true);
+
+        var result = await DeleteAsync(id, "Wrong invoice");
+
+        Assert.Equal(DeleteOutcome.Filed, result.Outcome);
+        await AssertUntouchedAsync(id, DocumentState.Filed);
+    }
+
+    [Fact]
+    public async Task ReviewActions_RefuseAGeneralDocument()
+    {
+        var failed = await SeedAsync(DocumentState.Failed, documentType: "GENERAL");
+        var filed = await SeedAsync(DocumentState.Filed, documentType: "GENERAL");
+        _acumatica.SearchResults = [Invoice("INV001234", "Acme Stores (Pty) Ltd")];
+
+        Assert.Equal(FileToOutcome.NotOpen, (await FileToAsync(failed, "INV001234", AcumaticaAttachMode.Write)).Outcome);
+        await using (var db = CreateDbContext())
+        {
+            Assert.Equal(RejectOutcome.NotOpen, await CreateService(db, AcumaticaAttachMode.Shadow).RejectAsync(failed, "Bad", User, default));
+        }
+
+        Assert.Equal(ReturnToReviewOutcome.NotFiled, await ReturnToReviewAsync(filed, "Wrong", User));
+        Assert.Equal(DocumentState.Failed, (await LoadAsync(failed)).State);
+        Assert.Null((await LoadAsync(failed)).RejectedAt);
+        Assert.Equal(DocumentState.Filed, (await LoadAsync(filed)).State);
+        Assert.Empty(_acumatica.AttachAttempts);
+    }
+
+    [Fact]
     public async Task Delete_NeedsReview_RowAndBlobGone_AuditEventWithTheFacts()
     {
         var deviceId = await SeedDeviceAsync("Dispatch phone 1");
@@ -684,21 +760,32 @@ public sealed class DocumentReviewServiceTests : IAsyncLifetime
         string? extractionJson = null,
         DateTimeOffset? acumaticaAttachedAt = null,
         Guid? scannerDeviceId = null,
-        string? scannerStaffName = null)
+        string? scannerStaffName = null,
+        string documentType = "POD",
+        string? title = null,
+        bool thumbnail = false)
     {
         var id = Guid.NewGuid();
         var at = uploadedAt ?? DateTimeOffset.UtcNow;
-        var blobPath = $"documents/POD/{at:yyyy}/{at:MM}/{id:D}.pdf";
+        var blobPath = $"documents/{documentType}/{at:yyyy}/{at:MM}/{id:D}.pdf";
+        var thumbnailPath = thumbnail ? $"documents/{documentType}/{at:yyyy}/{at:MM}/{id:D}.thumb.jpg" : null;
         _store.Blobs[blobPath] = PdfBytes;
+        if (thumbnailPath is not null)
+        {
+            _store.Blobs[thumbnailPath] = [0xFF, 0xD8, 0xFF];
+        }
+
         await using var db = CreateDbContext();
         db.CapturedDocuments.Add(new CapturedDocumentEntity
         {
             Id = id,
             ClientDocumentId = Guid.NewGuid(),
-            DocumentType = "POD",
+            DocumentType = documentType,
             State = state,
             ReviewReason = state == DocumentState.NeedsReview ? ReviewReason.NoSecondSignal : null,
             BlobPath = blobPath,
+            ThumbnailBlobPath = thumbnailPath,
+            Title = title,
             PageCount = 1,
             SizeBytes = PdfBytes.Length,
             Sha256 = new string('a', 64),

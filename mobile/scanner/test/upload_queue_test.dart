@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:scanner/api/device_api.dart';
@@ -11,8 +12,17 @@ class FakeUploader implements DocumentUploader {
   FakeUploader(this.outcomes);
 
   final List<UploadOutcome> outcomes;
-  final List<({String clientDocumentId, String documentType, int pageCount, String? staffId, bool fileExisted})> calls =
-      [];
+  final List<
+      ({
+        String clientDocumentId,
+        String documentType,
+        int pageCount,
+        String? staffId,
+        bool fileExisted,
+        String? title,
+        String? note,
+        List<int>? thumbnail,
+      })> calls = [];
 
   @override
   Future<UploadOutcome> upload({
@@ -21,6 +31,9 @@ class FakeUploader implements DocumentUploader {
     required String documentType,
     required int pageCount,
     String? staffId,
+    String? title,
+    String? note,
+    File? thumbnail,
   }) async {
     calls.add((
       clientDocumentId: clientDocumentId,
@@ -28,6 +41,9 @@ class FakeUploader implements DocumentUploader {
       pageCount: pageCount,
       staffId: staffId,
       fileExisted: pdf.existsSync(),
+      title: title,
+      note: note,
+      thumbnail: thumbnail?.readAsBytesSync(),
     ));
     final index = calls.length - 1;
     return index < outcomes.length ? outcomes[index] : outcomes.last;
@@ -272,6 +288,94 @@ void main() {
     await queue.close();
   });
 
+  test('title_note_and_thumbnail_go_with_the_upload_also_after_a_restart', () async {
+    final first = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
+    final thumbnail = Uint8List.fromList([0xFF, 0xD8, 0xFF, 1, 2, 3]);
+    final queued = await first.enqueue(
+      scannedPdf(),
+      'GENERAL',
+      3,
+      title: '  Lease for unit 4 ',
+      note: 'Signed copy',
+      thumbnail: thumbnail,
+    );
+    await first.close();
+
+    expect(queued.title, 'Lease for unit 4');
+    expect(queued.userNote, 'Signed copy');
+    expect(queued.hasThumbnail, isTrue);
+
+    final uploader = FakeUploader([const UploadAccepted(documentId: 'doc', state: 'Received')]);
+    final second = await openQueue(uploader);
+    final reloaded = second.current.single;
+    expect(reloaded.title, 'Lease for unit 4');
+    expect(reloaded.userNote, 'Signed copy');
+    expect(second.thumbnailOf(reloaded)!.readAsBytesSync(), thumbnail);
+    second.start();
+    await second.whenIdle;
+
+    final call = uploader.calls.single;
+    expect(call.title, 'Lease for unit 4');
+    expect(call.note, 'Signed copy');
+    expect(call.thumbnail, thumbnail);
+    // The list keeps showing the thumbnail of a sent scan until the next start.
+    expect(second.thumbnailOf(second.current.single), isNotNull);
+    await second.close();
+
+    // Received items are dropped on the next start, and their thumbnails with them.
+    final third = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
+    expect(third.current, isEmpty);
+    expect(Directory('${queueDirectory.path}/thumbs').listSync(), isEmpty);
+    await third.close();
+  });
+
+  test('a_title_is_not_kept_or_sent_for_proof_of_delivery', () async {
+    final uploader = FakeUploader([const UploadAccepted(documentId: 'doc', state: 'Received')]);
+    final queue = await openQueue(uploader);
+    final queued = await queue.enqueue(scannedPdf(), 'POD', 1, title: 'Not for POD', note: 'Left at gate');
+    queue.start();
+    await queue.whenIdle;
+
+    expect(queued.title, isNull);
+    expect(queued.userNote, 'Left at gate');
+    expect(uploader.calls.single.title, isNull);
+    expect(uploader.calls.single.note, 'Left at gate');
+    await queue.close();
+  });
+
+  test('blank_fields_are_not_kept_and_long_fields_are_cut_to_the_limit', () async {
+    final queue = await openQueue(FakeUploader([const UploadRetryLater('offline')]));
+    final blank = await queue.enqueue(scannedPdf(), 'GENERAL', 1, title: '   ', note: '');
+    final long = await queue.enqueue(scannedPdf('b.pdf'), 'GENERAL', 1, title: 'x' * 200, note: 'y' * 1500);
+
+    expect(blank.title, isNull);
+    expect(blank.userNote, isNull);
+    expect(blank.hasThumbnail, isFalse);
+    expect(queue.thumbnailOf(blank), isNull);
+    expect(long.title, hasLength(120));
+    expect(long.userNote, hasLength(1000));
+    await queue.close();
+  });
+
+  test('try_again_on_a_problem_item_sends_it_again_with_the_same_id', () async {
+    final uploader = FakeUploader([
+      const UploadRejected('The server did not accept this document.'),
+      const UploadAccepted(documentId: 'doc', state: 'Received'),
+    ]);
+    final queue = await openQueue(uploader);
+    final queued = await queue.enqueue(scannedPdf(), 'POD', 1);
+    queue.start();
+    await queue.whenIdle;
+    expect(queue.current.single.state, QueuedDocument.failed);
+
+    await queue.retry(queued.clientDocumentId);
+    await queue.whenIdle;
+
+    expect(queue.current.single.state, QueuedDocument.received);
+    expect(uploader.calls.map((call) => call.clientDocumentId), [queued.clientDocumentId, queued.clientDocumentId]);
+    await queue.close();
+  });
+
   test('uploads_one_item_at_a_time_oldest_first', () async {
     final gate = Completer<void>();
     var active = 0;
@@ -479,6 +583,9 @@ class _GatedUploader implements DocumentUploader {
     required String documentType,
     required int pageCount,
     String? staffId,
+    String? title,
+    String? note,
+    File? thumbnail,
   }) =>
       onUpload(clientDocumentId);
 }

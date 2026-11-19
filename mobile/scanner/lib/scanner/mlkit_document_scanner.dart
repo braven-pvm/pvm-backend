@@ -7,10 +7,11 @@ import 'document_scanner.dart';
 
 /// [DocumentScanner] with Google's ML Kit document scanner: it finds the paper edges, captures
 /// automatically, corrects the perspective, lets the user adjust corners and add pages, and
-/// returns one PDF. Needs Google Play services on the phone.
+/// returns one PDF and a JPEG of each page. Needs Google Play services on the phone.
 class MlKitDocumentScanner implements DocumentScanner {
   static final _options = mlkit.DocumentScannerOptions(
-    documentFormats: {mlkit.DocumentFormat.pdf},
+    // The JPEGs give the review screen its first page and the upload its thumbnail.
+    documentFormats: {mlkit.DocumentFormat.pdf, mlkit.DocumentFormat.jpeg},
     mode: mlkit.ScannerMode.full,
     isGalleryImport: false,
     pageLimit: 20,
@@ -25,7 +26,11 @@ class MlKitDocumentScanner implements DocumentScanner {
       if (pdf == null) {
         throw const ScannerException('The scanner returned no PDF.');
       }
-      return ScannedDocument(pdf: File(pdf.uri), pageCount: pdf.pageCount);
+      return ScannedDocument(
+        pdf: File(pdf.uri),
+        pageCount: pdf.pageCount,
+        pageImages: [for (final path in result.images ?? const <String>[]) File(path)],
+      );
     } on PlatformException catch (error) {
       if (error.message == 'Operation cancelled') {
         return null;

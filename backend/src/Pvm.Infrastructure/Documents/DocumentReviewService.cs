@@ -100,16 +100,18 @@ public sealed class DocumentReviewService(
         string user,
         CancellationToken cancellationToken)
     {
-        var state = await dbContext.CapturedDocuments
+        var current = await dbContext.CapturedDocuments
             .Where(item => item.Id == documentId)
-            .Select(item => (DocumentState?)item.State)
+            .Select(item => new { item.State, item.DocumentType })
             .SingleOrDefaultAsync(cancellationToken);
-        if (state is null)
+        if (current is null)
         {
             return new FileToResult(FileToOutcome.NotFound);
         }
 
-        if (state is not (DocumentState.NeedsReview or DocumentState.Failed))
+        // A general document is never on the review list and never filed to an invoice (design 6.12).
+        if (current.State is not (DocumentState.NeedsReview or DocumentState.Failed)
+            || DocumentTypeCodes.IsGeneral(current.DocumentType))
         {
             return new FileToResult(FileToOutcome.NotOpen);
         }
@@ -126,6 +128,7 @@ public sealed class DocumentReviewService(
         var matchedBy = MatchedByUser(user);
         var updated = await dbContext.CapturedDocuments
             .Where(item => item.Id == documentId
+                && item.DocumentType != DocumentTypeCodes.General
                 && (item.State == DocumentState.NeedsReview || item.State == DocumentState.Failed))
             .ExecuteUpdateAsync(
                 setters => setters
@@ -186,14 +189,16 @@ public sealed class DocumentReviewService(
     {
         var current = await dbContext.CapturedDocuments
             .Where(item => item.Id == documentId)
-            .Select(item => new { item.State, item.RejectedAt })
+            .Select(item => new { item.State, item.RejectedAt, item.DocumentType })
             .SingleOrDefaultAsync(cancellationToken);
         if (current is null)
         {
             return RejectOutcome.NotFound;
         }
 
-        if (current.State is not (DocumentState.NeedsReview or DocumentState.Failed) || current.RejectedAt is not null)
+        if (current.State is not (DocumentState.NeedsReview or DocumentState.Failed)
+            || current.RejectedAt is not null
+            || DocumentTypeCodes.IsGeneral(current.DocumentType))
         {
             return RejectOutcome.NotOpen;
         }
@@ -201,6 +206,7 @@ public sealed class DocumentReviewService(
         var now = DateTimeOffset.UtcNow;
         var updated = await dbContext.CapturedDocuments
             .Where(item => item.Id == documentId
+                && item.DocumentType != DocumentTypeCodes.General
                 && (item.State == DocumentState.NeedsReview || item.State == DocumentState.Failed)
                 && item.RejectedAt == null)
             .ExecuteUpdateAsync(
@@ -244,6 +250,7 @@ public sealed class DocumentReviewService(
         var now = DateTimeOffset.UtcNow;
         var updated = await dbContext.CapturedDocuments
             .Where(item => item.Id == documentId
+                && item.DocumentType != DocumentTypeCodes.General
                 && item.State == DocumentState.Filed
                 && item.AcumaticaAttachedAt == null)
             .ExecuteUpdateAsync(
@@ -285,12 +292,14 @@ public sealed class DocumentReviewService(
         var current = await dbContext.CapturedDocuments
             .AsNoTracking()
             .Where(item => item.Id == documentId)
-            .Select(item => new { item.State, item.AcumaticaAttachedAt })
+            .Select(item => new { item.State, item.AcumaticaAttachedAt, item.DocumentType })
             .SingleOrDefaultAsync(cancellationToken);
         return current switch
         {
             null => ReturnToReviewOutcome.NotFound,
             { State: not DocumentState.Filed } => ReturnToReviewOutcome.NotFiled,
+            // A general document is filed as stored, not to an invoice: there is no review to go back to.
+            _ when DocumentTypeCodes.IsGeneral(current.DocumentType) => ReturnToReviewOutcome.NotFiled,
             { AcumaticaAttachedAt: not null } => ReturnToReviewOutcome.AlreadyAttached,
             _ => ReturnToReviewOutcome.Returned,
         };
@@ -362,9 +371,11 @@ public sealed class DocumentReviewService(
     /// <summary>
     /// The delete rule (design 6.11), for one row as it is: <see cref="DeleteOutcome.Deleted"/> means
     /// a delete is allowed. Only an unfiled document whose PDF is not in Acumatica can go: NeedsReview,
-    /// Failed, or Received/Processing once it is stuck. The detail endpoint shows it as <c>canDelete</c>.
+    /// Failed, or Received/Processing once it is stuck. A general document is never attached, so a
+    /// Filed one can go as well (design 6.12). The detail endpoint shows it as <c>canDelete</c>.
     /// </summary>
     public static DeleteOutcome DeleteCheck(
+        string documentType,
         DocumentState state,
         DateTimeOffset? acumaticaAttachedAt,
         DateTimeOffset uploadedAt,
@@ -373,6 +384,11 @@ public sealed class DocumentReviewService(
         if (acumaticaAttachedAt is not null)
         {
             return DeleteOutcome.Attached;
+        }
+
+        if (state == DocumentState.Filed && DocumentTypeCodes.IsGeneral(documentType))
+        {
+            return DeleteOutcome.Deleted;
         }
 
         return state switch
@@ -407,7 +423,7 @@ public sealed class DocumentReviewService(
             return new DeleteResult(DeleteOutcome.NotFound);
         }
 
-        var check = DeleteCheck(document.State, document.AcumaticaAttachedAt, document.UploadedAt, stuckBefore);
+        var check = DeleteCheck(document.DocumentType, document.State, document.AcumaticaAttachedAt, document.UploadedAt, stuckBefore);
         if (check is not DeleteOutcome.Deleted)
         {
             return new DeleteResult(check);
@@ -429,6 +445,7 @@ public sealed class DocumentReviewService(
                     && item.AcumaticaAttachedAt == null
                     && (item.State == DocumentState.NeedsReview
                         || item.State == DocumentState.Failed
+                        || (item.State == DocumentState.Filed && item.DocumentType == DocumentTypeCodes.General)
                         || ((item.State == DocumentState.Received || item.State == DocumentState.Processing)
                             && item.UploadedAt < stuckBefore)))
                 .ExecuteDeleteAsync(cancellationToken);
@@ -469,6 +486,8 @@ public sealed class DocumentReviewService(
                         clientDocumentId = document.ClientDocumentId,
                         sha256 = document.Sha256,
                         blobPath = document.BlobPath,
+                        title = document.Title,
+                        thumbnailBlobPath = document.ThumbnailBlobPath,
                     },
                     AuditJsonOptions),
                 CreatedAt = now,
@@ -483,22 +502,31 @@ public sealed class DocumentReviewService(
             document.State,
             user);
 
-        try
+        var blobDeleteFailed = false;
+        foreach (var path in new[] { document.BlobPath, document.ThumbnailBlobPath })
         {
-            await documentStore.DeleteAsync(document.BlobPath, CancellationToken.None);
-        }
-        catch (Exception exception)
-        {
-            // The row and its audit event are gone for good; the PDF is left behind. Never roll back.
-            logger.LogError(
-                exception,
-                "document.delete.blob-failed DocumentId={DocumentId} BlobPath={BlobPath}",
-                documentId,
-                document.BlobPath);
-            return new DeleteResult(DeleteOutcome.Deleted, BlobDeleteFailed: true);
+            if (path is null)
+            {
+                continue;
+            }
+
+            try
+            {
+                await documentStore.DeleteAsync(path, CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                // The row and its audit event are gone for good; the file is left behind. Never roll back.
+                logger.LogError(
+                    exception,
+                    "document.delete.blob-failed DocumentId={DocumentId} BlobPath={BlobPath}",
+                    documentId,
+                    path);
+                blobDeleteFailed = true;
+            }
         }
 
-        return new DeleteResult(DeleteOutcome.Deleted);
+        return new DeleteResult(DeleteOutcome.Deleted, BlobDeleteFailed: blobDeleteFailed);
     }
 
     private async Task<DeleteOutcome> CurrentDeleteCheckAsync(
@@ -509,11 +537,11 @@ public sealed class DocumentReviewService(
         var current = await dbContext.CapturedDocuments
             .AsNoTracking()
             .Where(item => item.Id == documentId)
-            .Select(item => new { item.State, item.AcumaticaAttachedAt, item.UploadedAt })
+            .Select(item => new { item.DocumentType, item.State, item.AcumaticaAttachedAt, item.UploadedAt })
             .SingleOrDefaultAsync(cancellationToken);
         return current is null
             ? DeleteOutcome.NotFound
-            : DeleteCheck(current.State, current.AcumaticaAttachedAt, current.UploadedAt, stuckBefore);
+            : DeleteCheck(current.DocumentType, current.State, current.AcumaticaAttachedAt, current.UploadedAt, stuckBefore);
     }
 
     private static bool IsRetryable(DocumentState state, DateTimeOffset uploadedAt, DateTimeOffset stuckBefore)

@@ -22,7 +22,19 @@ class QueuedDocument {
     this.documentId,
     this.note,
     this.staffId,
+    this.title,
+    this.userNote,
+    this.hasThumbnail = false,
   });
+
+  /// The longest title the backend takes (GENERAL only).
+  static const maxTitleLength = 120;
+
+  /// The longest note the backend takes.
+  static const maxNoteLength = 1000;
+
+  /// The document type that may have a title.
+  static const generalType = 'GENERAL';
 
   static const waiting = 'waiting';
   static const uploading = 'uploading';
@@ -51,6 +63,31 @@ class QueuedDocument {
   /// The staff name chosen when this document was scanned; sent with every upload attempt.
   final String? staffId;
 
+  /// The title the user typed (general documents only), or null.
+  final String? title;
+
+  /// The note the user typed, or null. Not the same as [note], the app's own remark.
+  final String? userNote;
+
+  /// Whether a JPEG of the first page is kept with the item ([UploadQueue.thumbnailOf]).
+  final bool hasThumbnail;
+
+  /// Waiting again for a new attempt, without the last reason.
+  QueuedDocument _waitingAgain() => QueuedDocument(
+        clientDocumentId: clientDocumentId,
+        documentType: documentType,
+        pageCount: pageCount,
+        state: waiting,
+        createdAt: createdAt,
+        attempts: attempts,
+        documentId: documentId,
+        note: note,
+        staffId: staffId,
+        title: title,
+        userNote: userNote,
+        hasThumbnail: hasThumbnail,
+      );
+
   QueuedDocument copyWith({String? state, int? attempts, String? lastError, String? documentId, String? note}) =>
       QueuedDocument(
         clientDocumentId: clientDocumentId,
@@ -63,6 +100,9 @@ class QueuedDocument {
         documentId: documentId ?? this.documentId,
         note: note ?? this.note,
         staffId: staffId,
+        title: title,
+        userNote: userNote,
+        hasThumbnail: hasThumbnail,
       );
 
   Map<String, Object?> toJson() => {
@@ -76,6 +116,9 @@ class QueuedDocument {
         'documentId': documentId,
         'note': note,
         if (staffId != null) 'staffId': staffId,
+        if (title != null) 'title': title,
+        if (userNote != null) 'userNote': userNote,
+        if (hasThumbnail) 'thumbnail': true,
       };
 
   factory QueuedDocument.fromJson(Map<String, dynamic> json) => QueuedDocument(
@@ -89,6 +132,9 @@ class QueuedDocument {
         documentId: json['documentId'] as String?,
         note: json['note'] as String?,
         staffId: json['staffId'] as String?,
+        title: json['title'] as String?,
+        userNote: json['userNote'] as String?,
+        hasThumbnail: json['thumbnail'] == true,
       );
 }
 
@@ -123,6 +169,7 @@ class UploadQueue {
   static const _stateFile = 'queue.json';
   static const _backupFile = 'queue.json.bak';
   static const _pdfFolder = 'pdfs';
+  static const _thumbnailFolder = 'thumbs';
   static final _guid = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
 
   final Directory _directory;
@@ -190,6 +237,7 @@ class UploadQueue {
     }
 
     await _adoptOrphans(directory, pdfFolder, items, orphanDocumentType);
+    await _dropUnusedThumbnails(directory, items);
 
     final queue = UploadQueue._(directory, uploader, backoff, delay ?? Future<void>.delayed, items);
     try {
@@ -202,6 +250,39 @@ class UploadQueue {
 
   static File _pdfPath(Directory directory, String clientDocumentId) =>
       File('${directory.path}/$_pdfFolder/$clientDocumentId.pdf');
+
+  static File _thumbnailPath(Directory directory, String clientDocumentId) =>
+      File('${directory.path}/$_thumbnailFolder/$clientDocumentId.jpg');
+
+  /// Deletes the thumbnails of items that are gone (received in an earlier run, or removed).
+  static Future<void> _dropUnusedThumbnails(Directory directory, List<QueuedDocument> items) async {
+    final folder = Directory('${directory.path}/$_thumbnailFolder');
+    final kept = {
+      for (final item in items)
+        if (item.hasThumbnail) '${item.clientDocumentId}.jpg',
+    };
+    try {
+      if (!await folder.exists()) {
+        return;
+      }
+      await for (final entry in folder.list()) {
+        if (entry is File && !kept.contains(entry.uri.pathSegments.last)) {
+          await entry.delete();
+        }
+      }
+    } on FileSystemException {
+      // The next start tries again.
+    }
+  }
+
+  /// Trimmed text, cut to [maxLength]; null when blank.
+  static String? _field(String? text, int maxLength) {
+    final trimmed = text?.trim() ?? '';
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    return trimmed.length <= maxLength ? trimmed : trimmed.substring(0, maxLength).trimRight();
+  }
 
   /// The items of a queue file, or null when the file is missing or unreadable.
   static Future<List<QueuedDocument>?> _read(File file) async {
@@ -290,20 +371,52 @@ class UploadQueue {
   /// The local PDF of [item]. It exists until the backend confirms receipt.
   File pdfOf(QueuedDocument item) => _pdfPath(_directory, item.clientDocumentId);
 
+  /// The first-page JPEG of [item], or null when it has none.
+  File? thumbnailOf(QueuedDocument item) =>
+      item.hasThumbnail ? _thumbnailPath(_directory, item.clientDocumentId) : null;
+
   /// Adds a scanned PDF: copies it into the queue folder, saves the item, and only then deletes
   /// the scanner's original. Throws [FileSystemException] when the scan cannot be kept.
-  Future<QueuedDocument> enqueue(File pdf, String documentType, int pageCount, {String? staffId}) async {
+  ///
+  /// [title] is kept for [QueuedDocument.generalType] only; [title] and [note] are trimmed, cut to
+  /// the backend's limits, and dropped when blank. [thumbnail] (a JPEG of the first page) is
+  /// optional: when it cannot be saved, the scan is kept without it.
+  Future<QueuedDocument> enqueue(
+    File pdf,
+    String documentType,
+    int pageCount, {
+    String? staffId,
+    String? title,
+    String? note,
+    Uint8List? thumbnail,
+  }) async {
     if (_closed) {
       throw StateError('The upload queue is closed.');
     }
 
+    final clientDocumentId = const Uuid().v4();
+    var hasThumbnail = false;
+    if (thumbnail != null && thumbnail.isNotEmpty) {
+      try {
+        final file = _thumbnailPath(_directory, clientDocumentId);
+        await file.parent.create(recursive: true);
+        await file.writeAsBytes(thumbnail, flush: true);
+        hasThumbnail = true;
+      } on FileSystemException {
+        // The scan matters, not its picture.
+      }
+    }
+
     final item = QueuedDocument(
-      clientDocumentId: const Uuid().v4(),
+      clientDocumentId: clientDocumentId,
       documentType: documentType,
       pageCount: pageCount,
       state: QueuedDocument.waiting,
       createdAt: DateTime.now(),
       staffId: staffId,
+      title: documentType == QueuedDocument.generalType ? _field(title, QueuedDocument.maxTitleLength) : null,
+      userNote: _field(note, QueuedDocument.maxNoteLength),
+      hasThumbnail: hasThumbnail,
     );
     final copy = pdfOf(item);
 
@@ -320,6 +433,7 @@ class UploadQueue {
       } on FileSystemException {
         // Nothing was copied.
       }
+      await _deleteThumbnail(item);
       rethrow;
     }
 
@@ -345,6 +459,28 @@ class UploadQueue {
     final pdf = pdfOf(item);
     if (await pdf.exists()) {
       await pdf.delete();
+    }
+    await _deleteThumbnail(item);
+  }
+
+  /// "Try again" on a failed item: it waits for upload again, with the same client document ID.
+  /// On a waiting item it ends the retry wait.
+  Future<void> retry(String clientDocumentId) async {
+    final index = _items.indexWhere((item) => item.clientDocumentId == clientDocumentId);
+    if (index >= 0 && _items[index].state == QueuedDocument.failed) {
+      await _replace(_items[index]._waitingAgain());
+    }
+    _kick();
+  }
+
+  Future<void> _deleteThumbnail(QueuedDocument item) async {
+    final thumbnail = thumbnailOf(item);
+    try {
+      if (thumbnail != null && await thumbnail.exists()) {
+        await thumbnail.delete();
+      }
+    } on FileSystemException {
+      // The next start deletes it.
     }
   }
 
@@ -423,6 +559,9 @@ class UploadQueue {
           documentType: item.documentType,
           pageCount: item.pageCount,
           staffId: item.staffId,
+          title: item.title,
+          note: item.userNote,
+          thumbnail: thumbnailOf(item),
         );
       } on Object catch (error) {
         // Never lose an item to an unexpected error: try it again later.

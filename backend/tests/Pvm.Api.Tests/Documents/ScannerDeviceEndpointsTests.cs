@@ -233,9 +233,10 @@ public sealed class ScannerDeviceEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("Dispatch phone 1", body.GetProperty("deviceName").GetString());
-        var type = Assert.Single(body.GetProperty("documentTypes").EnumerateArray());
-        Assert.Equal("POD", type.GetProperty("code").GetString());
-        Assert.Equal("Proof of delivery", type.GetProperty("displayName").GetString());
+        Assert.Equal(
+            [("POD", "Proof of delivery"), ("GENERAL", "General document")],
+            body.GetProperty("documentTypes").EnumerateArray()
+                .Select(type => (type.GetProperty("code").GetString(), type.GetProperty("displayName").GetString())));
         var staff = body.GetProperty("staff").EnumerateArray().ToList();
         Assert.Equal([anna, thabo], staff.Select(item => item.GetProperty("id").GetGuid()));
         Assert.Equal(["Anna", "Thabo"], staff.Select(item => item.GetProperty("name").GetString()));
@@ -409,6 +410,46 @@ public sealed class ScannerDeviceEndpointsTests : IAsyncLifetime
         var reviewItem = Assert.Single(review.GetProperty("items").EnumerateArray());
         Assert.Equal("Dispatch phone 1", reviewItem.GetProperty("scannerDeviceName").GetString());
         Assert.Equal("Thabo", reviewItem.GetProperty("scannerStaffName").GetString());
+    }
+
+    [Fact]
+    public async Task DeviceUpload_General_WithTitleNoteAndThumbnail_StoresThem()
+    {
+        var client = await StartAsync();
+        var key = await EnrolDeviceAsync(client, "Dispatch phone 1");
+        var thumbnail = new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0xFF, 0xD9 };
+
+        var response = await client.SendAsync(DeviceUpload(
+            "/api/device/documents",
+            key,
+            Guid.NewGuid(),
+            documentType: "GENERAL",
+            title: "Fleet licence",
+            note: "Keep for SARS",
+            thumbnail: thumbnail));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        await using var scope = _app!.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<PvmDbContext>();
+        var row = await db.CapturedDocuments.SingleAsync();
+        Assert.Equal("GENERAL", row.DocumentType);
+        Assert.Equal("Fleet licence", row.Title);
+        Assert.Equal("Keep for SARS", row.Note);
+        Assert.NotNull(row.ThumbnailBlobPath);
+        Assert.Equal("device:Dispatch phone 1", row.UploadedBy);
+    }
+
+    [Fact]
+    public async Task DeviceUpload_Pod_WithTitle_Returns400()
+    {
+        var client = await StartAsync();
+        var key = await EnrolDeviceAsync(client, "Dispatch phone 1");
+
+        var response = await client.SendAsync(DeviceUpload("/api/device/documents", key, Guid.NewGuid(), title: "A title"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await using var scope = _app!.Services.CreateAsyncScope();
+        Assert.Equal(0, await scope.ServiceProvider.GetRequiredService<PvmDbContext>().CapturedDocuments.CountAsync());
     }
 
     [Fact]
@@ -609,15 +650,33 @@ public sealed class ScannerDeviceEndpointsTests : IAsyncLifetime
         string? key,
         Guid clientDocumentId,
         string? staffId = null,
-        byte[]? file = null)
+        byte[]? file = null,
+        string documentType = "POD",
+        string? title = null,
+        string? note = null,
+        byte[]? thumbnail = null)
     {
         var content = new MultipartFormDataContent
         {
             { new ByteArrayContent(file ?? Pdf), "file", "scan.pdf" },
             { new StringContent(clientDocumentId.ToString("D")), "clientDocumentId" },
-            { new StringContent("POD"), "documentType" },
+            { new StringContent(documentType), "documentType" },
             { new StringContent("1"), "pageCount" }
         };
+        if (title is not null)
+        {
+            content.Add(new StringContent(title), "title");
+        }
+
+        if (note is not null)
+        {
+            content.Add(new StringContent(note), "note");
+        }
+
+        if (thumbnail is not null)
+        {
+            content.Add(new ByteArrayContent(thumbnail), "thumbnail", "thumbnail.jpg");
+        }
         if (staffId is not null)
         {
             content.Add(new StringContent(staffId), "staffId");
