@@ -17,6 +17,7 @@ import {
 } from "../../../../src/sales-report";
 import {
   ButtonLink,
+  buttonClass,
   Compact,
   ColumnChart,
   EmptyState,
@@ -110,7 +111,10 @@ export default async function SalesReportPage({ searchParams }: { searchParams: 
           <Stack direction="row" wrap align="end" gap="xs">
             <SavedFilters path={pivotPath} filters={saved} current={current} query={query} />
             <ButtonLink href={`${basePath}/lines?${query}`}>Show the lines</ButtonLink>
-            <ButtonLink href={`${basePath}/export?${query}`}>Export CSV</ButtonLink>
+            {/* A plain link: a prefetch of the export would read the whole report. */}
+            <a className={buttonClass("secondary")} href={`${basePath}/export?${query}`} download>
+              Download Excel
+            </a>
           </Stack>
         }
       />

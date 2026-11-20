@@ -10,7 +10,7 @@ namespace Pvm.Api.Features.Reports;
 /// The sales pivot and the saved filters. Refer to docs/design/sales-report-pages.md, section "Pivot".
 /// <list type="bullet">
 ///   <item><c>GET /api/reports/sales/meta</c>: the months with sales, and the end of the last load.</item>
-///   <item><c>GET /api/reports/sales/pivot?rows=rep,customer&amp;from=2026-03&amp;to=2027-02&amp;rep=R1,R2&amp;open=R1&amp;format=csv</c>: the pivot.</item>
+///   <item><c>GET /api/reports/sales/pivot?rows=rep,customer&amp;from=2026-03&amp;to=2027-02&amp;rep=R1,R2&amp;open=R1&amp;format=xlsx</c>: the pivot, or an Excel or CSV file of all levels.</item>
 ///   <item><c>GET /api/reports/sales/values?dimension=customer&amp;search=spar&amp;…</c>: the values of one dimension in the filter.</item>
 ///   <item><c>GET /api/reports/sales/labels?dimension=customer&amp;keys=C1,C2</c>: the labels of some keys.</item>
 ///   <item><c>GET /api/reports/sales/lines?page=1&amp;…</c>: the lines, 100 for each page.</item>
@@ -58,6 +58,12 @@ public static class SalesPivotEndpoints
         if (request is null)
         {
             return Results.BadRequest(new { message = problem });
+        }
+
+        if (string.Equals(http.Query["format"], "xlsx", StringComparison.OrdinalIgnoreCase))
+        {
+            var workbook = await service.WorkbookAsync(request, cancellationToken);
+            return Results.File(workbook, SalesPivotWorkbook.ContentType, Path.ChangeExtension(CsvFileName(request), ".xlsx"));
         }
 
         if (string.Equals(http.Query["format"], "csv", StringComparison.OrdinalIgnoreCase))

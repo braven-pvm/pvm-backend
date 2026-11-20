@@ -1,3 +1,5 @@
+using System.IO.Compression;
+using System.Xml.Linq;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Pvm.Application.Messaging;
@@ -281,6 +283,50 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
         Assert.Same(first, cached);
         Assert.Equal(370m, cached.Totals.Total);
         Assert.Equal(1370m, fresh.Totals.Total);
+    }
+
+    [Fact]
+    public async Task The_workbook_is_an_xlsx_with_the_filters_on_top_and_the_levels_as_row_groups()
+    {
+        await using var db = CreateDbContext();
+        var filter = new SalesPivotFilter(202701, 202702, new Dictionary<SalesDimension, IReadOnlyList<string>> { [SalesDimension.Rep] = ["R1"] });
+
+        var bytes = await Service(db).WorkbookAsync(Request(filter, [SalesDimension.Rep, SalesDimension.Customer], compare: true), CancellationToken.None);
+
+        using var zip = new ZipArchive(new MemoryStream(bytes));
+        Assert.Equal(
+            ["[Content_Types].xml", "_rels/.rels", "xl/_rels/workbook.xml.rels", "xl/styles.xml", "xl/workbook.xml", "xl/worksheets/sheet1.xml"],
+            zip.Entries.Select(entry => entry.FullName).Order(StringComparer.Ordinal));
+        foreach (var entry in zip.Entries)
+        {
+            using var stream = entry.Open();
+            XDocument.Load(stream); // Each part is well-formed XML.
+        }
+
+        XNamespace x = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        using var sheetStream = zip.GetEntry("xl/worksheets/sheet1.xml")!.Open();
+        var rows = XDocument.Load(sheetStream).Descendants(x + "row").ToList();
+        string Text(XElement row) => string.Join("|", row.Elements(x + "c").Select(cell => (string?)cell.Element(x + "is")?.Element(x + "t") ?? (string?)cell.Element(x + "v") ?? ""));
+        var texts = rows.Select(Text).ToList();
+        Assert.Equal("Sales report by rep, then customer", texts[0]);
+        Assert.Contains("Period: Mar 2026 to Apr 2026", texts);
+        Assert.Contains("Compared with: Mar 2025 to Apr 2025", texts);
+        Assert.Contains("Rep: Rep One", texts);
+        Assert.Contains("Rep, then Customer|Mar 2026|Apr 2026|Total|A year before|Change", texts);
+        Assert.Contains("Rep One|120|50|170|80|1.125", texts);
+        var storeOne = rows.Single(row => Text(row).StartsWith("STORE ONE", StringComparison.Ordinal));
+        Assert.Equal(("1", "1"), ((string?)storeOne.Attribute("outlineLevel"), (string?)storeOne.Attribute("hidden")));
+        Assert.Equal("Total|120|50|170|80|1.125", texts[^1]);
+    }
+
+    [Theory]
+    [InlineData(1, "A")]
+    [InlineData(26, "Z")]
+    [InlineData(27, "AA")]
+    [InlineData(53, "BA")]
+    public void Excel_column_names_follow_the_alphabet(int column, string name)
+    {
+        Assert.Equal(name, SalesPivotWorkbook.ColumnName(column));
     }
 
     [Fact]
