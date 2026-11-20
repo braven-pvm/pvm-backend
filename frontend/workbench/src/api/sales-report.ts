@@ -122,9 +122,9 @@ export function deleteSavedFilter(id: string) {
   return send<void>(`saved-filters/${encodeURIComponent(id)}`, { method: "DELETE" }, "the saved filter");
 }
 
-/** The CSV file of the pivot, with the user's sign-in. */
-export async function fetchPivotCsv(query: URLSearchParams) {
+/** The Excel (.xlsx) or CSV file of the pivot with all levels, with the user's sign-in. */
+export async function fetchPivotFile(query: URLSearchParams, format: "xlsx" | "csv") {
   const withFormat = new URLSearchParams(query);
-  withFormat.set("format", "csv");
+  withFormat.set("format", format);
   return timedFetch(`${base}/pivot?${withFormat}`, { headers: await getApiAuthHeaders(), cache: "no-store" });
 }

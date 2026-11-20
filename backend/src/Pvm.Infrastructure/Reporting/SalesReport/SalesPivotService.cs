@@ -421,6 +421,43 @@ public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
         return csv.ToString();
     }
 
+    /// <summary>
+    /// The pivot with all levels, as an Excel workbook. The top of the sheet names the period, the
+    /// comparison, the measure, each filter with its labels, and the load that the figures come from.
+    /// </summary>
+    public async Task<byte[]> WorkbookAsync(SalesPivotRequest request, CancellationToken cancellationToken)
+    {
+        var pivot = await PivotAsync(request with { Open = null }, cancellationToken);
+        var notes = new List<SalesWorkbookNote>
+        {
+            new("Period", $"{MonthLabel(request.Filter.From)} to {MonthLabel(request.Filter.To)}"),
+        };
+        if (request.Compare)
+        {
+            notes.Add(new("Compared with", $"{MonthLabel(request.Filter.From - 100)} to {MonthLabel(request.Filter.To - 100)}"));
+        }
+
+        notes.Add(new("Measure", MeasureName(request.Filter.Measure)));
+        foreach (var (dimension, keys) in request.Filter.Include.Where(item => item.Value.Count > 0).OrderBy(item => item.Key))
+        {
+            var labels = (await LabelsAsync(dimension, keys, cancellationToken)).ToDictionary(value => value.Key, value => value.Label);
+            notes.Add(new(Name(dimension), string.Join(", ", keys.Select(key => labels.GetValueOrDefault(key, key)))));
+        }
+
+        notes.Add(new("Data", pivot.DataTo is { } dataTo
+            ? $"Sell-in from Acumatica, from the load of {dataTo.ToOffset(TimeSpan.FromHours(2)).ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture)} (South African time). Credit notes are subtracted."
+            : "Sell-in from Acumatica. No load has finished yet."));
+        var rowHeader = string.Join(", then ", request.Rows.Select(Name));
+        return SalesPivotWorkbook.Write(pivot, $"Sales report by {rowHeader.ToLowerInvariant()}", notes, rowHeader, MeasureName(request.Filter.Measure));
+    }
+
+    public static string MeasureName(SalesPivotMeasure measure) => measure switch
+    {
+        SalesPivotMeasure.Quantity => "Quantity",
+        SalesPivotMeasure.Customers => "Customers",
+        _ => "Sales (R)",
+    };
+
     /// <summary>The lines behind the pivot, a page at a time.</summary>
     public async Task<SalesReportLinePage> LinesAsync(SalesPivotFilter filter, int page, int pageSize, CancellationToken cancellationToken)
     {
