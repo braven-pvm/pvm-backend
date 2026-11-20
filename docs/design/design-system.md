@@ -36,7 +36,7 @@ Rules that apply to every screen:
 - [Page templates](#page-templates): Dashboard, List, Record, Task, Settings, and the page states.
 - [Choose a component](#choose-a-component).
 - Components:
-  - Layout: [PageFrame](#pageframe), [Columns](#columns), [Stack](#stack), [Panel](#panel), [PageHeader](#pageheader), [TileGrid](#tilegrid), [AppShell](#appshell).
+  - Layout: [PageFrame](#pageframe), [Compact](#compact), [Columns](#columns), [Stack](#stack), [Panel](#panel), [PageHeader](#pageheader), [TileGrid](#tilegrid), [AppShell](#appshell).
   - Actions: [Button](#button), [ButtonLink](#buttonlink), [SubmitButton](#submitbutton), [ConfirmDialog](#confirmdialog).
   - Content: [CodeBlock](#codeblock), [PdfFrame](#pdfframe), [QrCode](#qrcode).
   - Status: [StatusBadge](#statusbadge), [Notice](#notice), [Spinner](#spinner), [EmptyState](#emptystate).
@@ -44,7 +44,7 @@ Rules that apply to every screen:
   - Lists: [DataTable](#datatable), [FilterChips](#filterchips), [FilterBar](#filterbar), [MultiSelect](#multiselect), [OrderPicker](#orderpicker), [PivotGrid](#pivotgrid), [Pagination](#pagination), [Thumbnail](#thumbnail).
   - Navigation: [TabNav and Tabs](#tabs), [BackLink](#backlink), [RecordNav](#recordnav), [Stepper](#stepper).
   - Records: [KeyValueList](#keyvaluelist), [Timeline](#timeline).
-  - Dashboards: [AttentionList](#attentionlist), [StatTile](#stattile), [Tile](#tile), [BarList](#barlist), [ColumnChart](#columnchart), [Sparkline](#sparkline), [Delta](#delta).
+  - Dashboards: [AttentionList](#attentionlist), [LinkList](#linklist), [StatTile](#stattile), [Tile](#tile), [BarList](#barlist), [ColumnChart](#columnchart), [Sparkline](#sparkline), [Delta](#delta).
   - Automation: [ModeSwitch](#modeswitch).
 - [Copy rules](#copy-rules).
 - [Patterns that are not components](#patterns-that-are-not-components).
@@ -920,6 +920,27 @@ value. A table that only screen readers read gives every value. Put the chart
 in a `Panel` with a description that says what the values include.
 
 Do not add a chart library.
+
+### LinkList
+
+A short list of records in a panel, such as "Customers to call". Each row is a
+link: the name in bold, one weak line under it, and a status or a figure at the
+end. The whole row opens the record. For a list with columns, use `DataTable`.
+
+| Prop | Notes |
+| --- | --- |
+| `label` | For screen readers: "Customers to call" |
+| `items` | `id`, `title`, `href`, and optional `meta` and `aside` |
+
+### Compact
+
+The dense size of a report page: 14 px text, 26 px headings and figures, 32 px
+controls and less space. It sets the size tokens for all the components inside
+it, so they shrink with no change of their own. The colours do not change.
+
+Use it only for a report page that shows many figures at once, such as the
+sales report. The owner chose this size from the sales report prototype on
+2026-11-20. Other pages keep the normal size.
 
 ### Sparkline
 
