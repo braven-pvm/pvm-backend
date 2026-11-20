@@ -45,7 +45,11 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
             Line("C1", "PROMO", 2027, 1, 999m, 99m),
             Line("C1", "BAR01", 2027, 1, -10m, -1m, SellInDocumentType.CreditMemo));
         await db.SaveChangesAsync();
+        await RefreshSummariesAsync(db);
     }
+
+    // The sell-in load refreshes the summaries. The tests add lines themselves, so they refresh too.
+    private static Task RefreshSummariesAsync(PvmDbContext db) => db.Database.ExecuteSqlRawAsync(SellInReportViews.RefreshSummaries);
 
     public Task DisposeAsync() => _postgres.DisposeAsync().AsTask();
 
@@ -225,15 +229,35 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task A_second_request_comes_from_the_cache_until_the_next_load()
+    public async Task A_whole_tree_in_one_read_matches_the_tree_level_by_level()
     {
         await using var db = CreateDbContext();
         var service = Service(db);
+        var rows = new[] { SalesDimension.ItemGroup, SalesDimension.Product, SalesDimension.Customer };
+
+        var tree = await service.PivotAsync(Request(Year2027(), rows, columns: SalesPivotColumns.Months, compare: true) with { Open = null }, CancellationToken.None);
+        var opened = await service.PivotAsync(
+            Request(Year2027(), rows, ["BARS", "GELS", "BARS|BAR01", "GELS|GEL01"], SalesPivotColumns.Months, compare: true), CancellationToken.None);
+
+        Assert.Equal(
+            opened.Rows.Select(row => (row.Level, row.Key, row.Label, row.Total, row.PreviousTotal, string.Join(",", row.Values))),
+            tree.Rows.Select(row => (row.Level, row.Key, row.Label, row.Total, row.PreviousTotal, string.Join(",", row.Values))));
+        Assert.Equal(opened.Totals.Total, tree.Totals.Total);
+        Assert.Equal(370m, tree.Totals.Total);
+    }
+
+    [Fact]
+    public async Task A_second_request_comes_from_the_cache_until_the_next_load()
+    {
+        await using var db = CreateDbContext();
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var service = new SalesPivotService(db, cache);
         var request = Request(Year2027(), [SalesDimension.Rep]);
         var first = await service.PivotAsync(request, CancellationToken.None);
 
         db.SellInLines.Add(Line("P1", "BAR01", 2027, 2, 1000m, 1m));
         await db.SaveChangesAsync();
+        await RefreshSummariesAsync(db);
         var cached = await service.PivotAsync(request, CancellationToken.None);
 
         db.IntegrationRuns.Add(new IntegrationRunEntity
@@ -251,6 +275,7 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
             CompletedAt = Now,
         });
         await db.SaveChangesAsync();
+        cache.Remove("sales-data-to"); // The end of the last load stays a minute in the cache.
         var fresh = await service.PivotAsync(request, CancellationToken.None);
 
         Assert.Same(first, cached);
