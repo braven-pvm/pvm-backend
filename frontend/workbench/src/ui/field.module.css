@@ -75,7 +75,8 @@
   line-height: var(--leading-body);
   margin-top: var(--space-2xs);
   min-height: var(--control-height);
-  padding: var(--space-xs) 12px;
+  /* Compact sets a smaller padding. */
+  padding: var(--control-padding-y, var(--space-xs)) 12px;
   width: 100%;
 }
 

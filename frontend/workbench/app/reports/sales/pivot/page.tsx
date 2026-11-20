@@ -17,6 +17,7 @@ import {
 } from "../../../../src/sales-report";
 import {
   ButtonLink,
+  Compact,
   ColumnChart,
   EmptyState,
   Notice,
@@ -99,6 +100,7 @@ export default async function SalesReportPage({ searchParams }: { searchParams: 
   const compare = state.compare && pivot?.totals.previousTotal !== undefined && pivot?.totals.previousTotal !== null;
 
   return (
+    <Compact>
     <PageFrame>
       <PageHeader
         eyebrow="Sales report"
@@ -211,5 +213,6 @@ export default async function SalesReportPage({ searchParams }: { searchParams: 
         ) : null}
       </Stack>
     </PageFrame>
+    </Compact>
   );
 }

@@ -14,7 +14,7 @@ import {
   type ReportState,
   type TrailStep,
 } from "../../../src/sales-report";
-import { BackLink, buttonClass, FilterChips, Notice, PageFrame, PageHeader, Stack, TabNav, type MultiSelectOption } from "../../../src/ui";
+import { BackLink, buttonClass, Compact, FilterChips, Notice, PageFrame, PageHeader, Stack, TabNav, type MultiSelectOption } from "../../../src/ui";
 import { FilterBar } from "./filter-bar";
 import { pageHref } from "./links";
 import { basePath, freshness, isStale, single, type Search } from "./parts";
@@ -118,6 +118,7 @@ export async function SalesFrame({ context, path, tab, back, eyebrow, title, des
   const downloadQuery = stateQuery({ ...state, rows: download, columns: "months", open: [], sort: "value" }, false);
 
   return (
+    <Compact>
     <PageFrame>
       {back ? <BackLink href={back.href} label={back.label} /> : null}
       <PageHeader
@@ -175,5 +176,6 @@ export async function SalesFrame({ context, path, tab, back, eyebrow, title, des
         {children}
       </Stack>
     </PageFrame>
+    </Compact>
   );
 }

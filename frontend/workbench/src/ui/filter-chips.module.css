@@ -17,8 +17,9 @@
   font-size: var(--text-small);
   gap: var(--space-xs);
   line-height: var(--leading-small);
-  min-height: 36px;
-  padding: 0 14px;
+  /* Compact sets a smaller chip. */
+  min-height: var(--chip-height, 36px);
+  padding: 0 var(--chip-padding-x, 14px);
   text-decoration: none;
 }
 

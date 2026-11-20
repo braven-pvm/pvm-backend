@@ -1,13 +1,13 @@
 import type { ReactNode } from "react";
 import { formatFigure, type CustomerStatus } from "../../../src/sales-report";
 import {
-  AttentionList,
   BarList,
   ButtonLink,
   ColumnChart,
   DataTable,
   Delta,
   EmptyState,
+  LinkList,
   PivotGrid,
   Sparkline,
   Stack,
@@ -271,15 +271,19 @@ export function CallList({ rows, href, meta, limit = 6 }: { rows: CustomerFigure
     return <EmptyState title="Every customer ordered in the last 2 months" />;
   }
   return (
-    <AttentionList
+    <LinkList
       label="Customers to call"
       items={calls.map((row) => ({
         id: row.key,
-        status: row.status,
-        tone: statusTones[row.status],
         title: row.label,
-        detail: `${meta(row)} · ${short(row.previous)} last year`,
-        action: <ButtonLink href={href(row)}>Open</ButtonLink>,
+        meta: meta(row),
+        href: href(row),
+        aside: (
+          <>
+            <StatusPill status={row.status} />
+            {short(row.previous)} last year
+          </>
+        ),
       }))}
     />
   );
@@ -296,15 +300,19 @@ export function MoverList({ rows, href, meta, direction }: { rows: Figure[]; hre
     return <EmptyState title="No changes" />;
   }
   return (
-    <AttentionList
+    <LinkList
       label={direction === "up" ? "Biggest growth" : "Biggest drops"}
       items={movers.map(({ row, change }) => ({
         id: row.key,
-        status: direction === "up" ? "Up" : "Down",
-        tone: direction === "up" ? "success" : "error",
         title: row.label,
-        detail: `${meta(row)} · ${change > 0 ? "+" : "-"}${short(Math.abs(change))}`,
-        action: <ButtonLink href={href(row)}>Open</ButtonLink>,
+        meta: meta(row),
+        href: href(row),
+        aside: (
+          <>
+            <strong>{`${change > 0 ? "+" : "-"}${short(Math.abs(change))}`}</strong>
+            <Delta current={row.current} previous={row.previous} />
+          </>
+        ),
       }))}
     />
   );
