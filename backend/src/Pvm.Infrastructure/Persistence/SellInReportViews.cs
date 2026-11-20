@@ -80,7 +80,66 @@ public static class SellInReportViews
         """;
 
     public const string Drop = $"""
+        {DropSummaries}
         drop view if exists reporting.{ExcludedLinesView};
         drop view if exists reporting.{ReportLinesView};
+        """;
+
+    /// <summary>
+    /// The monthly summary of the report lines, for the sales pivot. One row for each month,
+    /// customer, product, warehouse and rep at the sale, with the keys and the labels that the
+    /// pivot groups by, so a query needs no join. The sell-in load refreshes it.
+    /// </summary>
+    public const string MonthsView = "sell_in_report_months";
+
+    /// <summary>
+    /// The monthly summary by customer only: rep, customer group, customer and province. It is
+    /// much smaller, and the pivot reads it when a request uses only those dimensions.
+    /// </summary>
+    public const string CustomerMonthsView = "sell_in_report_customer_months";
+
+    public const string CreateSummaries = $"""
+        create materialized view reporting.{MonthsView} as
+        select
+            l."FinancialYear" * 100 + l."FinancialMonth" as month_key,
+            coalesce(l."SalesRepId", '') as rep_key,
+            coalesce(l."SalesRepName", l."SalesRepId", 'No rep') as rep_label,
+            coalesce(l."SalesRepAtSaleId", '') as rep_at_sale_key,
+            coalesce(l."SalesRepAtSaleName", l."SalesRepAtSaleId", 'No rep') as rep_at_sale_label,
+            coalesce(l."CustomerClassId", '') as customer_group_key,
+            coalesce(l."CustomerClassName", l."CustomerClassId", 'No group') as customer_group_label,
+            l."CustomerId" as customer_key,
+            coalesce(l."CustomerName", l."CustomerId") as customer_label,
+            coalesce(l."Province", '') as province_key,
+            coalesce(nullif(l."Province", ''), 'No province') as province_label,
+            coalesce(l."ItemClassId", '') as item_group_key,
+            coalesce(l."ItemClassName", l."ItemClassId", 'No group') as item_group_label,
+            l."InventoryId" as product_key,
+            coalesce(l."ItemDescription", l."InventoryId") as product_label,
+            coalesce(l."WarehouseId", '') as warehouse_key,
+            coalesce(nullif(l."WarehouseId", ''), 'No warehouse') as warehouse_label,
+            sum(l."Amount") as amount,
+            sum(l."Quantity") as quantity
+        from reporting.{ReportLinesView} l
+        group by 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17;
+        create index ix_{MonthsView}_month on reporting.{MonthsView} (month_key);
+
+        create materialized view reporting.{CustomerMonthsView} as
+        select month_key, rep_key, rep_label, customer_group_key, customer_group_label, customer_key, customer_label,
+            province_key, province_label, sum(amount) as amount, sum(quantity) as quantity
+        from reporting.{MonthsView}
+        group by 1, 2, 3, 4, 5, 6, 7, 8, 9;
+        create index ix_{CustomerMonthsView}_month on reporting.{CustomerMonthsView} (month_key);
+        """;
+
+    public const string DropSummaries = $"""
+        drop materialized view if exists reporting.{CustomerMonthsView};
+        drop materialized view if exists reporting.{MonthsView};
+        """;
+
+    /// <summary>Refreshes the summaries after a load. The customer summary reads the month summary, so it comes second.</summary>
+    public const string RefreshSummaries = $"""
+        refresh materialized view reporting.{MonthsView};
+        refresh materialized view reporting.{CustomerMonthsView};
         """;
 }

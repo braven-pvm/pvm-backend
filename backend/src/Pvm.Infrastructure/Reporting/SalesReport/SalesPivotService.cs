@@ -112,18 +112,16 @@ public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
     /// <summary>A report query over 2 years of lines can take longer than the default of 30 seconds.</summary>
     public static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(120);
 
+    private const string DataToKey = "sales-data-to";
+
+    /// <summary>How long the end of the last load stays in the cache.</summary>
+    public static readonly TimeSpan DataToCacheTime = TimeSpan.FromMinutes(1);
+
     public const int MaxMonths = 36;
     public const int MaxDepth = 5;
     public const string PathSeparator = "|";
 
-    private const string Source = """
-        reporting.sell_in_report_lines l
-        left join reporting.customer_class_channels ch on ch."CustomerClassId" = l."CustomerClassId"
-        """;
-
-    private const string MonthKey = """(l."FinancialYear" * 100 + l."FinancialMonth")""";
-
-    private static readonly IReadOnlyDictionary<SalesDimension, (string Key, string Label)> Sql = new Dictionary<SalesDimension, (string, string)>
+    private static readonly IReadOnlyDictionary<SalesDimension, (string Key, string Label)> LineDimensions = new Dictionary<SalesDimension, (string, string)>
     {
         [SalesDimension.Rep] = ("""coalesce(l."SalesRepId", '')""", """coalesce(l."SalesRepName", l."SalesRepId", 'No rep')"""),
         [SalesDimension.RepAtSale] = ("""coalesce(l."SalesRepAtSaleId", '')""", """coalesce(l."SalesRepAtSaleName", l."SalesRepAtSaleId", 'No rep')"""),
@@ -136,13 +134,85 @@ public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
         [SalesDimension.Warehouse] = ("""coalesce(l."WarehouseId", '')""", """coalesce(nullif(l."WarehouseId", ''), 'No warehouse')"""),
     };
 
+    /// <summary>Where a query reads: the report lines, or a monthly summary. Each gives the same expressions.</summary>
+    private sealed record SqlSource(
+        string From,
+        string Month,
+        string Year,
+        IReadOnlyDictionary<SalesDimension, (string Key, string Label)> Dimensions,
+        string Amount,
+        string Quantity,
+        string Customer);
+
+    private const string ChannelJoin = """left join reporting.customer_class_channels ch on ch."CustomerClassId" = """;
+
+    /// <summary>The report lines, for the lines page.</summary>
+    private static readonly SqlSource LineSource = new(
+        $"""reporting.sell_in_report_lines l {ChannelJoin}l."CustomerClassId" """,
+        """(l."FinancialYear" * 100 + l."FinancialMonth")""",
+        """l."FinancialYear" """,
+        LineDimensions,
+        """l."Amount" """,
+        """l."Quantity" """,
+        """l."CustomerId" """);
+
+    private static readonly IReadOnlyDictionary<SalesDimension, (string Key, string Label)> SummaryDimensions = new Dictionary<SalesDimension, (string, string)>
+    {
+        [SalesDimension.Rep] = ("s.rep_key", "s.rep_label"),
+        [SalesDimension.RepAtSale] = ("s.rep_at_sale_key", "s.rep_at_sale_label"),
+        [SalesDimension.Channel] = ("""coalesce(ch."Channel", 'Other')""", """coalesce(ch."Channel", 'Other')"""),
+        [SalesDimension.CustomerGroup] = ("s.customer_group_key", "s.customer_group_label"),
+        [SalesDimension.Customer] = ("s.customer_key", "s.customer_label"),
+        [SalesDimension.Province] = ("s.province_key", "s.province_label"),
+        [SalesDimension.ItemGroup] = ("s.item_group_key", "s.item_group_label"),
+        [SalesDimension.Product] = ("s.product_key", "s.product_label"),
+        [SalesDimension.Warehouse] = ("s.warehouse_key", "s.warehouse_label"),
+    };
+
+    /// <summary>
+    /// The monthly summary with every dimension. The sell-in load refreshes it. The channel comes
+    /// from its small table at query time, so a change of a channel shows at once.
+    /// </summary>
+    private static readonly SqlSource MonthSource = new(
+        $"reporting.{SellInReportViews.MonthsView} s {ChannelJoin}s.customer_group_key",
+        "s.month_key",
+        "(s.month_key / 100)",
+        SummaryDimensions,
+        "s.amount",
+        "s.quantity",
+        "s.customer_key");
+
+    /// <summary>The smaller monthly summary by customer, for a request that uses only these dimensions.</summary>
+    private static readonly HashSet<SalesDimension> CustomerDimensions =
+        [SalesDimension.Rep, SalesDimension.Channel, SalesDimension.CustomerGroup, SalesDimension.Customer, SalesDimension.Province];
+
+    private static readonly SqlSource CustomerMonthSource = MonthSource with
+    {
+        From = $"reporting.{SellInReportViews.CustomerMonthsView} s {ChannelJoin}s.customer_group_key",
+    };
+
+    /// <summary>The smallest summary that has every dimension of the rows and of the filter.</summary>
+    private static SqlSource SourceFor(IEnumerable<SalesDimension> rows, SalesPivotFilter filter) =>
+        rows.Concat(filter.Include.Where(item => item.Value.Count > 0).Select(item => item.Key)).All(CustomerDimensions.Contains)
+            ? CustomerMonthSource
+            : MonthSource;
+
     /// <summary>The months that have sales, and the end of the last successful load.</summary>
     public async Task<SalesPivotMeta> MetaAsync(CancellationToken cancellationToken)
     {
-        var months = db.SellInReportLines.AsNoTracking().Select(line => line.FinancialYear * 100 + line.FinancialMonth);
-        var first = await months.Select(month => (int?)month).MinAsync(cancellationToken);
-        var last = await months.Select(month => (int?)month).MaxAsync(cancellationToken);
-        return new SalesPivotMeta(first, last, await DataToAsync(cancellationToken));
+        var dataTo = await DataToAsync(cancellationToken);
+        var key = $"sales-meta|{dataTo?.UtcTicks}";
+        if (cache.TryGetValue(key, out SalesPivotMeta? cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        // The index of the summary gives the first and the last month at once.
+        var sql = $"""select min(month_key) as "First", max(month_key) as "Last" from reporting.{SellInReportViews.MonthsView}""";
+        var range = await db.Database.SqlQueryRaw<MonthRange>(sql).SingleAsync(cancellationToken);
+        var meta = new SalesPivotMeta(range.First, range.Last, dataTo);
+        cache.Set(key, meta, CacheTime);
+        return meta;
     }
 
     /// <summary>
@@ -162,9 +232,10 @@ public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
         }
 
         db.Database.SetCommandTimeout(CommandTimeout);
+        var source = SourceFor([dimension], filter with { Include = include });
         var parameters = new List<NpgsqlParameter>();
-        var where = Where(filter with { Include = include }, compare: false, parameters);
-        var (key, label) = Sql[dimension];
+        var where = Where(filter with { Include = include }, compare: false, parameters, source);
+        var (key, label) = source.Dimensions[dimension];
         var searchSql = string.Empty;
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -174,8 +245,8 @@ public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
 
         parameters.Add(new NpgsqlParameter("limit", Math.Clamp(limit, 1, 500)));
         var sql = $"""
-            select {key} as "Key", min({label}) as "Label", {Measure(filter.Measure, "true")} as "Total"
-            from {Source}
+            select {key} as "Key", min({label}) as "Label", {Measure(filter.Measure, "true", source)} as "Total"
+            from {source.From}
             where {where} {searchSql}
             group by 1
             order by 3 desc, 2
@@ -194,10 +265,10 @@ public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
             return [];
         }
 
-        var (key, label) = Sql[dimension];
+        var (key, label) = MonthSource.Dimensions[dimension];
         var sql = $"""
             select {key} as "Key", min({label}) as "Label", 0::numeric as "Total"
-            from {Source}
+            from {MonthSource.From}
             where {key} = any(@keys)
             group by 1
             order by 2
@@ -236,8 +307,23 @@ public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
     private async Task<SalesPivot> BuildPivotAsync(SalesPivotRequest request, DateTimeOffset? dataTo, CancellationToken cancellationToken)
     {
         var columns = Columns(request.Filter, request.Columns);
+        var source = SourceFor(request.Rows, request.Filter);
         var open = request.Open is null ? null : request.Open.ToHashSet(StringComparer.Ordinal);
         var levels = new List<IReadOnlyList<Cell>>();
+        IReadOnlyList<Cell> totals;
+        if (open is null)
+        {
+            // The whole tree: every level and the totals in one read.
+            var cells = await TreeCellsAsync(request, source, cancellationToken);
+            for (var depth = 0; depth < request.Rows.Count; depth++)
+            {
+                levels.Add([.. cells.Where(cell => cell.Level == depth)]);
+            }
+
+            totals = [.. cells.Where(cell => cell.Level < 0)];
+        }
+        else
+        {
         for (var depth = 0; depth < request.Rows.Count; depth++)
         {
             IReadOnlyList<string>? prefixes = null;
@@ -250,10 +336,12 @@ public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
                 }
             }
 
-            levels.Add(await CellsAsync(request, depth, prefixes, cancellationToken));
+            levels.Add(await CellsAsync(request, source, depth, prefixes, cancellationToken));
         }
 
-        var totals = await CellsAsync(request, -1, null, cancellationToken);
+        totals = await CellsAsync(request, source, -1, null, cancellationToken);
+        }
+
         var nodes = levels.Select((level, depth) => Rows(level, columns, request, depth).ToLookup(row => Parent(row.Key, depth))).ToList();
         var rows = new List<SalesPivotRow>();
         void Emit(int depth, string parent)
@@ -339,8 +427,8 @@ public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 500);
         var parameters = new List<NpgsqlParameter>();
-        var where = Where(filter, compare: false, parameters);
-        var countSql = $"""select count(*)::int as "Value" from {Source} where {where}""";
+        var where = Where(filter, compare: false, parameters, LineSource);
+        var countSql = $"""select count(*)::int as "Value" from {LineSource.From} where {where}""";
         var count = await db.Database.SqlQueryRaw<int>(countSql, [.. Copy(parameters)]).SingleAsync(cancellationToken);
         parameters.Add(new NpgsqlParameter("skip", (page - 1) * pageSize));
         parameters.Add(new NpgsqlParameter("take", pageSize));
@@ -350,7 +438,7 @@ public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
                 l."CustomerName" as "CustomerName", l."CustomerClassName" as "CustomerGroup", l."SalesRepName" as "Rep",
                 l."InventoryId" as "InventoryId", l."ItemDescription" as "Product", l."ItemClassName" as "ItemGroup",
                 l."Quantity" as "Quantity", l."Amount" as "Amount"
-            from {Source}
+            from {LineSource.From}
             where {where}
             order by l."FinancialYear", l."FinancialMonth", l."ReferenceNumber", l."LineNumber"
             offset @skip limit @take
@@ -390,17 +478,63 @@ public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
         return months;
     }
 
-    private async Task<IReadOnlyList<Cell>> CellsAsync(SalesPivotRequest request, int depth, IReadOnlyList<string>? prefixes, CancellationToken cancellationToken)
+    private static string ColumnOf(SalesPivotRequest request, SqlSource source, string current) => request.Columns switch
+    {
+        SalesPivotColumns.Months => $"case when {current} then {source.Month} else {source.Month} + 100 end",
+        SalesPivotColumns.Years => $"case when {current} then {source.Year} else {source.Year} + 1 end",
+        _ => $"({source.Year} * 0)",
+    };
+
+    /// <summary>
+    /// Every level of the rows and the totals in one read, with grouping sets. A key that a set
+    /// leaves out is null, so the path of a row has only its own levels.
+    /// </summary>
+    private async Task<IReadOnlyList<Cell>> TreeCellsAsync(SalesPivotRequest request, SqlSource source, CancellationToken cancellationToken)
     {
         var parameters = new List<NpgsqlParameter>();
-        var where = Where(request.Filter, request.Compare, parameters);
-        var current = $"{MonthKey} between @from and @to";
-        var column = request.Columns switch
+        var where = Where(request.Filter, request.Compare, parameters, source);
+        var current = $"{source.Month} between @from and @to";
+        var column = ColumnOf(request, source, current);
+        var keys = request.Rows.Select(dimension => source.Dimensions[dimension].Key).ToList();
+        var labels = request.Rows.Select(dimension => source.Dimensions[dimension].Label).ToList();
+        var sets = new List<string>();
+        for (var depth = 0; depth < keys.Count; depth++)
         {
-            SalesPivotColumns.Months => $"case when {current} then {MonthKey} else {MonthKey} + 100 end",
-            SalesPivotColumns.Years => $"""case when {current} then l."FinancialYear" else l."FinancialYear" + 1 end""",
-            _ => """(l."FinancialYear" * 0)""",
-        };
+            var path = string.Join(", ", keys.Take(depth + 1));
+            sets.Add($"({path}, {column})");
+            sets.Add($"({path})");
+        }
+
+        sets.Add($"({column})");
+        sets.Add("()");
+        var level = new StringBuilder("case");
+        var label = new StringBuilder("case");
+        for (var depth = keys.Count - 1; depth >= 0; depth--)
+        {
+            level.Append(CultureInfo.InvariantCulture, $" when grouping({keys[depth]}) = 0 then {depth}");
+            label.Append(CultureInfo.InvariantCulture, $" when grouping({keys[depth]}) = 0 then min({labels[depth]})");
+        }
+
+        level.Append(" else -1 end");
+        label.Append(" else '' end");
+        var sql = $"""
+            select coalesce(concat_ws('{PathSeparator}', {string.Join(", ", keys)}), '') as "Path", {label} as "Label", {level} as "Level",
+                coalesce({column}, 0) as "Column", grouping({column}) as "Whole",
+                {Measure(request.Filter.Measure, current, source)} as "Current",
+                {Measure(request.Filter.Measure, $"not ({current})", source)} as "Previous"
+            from {source.From}
+            where {where}
+            group by grouping sets ({string.Join(", ", sets)})
+            """;
+        return await db.Database.SqlQueryRaw<Cell>(sql, [.. parameters]).ToListAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<Cell>> CellsAsync(SalesPivotRequest request, SqlSource source, int depth, IReadOnlyList<string>? prefixes, CancellationToken cancellationToken)
+    {
+        var parameters = new List<NpgsqlParameter>();
+        var where = Where(request.Filter, request.Compare, parameters, source);
+        var current = $"{source.Month} between @from and @to";
+        var column = ColumnOf(request, source, current);
 
         string path;
         string label;
@@ -411,9 +545,9 @@ public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
         }
         else
         {
-            var keys = request.Rows.Take(depth + 1).Select(dimension => Sql[dimension].Key).ToList();
+            var keys = request.Rows.Take(depth + 1).Select(dimension => source.Dimensions[dimension].Key).ToList();
             path = $"concat_ws('{PathSeparator}', {string.Join(", ", keys)})";
-            label = $"min({Sql[request.Rows[depth]].Label})";
+            label = $"min({source.Dimensions[request.Rows[depth]].Label})";
             if (prefixes is not null)
             {
                 parameters.Add(new NpgsqlParameter("prefixes", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = prefixes.ToArray() });
@@ -424,30 +558,31 @@ public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
         // The totals row groups by the column only. PostgreSQL refuses a text constant in GROUP BY.
         var sets = depth < 0 ? $"({column}), ()" : $"({path}, {column}), ({path})";
         var sql = $"""
-            select {path} as "Path", {label} as "Label", coalesce({column}, 0) as "Column", grouping({column}) as "Whole",
-                {Measure(request.Filter.Measure, current)} as "Current",
-                {Measure(request.Filter.Measure, $"not ({current})")} as "Previous"
-            from {Source}
+            select {path} as "Path", {label} as "Label", {depth} as "Level", coalesce({column}, 0) as "Column", grouping({column}) as "Whole",
+                {Measure(request.Filter.Measure, current, source)} as "Current",
+                {Measure(request.Filter.Measure, $"not ({current})", source)} as "Previous"
+            from {source.From}
             where {where}
             group by grouping sets ({sets})
             """;
         return await db.Database.SqlQueryRaw<Cell>(sql, [.. parameters]).ToListAsync(cancellationToken);
     }
 
-    private static string Measure(SalesPivotMeasure measure, string when) => measure switch
+    private static string Measure(SalesPivotMeasure measure, string when, SqlSource source) => measure switch
     {
-        SalesPivotMeasure.Quantity => $"""coalesce(sum(case when {when} then l."Quantity" else 0 end), 0)""",
-        SalesPivotMeasure.Customers => $"""count(distinct case when {when} then l."CustomerId" end)::numeric""",
-        _ => $"""coalesce(sum(case when {when} then l."Amount" else 0 end), 0)""",
+        SalesPivotMeasure.Quantity => $"coalesce(sum(case when {when} then {source.Quantity} else 0 end), 0)",
+        SalesPivotMeasure.Customers => $"count(distinct case when {when} then {source.Customer} end)::numeric",
+        _ => $"coalesce(sum(case when {when} then {source.Amount} else 0 end), 0)",
     };
 
-    private static string Where(SalesPivotFilter filter, bool compare, List<NpgsqlParameter> parameters)
+    private static string Where(SalesPivotFilter filter, bool compare, List<NpgsqlParameter> parameters, SqlSource source)
     {
         parameters.Add(new NpgsqlParameter("from", filter.From));
         parameters.Add(new NpgsqlParameter("to", filter.To));
+        var month = source.Month;
         var where = new StringBuilder(compare
-            ? $"({MonthKey} between @from and @to or {MonthKey} between @from - 100 and @to - 100)"
-            : $"{MonthKey} between @from and @to");
+            ? $"({month} between @from and @to or {month} between @from - 100 and @to - 100)"
+            : $"{month} between @from and @to");
         var index = 0;
         foreach (var (dimension, keys) in filter.Include.OrderBy(item => item.Key))
         {
@@ -458,7 +593,7 @@ public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
 
             var name = $"in{index++}";
             parameters.Add(new NpgsqlParameter(name, NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = keys.ToArray() });
-            where.Append(CultureInfo.InvariantCulture, $" and {Sql[dimension].Key} = any(@{name})");
+            where.Append(CultureInfo.InvariantCulture, $" and {source.Dimensions[dimension].Key} = any(@{name})");
         }
 
         return where.ToString();
@@ -514,21 +649,44 @@ public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
     private static string Parent(string key, int depth) =>
         depth == 0 ? string.Empty : string.Join(PathSeparator, key.Split(PathSeparator).Take(depth));
 
-    private async Task<DateTimeOffset?> DataToAsync(CancellationToken cancellationToken) =>
-        await db.IntegrationRuns.AsNoTracking()
+    /// <summary>
+    /// The end of the last successful load. Each pivot call needs it for its cache key, so it stays
+    /// in the cache for a minute: after a load, the new figures show within that minute.
+    /// </summary>
+    private async Task<DateTimeOffset?> DataToAsync(CancellationToken cancellationToken)
+    {
+        if (cache.TryGetValue(DataToKey, out DateTimeOffset? cached))
+        {
+            return cached;
+        }
+
+        var dataTo = await db.IntegrationRuns.AsNoTracking()
             .Where(run => run.RunType == SellInSyncService.RunType && run.Status == IntegrationRunStatuses.Succeeded)
             .MaxAsync(run => run.CompletedAt, cancellationToken);
+        cache.Set(DataToKey, dataTo, DataToCacheTime);
+        return dataTo;
+    }
 
     private static string Number(decimal value) => value.ToString("0.00", CultureInfo.InvariantCulture);
 
     private static string Csv(string value) =>
         value.IndexOfAny([',', '"', '\n', '\r']) >= 0 ? $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"" : value;
 
+    private sealed class MonthRange
+    {
+        public int? First { get; init; }
+        public int? Last { get; init; }
+    }
+
     /// <summary>One cell of a query: a row and a column, or the whole row when <see cref="Whole"/> is 1.</summary>
     private sealed class Cell
     {
         public required string Path { get; init; }
         public required string Label { get; init; }
+
+        /// <summary>The level of the row, from 0. -1 for the totals.</summary>
+        public int Level { get; init; }
+
         public int Column { get; init; }
         public int Whole { get; init; }
         public decimal Current { get; init; }

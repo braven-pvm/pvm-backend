@@ -109,6 +109,7 @@ public sealed class SellInSyncService(
         }
         catch (Exception exception)
         {
+            await RefreshSummariesAsync(run.Id);
             await CompleteRunAsync(run, IntegrationRunStatuses.Failed, rowsRead, written, skipped,
                 exception is SellInReadException ? "sell-in-read-failed" : "sell-in-load-failed",
                 $"Period {period.DisplayId}: {exception.Message}",
@@ -123,6 +124,7 @@ public sealed class SellInSyncService(
         catch (Exception exception)
         {
             // The lines of the periods stay loaded. The reps of the last good run stay too.
+            await RefreshSummariesAsync(run.Id);
             await CompleteRunAsync(run, IntegrationRunStatuses.Failed, rowsRead, written, skipped,
                 "sell-in-customer-reps-failed",
                 $"Customer list: {exception.Message}",
@@ -130,8 +132,28 @@ public sealed class SellInSyncService(
             throw;
         }
 
+        await RefreshSummariesAsync(run.Id);
         await CompleteRunAsync(run, IntegrationRunStatuses.Succeeded, rowsRead, written, skipped, null, null, cancellationToken);
         return new SellInSyncResult(run.Id, from, to, periods, rowsRead, written, skipped);
+    }
+
+    /// <summary>
+    /// Refreshes the monthly summaries that the sales pivot reads, before the run completes, so that
+    /// the cache of the pivot (keyed by the end of the last load) never keeps old figures. A failed
+    /// refresh is logged and does not fail the load: the pivot then shows the figures of the last refresh.
+    /// </summary>
+    private async Task RefreshSummariesAsync(Guid runId)
+    {
+        try
+        {
+            db.Database.SetCommandTimeout(TimeSpan.FromMinutes(5));
+            await db.Database.ExecuteSqlRawAsync(SellInReportViews.RefreshSummaries, CancellationToken.None);
+            logger.LogInformation("sell-in.summaries.refreshed RunId={RunId}", runId);
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "sell-in.summaries.refresh-failed RunId={RunId}", runId);
+        }
     }
 
     private async Task ArchiveAsync(Guid runId, SellInPeriodRead read, CancellationToken cancellationToken)
