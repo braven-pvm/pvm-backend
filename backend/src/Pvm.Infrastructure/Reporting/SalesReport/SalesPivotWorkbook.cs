@@ -10,8 +10,9 @@ public sealed record SalesWorkbookNote(string Label, string Text);
 
 /// <summary>
 /// Writes a sales pivot as an Excel workbook (.xlsx): the title and the filters at the top, then
-/// one row for each pivot row. The drill-down levels are Excel row groups, so a person opens and
-/// closes them with the + and - buttons. The headers and the first column stay in view.
+/// a flat table. Each item of the deepest level has one row, and each level has its own column,
+/// such as Rep, then Customer. There are no subtotal rows and no closed groups, so a person sorts,
+/// filters and pivots the sheet as it is. The headers and the level columns stay in view.
 /// The file is Office Open XML in a zip, written here, so the API needs no Excel library.
 /// </summary>
 public static class SalesPivotWorkbook
@@ -29,9 +30,8 @@ public static class SalesPivotWorkbook
     private const int HeaderRight = 7;
     private const int Title = 8;
     private const int Note = 9;
-    private const int FirstIndent = 10; // 10 to 14: the label of level 1 to 5, indented.
 
-    public static byte[] Write(SalesPivot pivot, string title, IReadOnlyList<SalesWorkbookNote> notes, string rowHeader, string measureName)
+    public static byte[] Write(SalesPivot pivot, string title, IReadOnlyList<SalesWorkbookNote> notes, IReadOnlyList<string> levelNames)
     {
         using var stream = new MemoryStream();
         using (var zip = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
@@ -41,16 +41,17 @@ public static class SalesPivotWorkbook
             Add(zip, "xl/workbook.xml", Workbook);
             Add(zip, "xl/_rels/workbook.xml.rels", WorkbookRelations);
             Add(zip, "xl/styles.xml", Styles);
-            Add(zip, "xl/worksheets/sheet1.xml", Sheet(pivot, title, notes, rowHeader, measureName));
+            Add(zip, "xl/worksheets/sheet1.xml", Sheet(pivot, title, notes, levelNames));
         }
 
         return stream.ToArray();
     }
 
-    private static string Sheet(SalesPivot pivot, string title, IReadOnlyList<SalesWorkbookNote> notes, string rowHeader, string measureName)
+    private static string Sheet(SalesPivot pivot, string title, IReadOnlyList<SalesWorkbookNote> notes, IReadOnlyList<string> levelNames)
     {
         var compare = pivot.Totals.PreviousTotal is not null;
-        var headers = new List<string> { rowHeader };
+        var levels = Math.Max(levelNames.Count, 1);
+        var headers = new List<string>(levelNames);
         headers.AddRange(pivot.Columns.Select(column => column.Label));
         headers.Add("Total");
         if (compare)
@@ -61,26 +62,10 @@ public static class SalesPivotWorkbook
 
         var rows = new StringBuilder();
         var number = 0;
-        void Row(IEnumerable<string> cells, int outline = 0, bool hidden = false, bool collapsed = false)
+        void Row(IEnumerable<string> cells)
         {
             number++;
-            rows.Append(CultureInfo.InvariantCulture, $"<row r=\"{number}\"");
-            if (outline > 0)
-            {
-                rows.Append(CultureInfo.InvariantCulture, $" outlineLevel=\"{outline}\"");
-            }
-
-            if (hidden)
-            {
-                rows.Append(" hidden=\"1\"");
-            }
-
-            if (collapsed)
-            {
-                rows.Append(" collapsed=\"1\"");
-            }
-
-            rows.Append('>').Append(string.Concat(cells)).Append("</row>");
+            rows.Append(CultureInfo.InvariantCulture, $"<row r=\"{number}\">").Append(string.Concat(cells)).Append("</row>");
         }
 
         Row([TextCell(1, 1, title, Title)]);
@@ -91,44 +76,50 @@ public static class SalesPivotWorkbook
 
         Row([]);
         var headerRow = number + 1;
-        Row(headers.Select((header, index) => TextCell(headerRow, index + 1, header, index == 0 ? Header : HeaderRight)));
+        Row(headers.Select((header, index) => TextCell(headerRow, index + 1, header, index < levels ? Header : HeaderRight)));
 
-        for (var index = 0; index < pivot.Rows.Count; index++)
+        // The rows come in tree order, so the path of a row is the labels of the rows above it.
+        var path = new string[levels];
+        foreach (var row in pivot.Rows)
         {
-            var row = pivot.Rows[index];
-            var hasOpenChildren = index + 1 < pivot.Rows.Count && pivot.Rows[index + 1].Level > row.Level;
-            var bold = row.Level == 0;
-            var cells = new List<string>
+            path[row.Level] = row.Label;
+            if (row.Level != levels - 1)
             {
-                TextCell(number + 1, 1, row.Label, row.Level == 0 ? BoldText : FirstIndent + Math.Min(row.Level, 5) - 1),
-            };
-            cells.AddRange(Figures(number + 1, row.Values, row.Total, row.PreviousTotal, bold, compare));
-            // Level 0 is open. The deeper levels are groups that start closed, as the pages do.
-            Row(cells, Math.Min(row.Level, 7), hidden: row.Level > 0, collapsed: hasOpenChildren);
+                continue;
+            }
+
+            var cells = new List<string>();
+            cells.AddRange(path.Select((label, index) => TextCell(number + 1, index + 1, label ?? string.Empty, Text)));
+            cells.AddRange(Figures(number + 1, levels + 1, row.Values, row.Total, row.PreviousTotal, bold: false, compare));
+            Row(cells);
         }
 
+        var lastDataRow = number;
         var totals = new List<string> { TextCell(number + 1, 1, "Total", BoldText) };
-        totals.AddRange(Figures(number + 1, pivot.Totals.Values, pivot.Totals.Total, pivot.Totals.PreviousTotal, bold: true, compare));
+        totals.AddRange(Figures(number + 1, levels + 1, pivot.Totals.Values, pivot.Totals.Total, pivot.Totals.PreviousTotal, bold: true, compare));
         Row(totals);
 
-        var columns = new StringBuilder("<cols><col min=\"1\" max=\"1\" width=\"44\" customWidth=\"1\"/>");
-        columns.Append(CultureInfo.InvariantCulture, $"<col min=\"2\" max=\"{headers.Count}\" width=\"14\" customWidth=\"1\"/></cols>");
+        var columns = new StringBuilder("<cols>");
+        columns.Append(CultureInfo.InvariantCulture, $"<col min=\"1\" max=\"{levels}\" width=\"34\" customWidth=\"1\"/>");
+        columns.Append(CultureInfo.InvariantCulture, $"<col min=\"{levels + 1}\" max=\"{headers.Count}\" width=\"14\" customWidth=\"1\"/></cols>");
+        // The filter buttons cover the header and the item rows, not the total.
+        var filter = $"<autoFilter ref=\"A{headerRow}:{ColumnName(headers.Count)}{Math.Max(lastDataRow, headerRow)}\"/>";
         return $"""
             <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
             <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-            <sheetPr><outlinePr summaryBelow="0"/></sheetPr>
             <dimension ref="A1:{ColumnName(headers.Count)}{number}"/>
-            <sheetViews><sheetView workbookViewId="0"><pane xSplit="1" ySplit="{headerRow}" topLeftCell="B{headerRow + 1}" activePane="bottomRight" state="frozen"/></sheetView></sheetViews>
-            <sheetFormatPr defaultRowHeight="15" outlineLevelRow="{Math.Min(pivot.Rows.Select(row => row.Level).DefaultIfEmpty(0).Max(), 7)}"/>
+            <sheetViews><sheetView workbookViewId="0"><pane xSplit="{levels}" ySplit="{headerRow}" topLeftCell="{ColumnName(levels + 1)}{headerRow + 1}" activePane="bottomRight" state="frozen"/></sheetView></sheetViews>
+            <sheetFormatPr defaultRowHeight="15"/>
             {columns}
             <sheetData>{rows}</sheetData>
+            {filter}
             </worksheet>
             """;
     }
 
-    private static IEnumerable<string> Figures(int row, IReadOnlyList<decimal> values, decimal total, decimal? previous, bool bold, bool compare)
+    private static IEnumerable<string> Figures(int row, int firstColumn, IReadOnlyList<decimal> values, decimal total, decimal? previous, bool bold, bool compare)
     {
-        var column = 2;
+        var column = firstColumn;
         foreach (var value in values)
         {
             yield return NumberCell(row, column++, value, bold ? BoldFigure : Figure);
