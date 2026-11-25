@@ -286,7 +286,7 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task The_workbook_is_an_xlsx_with_the_filters_on_top_and_the_levels_as_row_groups()
+    public async Task The_workbook_is_an_xlsx_with_the_filters_on_top_and_one_open_row_for_each_item()
     {
         await using var db = CreateDbContext();
         var filter = new SalesPivotFilter(202701, 202702, new Dictionary<SalesDimension, IReadOnlyList<string>> { [SalesDimension.Rep] = ["R1"] });
@@ -312,10 +312,14 @@ public sealed class SalesPivotServiceTests : IAsyncLifetime
         Assert.Contains("Period: Mar 2026 to Apr 2026", texts);
         Assert.Contains("Compared with: Mar 2025 to Apr 2025", texts);
         Assert.Contains("Rep: Rep One", texts);
-        Assert.Contains("Rep, then Customer|Mar 2026|Apr 2026|Total|A year before|Change", texts);
-        Assert.Contains("Rep One|120|50|170|80|1.125", texts);
-        var storeOne = rows.Single(row => Text(row).StartsWith("STORE ONE", StringComparison.Ordinal));
-        Assert.Equal(("1", "1"), ((string?)storeOne.Attribute("outlineLevel"), (string?)storeOne.Attribute("hidden")));
+        Assert.Contains("Rep|Customer|Mar 2026|Apr 2026|Total|A year before|Change", texts);
+        // Each customer has a row of its own, with its rep in the first column. No subtotal rows,
+        // no closed groups: a person sorts and filters the sheet as it is.
+        Assert.Contains(texts, text => text.StartsWith("Rep One|STORE ONE|90|50|140|", StringComparison.Ordinal));
+        Assert.Contains(texts, text => text.StartsWith("Rep One|STORE TWO|30|0|30|", StringComparison.Ordinal));
+        Assert.DoesNotContain(texts, text => text.StartsWith("Rep One|120", StringComparison.Ordinal));
+        Assert.All(rows, row => Assert.Null(row.Attribute("hidden")));
+        Assert.All(rows, row => Assert.Null(row.Attribute("outlineLevel")));
         Assert.Equal("Total|120|50|170|80|1.125", texts[^1]);
     }
 

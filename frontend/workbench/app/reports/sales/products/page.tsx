@@ -60,7 +60,7 @@ export default async function SalesProductsPage({ searchParams }: { searchParams
       eyebrow="Sales report"
       title="Products"
       description="Sales by product group and product, with units and the number of customers who buy each product."
-      download={["itemGroup", "product"]}
+      download={["product", "itemGroup"]}
       message={data?.products.message}
     >
       {!data ? (

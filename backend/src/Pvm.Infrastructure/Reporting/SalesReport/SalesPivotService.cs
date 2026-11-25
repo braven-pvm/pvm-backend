@@ -422,7 +422,8 @@ public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
     }
 
     /// <summary>
-    /// The pivot with all levels, as an Excel workbook. The top of the sheet names the period, the
+    /// The pivot as a flat Excel table: one row for each item of the deepest level, with a column for
+    /// each level. The top of the sheet names the period, the
     /// comparison, the measure, each filter with its labels, and the load that the figures come from.
     /// </summary>
     public async Task<byte[]> WorkbookAsync(SalesPivotRequest request, CancellationToken cancellationToken)
@@ -447,8 +448,8 @@ public sealed class SalesPivotService(PvmDbContext db, IMemoryCache cache)
         notes.Add(new("Data", pivot.DataTo is { } dataTo
             ? $"Sell-in from Acumatica, from the load of {dataTo.ToOffset(TimeSpan.FromHours(2)).ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture)} (South African time). Credit notes are subtracted."
             : "Sell-in from Acumatica. No load has finished yet."));
-        var rowHeader = string.Join(", then ", request.Rows.Select(Name));
-        return SalesPivotWorkbook.Write(pivot, $"Sales report by {rowHeader.ToLowerInvariant()}", notes, rowHeader, MeasureName(request.Filter.Measure));
+        var names = request.Rows.Select(Name).ToList();
+        return SalesPivotWorkbook.Write(pivot, $"Sales report by {string.Join(", then ", names).ToLowerInvariant()}", notes, names);
     }
 
     public static string MeasureName(SalesPivotMeasure measure) => measure switch
