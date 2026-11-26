@@ -28,6 +28,19 @@ public sealed record InvestecOptions
     public int MaxPages { get; init; } = 200;
 
     /// <summary>
+    /// How many times to retry a transactions request that Investec refuses with 401, each time
+    /// with a fresh token. On 26 Nov 2026 Investec issued a valid token, then refused it for
+    /// about a minute; without retries that one refusal cost the whole day's import.
+    /// </summary>
+    public int UnauthorizedRetryAttempts { get; init; } = 3;
+
+    /// <summary>
+    /// Wait before the first retry after a 401. Each later retry waits twice as long, so the
+    /// defaults cover roughly three and a half minutes (30 s, 60 s, 120 s).
+    /// </summary>
+    public int UnauthorizedRetryDelaySeconds { get; init; } = 30;
+
+    /// <summary>
     /// How many days back each scheduled refresh reaches. The window overlaps previous runs on
     /// purpose, so a missed or failed run is collected by the next one. Re-importing a day costs
     /// nothing, because the write client drops transactions Acumatica already holds.

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -32,11 +33,37 @@ public sealed class InvestecTransactionClient(
 
         for (var page = 1; page <= _options.MaxPages; page++)
         {
-            using var request = new HttpRequestMessage(
-                HttpMethod.Get,
-                BuildTransactionsUri(accountId, fromDate, toDate, page));
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            using var response = await httpClient.SendAsync(request, cancellationToken);
+            HttpResponseMessage response;
+            var retries = 0;
+            while (true)
+            {
+                using var request = new HttpRequestMessage(
+                    HttpMethod.Get,
+                    BuildTransactionsUri(accountId, fromDate, toDate, page));
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                response = await httpClient.SendAsync(request, cancellationToken);
+
+                // Investec sometimes refuses a token it has just issued. Wait, take a fresh
+                // token and try the same page again. Persistent refusal still fails below.
+                if (response.StatusCode != HttpStatusCode.Unauthorized
+                    || retries >= _options.UnauthorizedRetryAttempts)
+                {
+                    break;
+                }
+
+                response.Dispose();
+                var delay = TimeSpan.FromSeconds(
+                    Math.Max(0, _options.UnauthorizedRetryDelaySeconds) * Math.Pow(2, retries));
+                retries++;
+                if (delay > TimeSpan.Zero)
+                {
+                    await Task.Delay(delay, cancellationToken);
+                }
+
+                token = await GetAccessTokenAsync(cancellationToken);
+            }
+
+            using var _ = response;
             EnsureSuccess(response, "transaction retrieval");
 
             var batch = await ParseTransactionsAsync(accountId, response, cancellationToken);
