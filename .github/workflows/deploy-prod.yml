@@ -216,12 +216,12 @@ jobs:
           runner_ip="$(curl -fsS https://api.ipify.org)"
           rule="github-runner-${GITHUB_RUN_ID}"
           close_runner_rule() {
-            az postgres flexible-server firewall-rule delete --resource-group "$AZURE_RESOURCE_GROUP" --name "$server"               --rule-name "$rule" --yes --only-show-errors >/dev/null || echo "::warning::Could not delete firewall rule $rule on $server."
+            az postgres flexible-server firewall-rule delete --resource-group "$AZURE_RESOURCE_GROUP" --server-name "$server"               --name "$rule" --yes --only-show-errors >/dev/null || echo "::warning::Could not delete firewall rule $rule on $server."
           }
           trap close_runner_rule EXIT
-          az postgres flexible-server firewall-rule create --resource-group "$AZURE_RESOURCE_GROUP" --name "$server"             --rule-name "$rule" --start-ip-address "$runner_ip" --end-ip-address "$runner_ip" --only-show-errors >/dev/null
+          az postgres flexible-server firewall-rule create --resource-group "$AZURE_RESOURCE_GROUP" --server-name "$server"             --name "$rule" --start-ip-address "$runner_ip" --end-ip-address "$runner_ip" --only-show-errors >/dev/null
           # Remove the old rule that opened the server to the whole internet, where it still exists.
-          az postgres flexible-server firewall-rule delete --resource-group "$AZURE_RESOURCE_GROUP" --name "$server"             --rule-name qa-temporary-public-access --yes --only-show-errors >/dev/null 2>&1 || true
+          az postgres flexible-server firewall-rule delete --resource-group "$AZURE_RESOURCE_GROUP" --server-name "$server"             --name qa-temporary-public-access --yes --only-show-errors >/dev/null 2>&1 || true
           connection_string="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name connectionstrings--pvm --query value -o tsv)"
           echo "::add-mask::$connection_string"
           export ConnectionStrings__Pvm="$connection_string"
