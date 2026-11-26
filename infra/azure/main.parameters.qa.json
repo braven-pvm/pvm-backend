@@ -11,6 +11,9 @@
     "resourceGroupName": {
       "value": "rg-pvm-integrations-qa"
     },
+    "containerAppMinReplicas": {
+      "value": 0
+    },
     "ownerObjectId": {
       "value": "35425387-d19a-4e63-97b5-2165cce0032b"
     },
