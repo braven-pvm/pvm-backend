@@ -759,12 +759,15 @@ resource postgresDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2
   }
 }
 
-resource postgresFirewallAll 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2023-06-01-preview' = {
+// Only Azure services may connect: the container apps have no VNet, so they reach the server
+// over Azure IPs. The deploy workflow opens the server to its own runner IP for the migration step
+// and closes it again. Never allow the whole internet: the apps sign in with a password.
+resource postgresFirewallAzureServices 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2023-06-01-preview' = {
   parent: postgres
-  name: 'qa-temporary-public-access'
+  name: 'AllowAllAzureServicesAndResourcesWithinAzureIps'
   properties: {
     startIpAddress: '0.0.0.0'
-    endIpAddress: '255.255.255.255'
+    endIpAddress: '0.0.0.0'
   }
 }
 
