@@ -591,8 +591,9 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' = {
   name: acrName
   location: acrLocation
   tags: tags
+  // Basic is enough: 3 images, a few pushes a day. The deploy workflows keep the newest 10 tags.
   sku: {
-    name: 'Standard'
+    name: 'Basic'
   }
   properties: {
     adminUserEnabled: false

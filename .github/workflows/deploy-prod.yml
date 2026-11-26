@@ -263,6 +263,12 @@ jobs:
           docker push "$ACR_LOGIN_SERVER/$WORKER_IMAGE:${{ steps.values.outputs.image_tag }}"
           docker push "$ACR_LOGIN_SERVER/$WORKER_IMAGE:prod-latest"
 
+      - name: Delete old images
+        # Keep the newest 10 tags of each image, so the Basic registry stays small and a rollback
+        # to a recent build is still possible.
+        run: |
+          az acr run --registry "$ACR_NAME" --timeout 600             --cmd "acr purge --filter '$API_IMAGE:.*' --filter '$WORKBENCH_IMAGE:.*' --filter '$WORKER_IMAGE:.*' --ago 0d --keep 10 --untagged" /dev/null
+
       - name: Deploy Bicep
         run: |
           az deployment sub create \
