@@ -235,6 +235,15 @@ jobs:
             az acr create --name "$ACR_NAME" --resource-group "$AZURE_RESOURCE_GROUP" --location westeurope --sku Basic --only-show-errors >/dev/null
           fi
 
+      - name: Azure login again
+        # The OIDC sign-in is valid for about 10 minutes. The tests and the migration step take
+        # most of that, so sign in again before the image pushes and the Bicep deploy.
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
       - name: Build and push API image
         run: |
           az acr login --name "$ACR_NAME"
